@@ -2834,6 +2834,20 @@ function SubstitutionsSection({
                     <Button
                       onClick={async () => {
                         if (!selectedSub) return;
+                        // If context already exists and is valid, just show it
+                        if (selectedSub.subContext && selectedSub.subContext !== 'null') {
+                          try {
+                            const ctx = typeof selectedSub.subContext === 'string' ? JSON.parse(selectedSub.subContext) : selectedSub.subContext;
+                            if (ctx && typeof ctx === 'object') {
+                              setSubContextData(ctx);
+                              setSubContextPopupOpen(true);
+                              return;
+                            }
+                          } catch {
+                            // Failed to parse, regenerate
+                          }
+                        }
+                        // Generate new context
                         setGeneratingSubContext(true);
                         try {
                           const res = await fetch('/api/biometric/generate-sub-context', {
@@ -2848,11 +2862,18 @@ function SubstitutionsSection({
                             toast({ title: 'AI Context Generated', description: 'Comprehensive substitute teaching guidance is ready' });
                             onRefresh();
                           } else {
-                            const errData = await res.json();
-                            toast({ title: 'Generation Failed', description: errData.error || 'Failed to generate context', variant: 'destructive' });
+                            let errorMsg = 'Failed to generate context';
+                            try {
+                              const errData = await res.json();
+                              errorMsg = errData.error || errorMsg;
+                            } catch {
+                              errorMsg = `Server error (${res.status})`;
+                            }
+                            toast({ title: 'Generation Failed', description: errorMsg, variant: 'destructive' });
                           }
-                        } catch {
-                          toast({ title: 'Error', description: 'Failed to generate context', variant: 'destructive' });
+                        } catch (fetchError) {
+                          console.error('Generate sub context fetch error:', fetchError);
+                          toast({ title: 'Error', description: 'Failed to connect to server. Please try again.', variant: 'destructive' });
                         } finally {
                           setGeneratingSubContext(false);
                         }
@@ -2862,9 +2883,9 @@ function SubstitutionsSection({
                       size="sm"
                     >
                       {generatingSubContext ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Brain className="w-4 h-4 mr-2" />}
-                      {generatingSubContext ? 'Generating AI Context...' : selectedSub.subContext ? 'View AI Substitute Context' : 'Generate AI Substitute Context'}
+                      {generatingSubContext ? 'Generating AI Context...' : (selectedSub.subContext && selectedSub.subContext !== 'null') ? 'View AI Substitute Context' : 'Generate AI Substitute Context'}
                     </Button>
-                    {selectedSub.subContext && !generatingSubContext && (
+                    {selectedSub.subContext && selectedSub.subContext !== 'null' && !generatingSubContext && (
                       <Button
                         variant="outline"
                         className="w-full border-blue-300 hover:bg-blue-50 hover:text-blue-700"
@@ -2872,10 +2893,14 @@ function SubstitutionsSection({
                         onClick={() => {
                           try {
                             const ctx = typeof selectedSub.subContext === 'string' ? JSON.parse(selectedSub.subContext) : selectedSub.subContext;
-                            setSubContextData(ctx);
-                            setSubContextPopupOpen(true);
+                            if (ctx && typeof ctx === 'object') {
+                              setSubContextData(ctx);
+                              setSubContextPopupOpen(true);
+                            } else {
+                              toast({ title: 'No Context', description: 'Generate AI Substitute Context first', variant: 'destructive' });
+                            }
                           } catch {
-                            toast({ title: 'Error', description: 'Could not parse context data', variant: 'destructive' });
+                            toast({ title: 'Error', description: 'Could not parse context data. Try regenerating.', variant: 'destructive' });
                           }
                         }}
                       >
@@ -3297,10 +3322,71 @@ function SubstitutionsSection({
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[75vh] px-6">
-            {subContextData && (
+            {subContextData && (() => {
+              // Safely render any value as text (handles objects, arrays, null, undefined)
+              const safeText = (val: unknown): string => {
+                if (val === null || val === undefined) return '';
+                if (typeof val === 'string') return val;
+                if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+                if (Array.isArray(val)) return val.map(v => safeText(v)).join(', ');
+                if (typeof val === 'object') {
+                  // For todayCoveragePlan-like objects with topic/objectives/keyPoints
+                  const obj = val as Record<string, unknown>;
+                  if (obj.topic) {
+                    const parts: string[] = [safeText(obj.topic)];
+                    if (obj.objectives && Array.isArray(obj.objectives)) {
+                      parts.push('Objectives: ' + (obj.objectives as unknown[]).map(v => safeText(v)).join('; '));
+                    }
+                    if (obj.keyPoints && Array.isArray(obj.keyPoints)) {
+                      parts.push('Key Points: ' + (obj.keyPoints as unknown[]).map(v => safeText(v)).join('; '));
+                    }
+                    return parts.join('. ');
+                  }
+                  return JSON.stringify(val);
+                }
+                return String(val);
+              };
+
+              // Safely render todayCoveragePlan section
+              const renderTodayCoveragePlan = (val: unknown) => {
+                if (!val) return null;
+                if (typeof val === 'string') {
+                  return <p className="text-sm text-emerald-900 font-medium">{val}</p>;
+                }
+                if (typeof val === 'object' && val !== null) {
+                  const obj = val as Record<string, unknown>;
+                  return (
+                    <div className="space-y-1.5">
+                      {obj.topic && <p className="text-sm text-emerald-900 font-medium">{safeText(obj.topic)}</p>}
+                      {obj.objectives && Array.isArray(obj.objectives) && obj.objectives.length > 0 && (
+                        <div>
+                          <p className="text-[11px] text-emerald-700 font-semibold">Learning Objectives:</p>
+                          <ul className="text-[11px] text-emerald-700 list-disc ml-4">
+                            {(obj.objectives as unknown[]).map((o, i) => <li key={i}>{safeText(o)}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {obj.keyPoints && Array.isArray(obj.keyPoints) && obj.keyPoints.length > 0 && (
+                        <div>
+                          <p className="text-[11px] text-emerald-700 font-semibold">Key Points to Cover:</p>
+                          <ul className="text-[11px] text-emerald-700 list-disc ml-4">
+                            {(obj.keyPoints as unknown[]).map((k, i) => <li key={i}>{safeText(k)}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {!obj.topic && !obj.objectives && !obj.keyPoints && (
+                        <p className="text-sm text-emerald-900 font-medium">{safeText(val)}</p>
+                      )}
+                    </div>
+                  );
+                }
+                return <p className="text-sm text-emerald-900 font-medium">{safeText(val)}</p>;
+              };
+
+              return (
               <div className="space-y-4 pb-6">
                 {/* Class Info Header */}
-                <div className="grid grid-cols-3 gap-2">
+                <div className="grid grid-cols-4 gap-2">
                   <div className="p-2 bg-blue-50 rounded-lg border border-blue-100 text-center">
                     <p className="text-[9px] text-blue-600">Subject</p>
                     <p className="text-xs font-semibold text-blue-800">{selectedSub?.subject}</p>
@@ -3313,6 +3399,10 @@ function SubstitutionsSection({
                     <p className="text-[9px] text-purple-600">Period</p>
                     <p className="text-xs font-semibold text-purple-800">P{selectedSub?.period}</p>
                   </div>
+                  <div className="p-2 bg-rose-50 rounded-lg border border-rose-100 text-center">
+                    <p className="text-[9px] text-rose-600">Absent Teacher</p>
+                    <p className="text-xs font-semibold text-rose-800">{subContextData.absentTeacher?.name || selectedSub?.absentTeacherId || 'N/A'}</p>
+                  </div>
                 </div>
 
                 {/* Yesterday's Topic */}
@@ -3321,17 +3411,20 @@ function SubstitutionsSection({
                     <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5 mb-1.5">
                       <BookOpen className="w-4 h-4" /> What Was Taught Yesterday
                     </p>
-                    <p className="text-sm text-amber-900 font-medium">{subContextData.yesterdayTopic}</p>
+                    <p className="text-sm text-amber-900 font-medium">{safeText(subContextData.yesterdayTopic)}</p>
                     {subContextData.yesterdayDetails && (
                       <div className="mt-2 space-y-1">
                         {subContextData.yesterdayDetails.keyConcepts && (
-                          <p className="text-[11px] text-amber-700"><b>Key Concepts:</b> {Array.isArray(subContextData.yesterdayDetails.keyConcepts) ? subContextData.yesterdayDetails.keyConcepts.join(', ') : subContextData.yesterdayDetails.keyConcepts}</p>
+                          <p className="text-[11px] text-amber-700"><b>Key Concepts:</b> {safeText(subContextData.yesterdayDetails.keyConcepts)}</p>
                         )}
                         {subContextData.yesterdayDetails.activities && (
-                          <p className="text-[11px] text-amber-700"><b>Activities:</b> {Array.isArray(subContextData.yesterdayDetails.activities) ? subContextData.yesterdayDetails.activities.join(', ') : subContextData.yesterdayDetails.activities}</p>
+                          <p className="text-[11px] text-amber-700"><b>Activities:</b> {safeText(subContextData.yesterdayDetails.activities)}</p>
                         )}
                         {subContextData.yesterdayDetails.homework && (
-                          <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {subContextData.yesterdayDetails.homework}</p>
+                          <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(subContextData.yesterdayDetails.homework)}</p>
+                        )}
+                        {subContextData.yesterdayDetails.homeworkAssigned && (
+                          <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(subContextData.yesterdayDetails.homeworkAssigned)}</p>
                         )}
                       </div>
                     )}
@@ -3344,7 +3437,7 @@ function SubstitutionsSection({
                     <p className="text-xs font-semibold text-emerald-800 flex items-center gap-1.5 mb-1.5">
                       <Target className="w-4 h-4" /> What to Cover Today
                     </p>
-                    <p className="text-sm text-emerald-900 font-medium">{subContextData.todayCoveragePlan}</p>
+                    {renderTodayCoveragePlan(subContextData.todayCoveragePlan)}
                   </div>
                 )}
 
@@ -3355,10 +3448,10 @@ function SubstitutionsSection({
                       <ListChecks className="w-4 h-4" /> Step-by-Step Teaching Instructions
                     </p>
                     <div className="space-y-1.5">
-                      {(Array.isArray(subContextData.teachingInstructions) ? subContextData.teachingInstructions : [subContextData.teachingInstructions]).map((step: string, i: number) => (
+                      {(Array.isArray(subContextData.teachingInstructions) ? subContextData.teachingInstructions : [subContextData.teachingInstructions]).map((step: unknown, i: number) => (
                         <div key={i} className="flex items-start gap-2 text-[11px] text-blue-800">
                           <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-[9px] font-bold shrink-0">{i + 1}</span>
-                          <span>{step}</span>
+                          <span>{safeText(step)}</span>
                         </div>
                       ))}
                     </div>
@@ -3371,7 +3464,7 @@ function SubstitutionsSection({
                     <p className="text-xs font-semibold text-purple-800 flex items-center gap-1.5 mb-1.5">
                       <GraduationCap className="w-4 h-4" /> Student Expectations
                     </p>
-                    <p className="text-[11px] text-purple-800">{subContextData.studentExpectations}</p>
+                    <p className="text-[11px] text-purple-800">{safeText(subContextData.studentExpectations)}</p>
                   </div>
                 )}
 
@@ -3381,7 +3474,7 @@ function SubstitutionsSection({
                     <p className="text-xs font-semibold text-teal-800 flex items-center gap-1.5 mb-1.5">
                       <Lightbulb className="w-4 h-4" /> Quick Assessment Idea
                     </p>
-                    <p className="text-[11px] text-teal-800">{subContextData.assessmentIdea}</p>
+                    <p className="text-[11px] text-teal-800">{safeText(subContextData.assessmentIdea)}</p>
                   </div>
                 )}
 
@@ -3392,12 +3485,13 @@ function SubstitutionsSection({
                       <BookMarked className="w-4 h-4" /> Materials Needed
                     </p>
                     <p className="text-[11px] text-orange-800">
-                      {Array.isArray(subContextData.materialsNeeded) ? subContextData.materialsNeeded.join(', ') : subContextData.materialsNeeded}
+                      {safeText(subContextData.materialsNeeded)}
                     </p>
                   </div>
                 )}
               </div>
-            )}
+              );
+            })()}
           </ScrollArea>
         </DialogContent>
       </Dialog>
