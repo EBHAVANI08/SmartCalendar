@@ -146,3 +146,40 @@ Stage Summary:
 - 182 teachers, 25K students, 2156 schedules in database
 - All features: login, dashboard, calendar, substitutions, AI agents, biometric, curriculum
 - Dev server running and accessible
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Implement 4 feature changes as requested by user
+
+Work Log:
+- Change 1: Academic Calendar - AI Timetable now generates per grade/section
+  - Added grade/section selector dropdown replacing the single button
+  - API now accepts grade+section parameters, only clears/regenerates that specific class
+  - AI agent identifies teachers who teach that specific grade
+  - Sophisticated 6-tier scoring: Perfect Match, Subject Specialist, Grade Teacher, Similar Grade, Available
+  - Pedagogical constraints: max 2 consecutive same subject, core subjects in morning, PE not in P1, Art/Music in afternoon
+  - Teacher continuity tracked across days
+  - Notifications sent to all affected teachers
+- Change 2: Teachers Section - Added "Add New Teacher" dialog
+  - Comprehensive form with Personal Info (name, gender, email, phone, blood group, emergency contact, address)
+  - Professional Info (subject, qualification, experience, specialization, date of joining)
+  - Grade Assignment (toggle buttons for Grade 1-12)
+  - Login Credentials section
+  - API endpoint POST /api/teachers/create with duplicate email check
+- Change 3: Substitutions - Added filter buttons for available teachers popup
+  - Filter options: All, Subject Match, Grade Match, Light Workload
+  - Teachers filtered client-side based on selected filter
+  - Color-coded filter buttons matching the existing legend
+- Change 4: Substitutions - Fixed Generate AI Substitute Context button
+  - Now works for ALL substitutions (not just biometric)
+  - Shows detailed popup with: Yesterday's Topic (with key concepts/activities/homework), Today's Coverage Plan, Step-by-Step Teaching Instructions, Student Expectations, Quick Assessment Idea, Materials Needed
+  - Context fetched from teacher's lesson plans and schedule topics
+  - "View AI Substitute Context" button when context already exists
+- All changes verified: page compiles with HTTP 200, no new lint errors
+
+Stage Summary:
+- 4 features implemented as requested without changing any other sections
+- API routes created/updated: /api/teachers/create, /api/schedules/ai-generate-timetable, /api/biometric/generate-sub-context
+- Frontend changes applied to src/app/page.tsx
+- All existing features, designs, and sections preserved

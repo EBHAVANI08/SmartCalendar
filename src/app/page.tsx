@@ -9,7 +9,7 @@ import {
   LogOut, FileText, Eye, Target, ListChecks, Lightbulb, BookMarked, CalendarDays,
   Lock, ShieldCheck, Coffee, BarChart3, BookTemplate, Library,
   Download, Copy, Check, Filter, Grid3X3, TrendingUp, TrendingDown,
-  ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle
+  ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle, UserPlus
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -1595,15 +1595,22 @@ function AcademicCalendarSection({
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiGenerateResult, setAiGenerateResult] = useState<{ success: boolean; message: string; stats: Record<string, number>; aiSuggestions: string[]; verificationPassed: boolean } | null>(null);
+  const [aiGradeSection, setAiGradeSection] = useState<{grade: string; section: string} | null>(null);
+  const [aiGradeSelectOpen, setAiGradeSelectOpen] = useState(false);
 
-  const handleAiGenerateTimetable = async () => {
+  const handleAiGenerateTimetable = async (grade?: string, section?: string) => {
+    if (!grade || !section) {
+      setAiGradeSelectOpen(true);
+      return;
+    }
+    setAiGradeSection({ grade, section });
     setAiGenerating(true);
     setAiGenerateResult(null);
     try {
       const res = await fetch('/api/schedules/ai-generate-timetable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ dryRun: false }),
+        body: JSON.stringify({ grade, section, dryRun: false }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -1787,15 +1794,30 @@ function AcademicCalendarSection({
             <p className="text-sm text-muted-foreground">View and manage class schedules by grade and day</p>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              onClick={handleAiGenerateTimetable}
-              disabled={aiGenerating}
-              className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-600 hover:to-indigo-600 text-white shadow-lg"
-              size="sm"
-            >
-              {aiGenerating ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Sparkles className="w-4 h-4 mr-2" />}
-              AI Generate Timetable
-            </Button>
+            <div className="flex items-center gap-2">
+              <Select onValueChange={(val) => {
+                const [g, s] = val.split('|');
+                handleAiGenerateTimetable(g, s);
+              }}>
+                <SelectTrigger className="w-[220px] h-9 bg-gradient-to-r from-purple-500 to-indigo-500 text-white border-0 hover:from-purple-600 hover:to-indigo-600 shadow-lg">
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  <SelectValue placeholder="AI Generate Timetable" />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(gradeGroups).sort(([a], [b]) => {
+                    const numA = parseInt(a.replace('Grade ', ''));
+                    const numB = parseInt(b.replace('Grade ', ''));
+                    return numA - numB;
+                  }).flatMap(([grade, sections]) =>
+                    sections.sort().map(section => (
+                      <SelectItem key={`${grade}|${section}`} value={`${grade}|${section}`}>
+                        {grade} - Section {section}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
           <Button
             variant="outline"
             onClick={() => setCalendarOpen(!calendarOpen)}
@@ -1820,8 +1842,8 @@ function AcademicCalendarSection({
                 <Sparkles className="w-4 h-4 text-purple-500 absolute -top-1 -right-1 animate-pulse" />
               </div>
               <div>
-                <p className="font-medium text-purple-800">AI Timetable Generator is working...</p>
-                <p className="text-sm text-purple-600">Analyzing teachers, subjects, grades — building clash-free schedule</p>
+                <p className="font-medium text-purple-800">AI Timetable Generator is working... {aiGradeSection ? `for ${aiGradeSection.grade} ${aiGradeSection.section}` : ''}</p>
+                <p className="text-sm text-purple-600">Analyzing teachers, subjects, grades — building clash-free schedule for {aiGradeSection ? `${aiGradeSection.grade} ${aiGradeSection.section}` : 'selected class'}</p>
               </div>
               <div className="ml-auto flex gap-1">
                 {[0, 1, 2].map(i => (
@@ -1841,7 +1863,7 @@ function AcademicCalendarSection({
               {aiGenerateResult.success ? (
                 <>
                   <CheckCircle2 className="w-5 h-5 text-purple-600" />
-                  <span className="text-purple-800">AI Timetable Generator — Complete</span>
+                  <span className="text-purple-800">AI Timetable Generator — Complete {aiGradeSection ? `for ${aiGradeSection.grade} ${aiGradeSection.section}` : ''}</span>
                   {aiGenerateResult.verificationPassed && <Badge className="bg-emerald-100 text-emerald-700 text-[9px]">Zero Clashes Verified</Badge>}
                 </>
               ) : (
@@ -2385,6 +2407,10 @@ function SubstitutionsSection({
   const [assigningTeacher, setAssigningTeacher] = useState<string | null>(null);
   const [availableTeachersOpen, setAvailableTeachersOpen] = useState(false);
   const [manualAssignTeacherId, setManualAssignTeacherId] = useState('');
+  const [availableTeacherFilter, setAvailableTeacherFilter] = useState<'all' | 'subject' | 'grade' | 'workload'>('all');
+  const [subContextPopupOpen, setSubContextPopupOpen] = useState(false);
+  const [subContextData, setSubContextData] = useState<any>(null);
+  const [generatingSubContext, setGeneratingSubContext] = useState(false);
   const { toast } = useToast();
 
   const filteredSubs = substitutions.filter((sub) => {
@@ -2804,29 +2830,56 @@ function SubstitutionsSection({
 
                   {/* Lesson DNA */}
                   <div className="space-y-2">
-                    {/* AI Substitute Context (for biometric-sourced substitutions) */}
-                    {selectedSub.source === 'biometric' && !selectedSub.subContext && (
+                    {/* AI Substitute Context */}
+                    <Button
+                      onClick={async () => {
+                        if (!selectedSub) return;
+                        setGeneratingSubContext(true);
+                        try {
+                          const res = await fetch('/api/biometric/generate-sub-context', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ substitutionId: selectedSub.id }),
+                          });
+                          if (res.ok) {
+                            const data = await res.json();
+                            setSubContextData(data.context || data);
+                            setSubContextPopupOpen(true);
+                            toast({ title: 'AI Context Generated', description: 'Comprehensive substitute teaching guidance is ready' });
+                            onRefresh();
+                          } else {
+                            const errData = await res.json();
+                            toast({ title: 'Generation Failed', description: errData.error || 'Failed to generate context', variant: 'destructive' });
+                          }
+                        } catch {
+                          toast({ title: 'Error', description: 'Failed to generate context', variant: 'destructive' });
+                        } finally {
+                          setGeneratingSubContext(false);
+                        }
+                      }}
+                      disabled={generatingSubContext}
+                      className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
+                      size="sm"
+                    >
+                      {generatingSubContext ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Brain className="w-4 h-4 mr-2" />}
+                      {generatingSubContext ? 'Generating AI Context...' : selectedSub.subContext ? 'View AI Substitute Context' : 'Generate AI Substitute Context'}
+                    </Button>
+                    {selectedSub.subContext && !generatingSubContext && (
                       <Button
-                        onClick={async () => {
+                        variant="outline"
+                        className="w-full border-blue-300 hover:bg-blue-50 hover:text-blue-700"
+                        size="sm"
+                        onClick={() => {
                           try {
-                            const res = await fetch('/api/biometric/generate-sub-context', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ substitutionId: selectedSub.id }),
-                            });
-                            if (res.ok) {
-                              toast({ title: 'Context Generated', description: 'AI has prepared substitute teacher guidance with yesterday/today topic context' });
-                              onRefresh();
-                            }
+                            const ctx = typeof selectedSub.subContext === 'string' ? JSON.parse(selectedSub.subContext) : selectedSub.subContext;
+                            setSubContextData(ctx);
+                            setSubContextPopupOpen(true);
                           } catch {
-                            toast({ title: 'Error', description: 'Failed to generate context', variant: 'destructive' });
+                            toast({ title: 'Error', description: 'Could not parse context data', variant: 'destructive' });
                           }
                         }}
-                        className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
-                        size="sm"
                       >
-                        <Brain className="w-4 h-4 mr-2" />
-                        Generate AI Substitute Context
+                        <Eye className="w-4 h-4 mr-2" /> View AI Substitute Context
                       </Button>
                     )}
                     <Button
@@ -3041,19 +3094,46 @@ function SubstitutionsSection({
             </div>
           </div>
 
+          {/* Filter Buttons */}
+          <div className="px-6 pb-2 flex items-center gap-2">
+            <span className="text-[10px] text-muted-foreground font-medium">Filter:</span>
+            {[
+              { key: 'all' as const, label: 'All', color: 'bg-gray-100 text-gray-700 border-gray-300' },
+              { key: 'subject' as const, label: 'Subject Match', color: 'bg-emerald-100 text-emerald-700 border-emerald-300' },
+              { key: 'grade' as const, label: 'Grade Match', color: 'bg-blue-100 text-blue-700 border-blue-300' },
+              { key: 'workload' as const, label: 'Light Workload', color: 'bg-amber-100 text-amber-700 border-amber-300' },
+            ].map(f => (
+              <button
+                key={f.key}
+                onClick={() => setAvailableTeacherFilter(f.key)}
+                className={`px-2.5 py-1 text-[10px] rounded-md border font-medium transition-all ${
+                  availableTeacherFilter === f.key ? f.color + ' ring-1 ring-offset-1' : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
+
           <ScrollArea className="max-h-[58vh] px-6">
-            {selectedSub && (
-              <div className="space-y-3 pb-6">
-                {getAvailableTeachersForSub(selectedSub).length === 0 ? (
-                  <div className="text-center py-8">
-                    <Users className="w-10 h-10 mx-auto text-muted-foreground/30 mb-3" />
-                    <p className="text-sm font-medium text-muted-foreground">No available teachers found</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      All teachers are either busy at Period {selectedSub.period} or have reached their max workload for the day.
-                    </p>
-                  </div>
-                ) : (
-                  getAvailableTeachersForSub(selectedSub).map((t, index) => (
+            {selectedSub && (() => {
+              const allAvailable = getAvailableTeachersForSub(selectedSub);
+              const filtered = availableTeacherFilter === 'all' ? allAvailable :
+                availableTeacherFilter === 'subject' ? allAvailable.filter(t => t.teachesSubject) :
+                availableTeacherFilter === 'grade' ? allAvailable.filter(t => t.teachesGrade) :
+                availableTeacherFilter === 'workload' ? allAvailable.filter(t => t.dayWorkload <= 4) :
+                allAvailable;
+              return (
+                <>
+                  {filtered.length === 0 ? (
+                    <div className="text-center py-8">
+                      <Users className="w-10 h-10 mx-auto text-muted-foreground/30 mb-3" />
+                      <p className="text-sm font-medium text-muted-foreground">No {availableTeacherFilter !== 'all' ? `${availableTeacherFilter === 'subject' ? 'subject-matching' : availableTeacherFilter === 'grade' ? 'grade-matching' : 'light-workload'} ` : ''}teachers found</p>
+                      <p className="text-xs text-muted-foreground mt-1">Try changing the filter or check back later.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pb-6">
+                      {filtered.map((t, index) => (
                     <div
                       key={t.id}
                       className={`rounded-xl border p-4 transition-all hover:shadow-md ${
@@ -3195,7 +3275,126 @@ function SubstitutionsSection({
                         <span className="text-[10px] font-semibold text-emerald-700">{t.score.toFixed(1)}</span>
                       </div>
                     </div>
-                  ))
+                  ))}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Substitute Context Popup */}
+      <Dialog open={subContextPopupOpen} onOpenChange={setSubContextPopupOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] p-0">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle className="flex items-center gap-2 text-blue-800">
+              <Brain className="w-5 h-5" /> AI Substitute Teaching Context
+            </DialogTitle>
+            <DialogDescription>
+              Comprehensive guidance for the substitute teacher covering this class
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[75vh] px-6">
+            {subContextData && (
+              <div className="space-y-4 pb-6">
+                {/* Class Info Header */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="p-2 bg-blue-50 rounded-lg border border-blue-100 text-center">
+                    <p className="text-[9px] text-blue-600">Subject</p>
+                    <p className="text-xs font-semibold text-blue-800">{selectedSub?.subject}</p>
+                  </div>
+                  <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-100 text-center">
+                    <p className="text-[9px] text-emerald-600">Grade & Section</p>
+                    <p className="text-xs font-semibold text-emerald-800">{selectedSub?.grade} {selectedSub?.section}</p>
+                  </div>
+                  <div className="p-2 bg-purple-50 rounded-lg border border-purple-100 text-center">
+                    <p className="text-[9px] text-purple-600">Period</p>
+                    <p className="text-xs font-semibold text-purple-800">P{selectedSub?.period}</p>
+                  </div>
+                </div>
+
+                {/* Yesterday's Topic */}
+                {subContextData.yesterdayTopic && (
+                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
+                    <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5 mb-1.5">
+                      <BookOpen className="w-4 h-4" /> What Was Taught Yesterday
+                    </p>
+                    <p className="text-sm text-amber-900 font-medium">{subContextData.yesterdayTopic}</p>
+                    {subContextData.yesterdayDetails && (
+                      <div className="mt-2 space-y-1">
+                        {subContextData.yesterdayDetails.keyConcepts && (
+                          <p className="text-[11px] text-amber-700"><b>Key Concepts:</b> {Array.isArray(subContextData.yesterdayDetails.keyConcepts) ? subContextData.yesterdayDetails.keyConcepts.join(', ') : subContextData.yesterdayDetails.keyConcepts}</p>
+                        )}
+                        {subContextData.yesterdayDetails.activities && (
+                          <p className="text-[11px] text-amber-700"><b>Activities:</b> {Array.isArray(subContextData.yesterdayDetails.activities) ? subContextData.yesterdayDetails.activities.join(', ') : subContextData.yesterdayDetails.activities}</p>
+                        )}
+                        {subContextData.yesterdayDetails.homework && (
+                          <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {subContextData.yesterdayDetails.homework}</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Today's Coverage Plan */}
+                {subContextData.todayCoveragePlan && (
+                  <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <p className="text-xs font-semibold text-emerald-800 flex items-center gap-1.5 mb-1.5">
+                      <Target className="w-4 h-4" /> What to Cover Today
+                    </p>
+                    <p className="text-sm text-emerald-900 font-medium">{subContextData.todayCoveragePlan}</p>
+                  </div>
+                )}
+
+                {/* Teaching Instructions */}
+                {subContextData.teachingInstructions && (
+                  <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                    <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5 mb-1.5">
+                      <ListChecks className="w-4 h-4" /> Step-by-Step Teaching Instructions
+                    </p>
+                    <div className="space-y-1.5">
+                      {(Array.isArray(subContextData.teachingInstructions) ? subContextData.teachingInstructions : [subContextData.teachingInstructions]).map((step: string, i: number) => (
+                        <div key={i} className="flex items-start gap-2 text-[11px] text-blue-800">
+                          <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-[9px] font-bold shrink-0">{i + 1}</span>
+                          <span>{step}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Student Expectations */}
+                {subContextData.studentExpectations && (
+                  <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
+                    <p className="text-xs font-semibold text-purple-800 flex items-center gap-1.5 mb-1.5">
+                      <GraduationCap className="w-4 h-4" /> Student Expectations
+                    </p>
+                    <p className="text-[11px] text-purple-800">{subContextData.studentExpectations}</p>
+                  </div>
+                )}
+
+                {/* Assessment Idea */}
+                {subContextData.assessmentIdea && (
+                  <div className="p-3 bg-teal-50 rounded-lg border border-teal-200">
+                    <p className="text-xs font-semibold text-teal-800 flex items-center gap-1.5 mb-1.5">
+                      <Lightbulb className="w-4 h-4" /> Quick Assessment Idea
+                    </p>
+                    <p className="text-[11px] text-teal-800">{subContextData.assessmentIdea}</p>
+                  </div>
+                )}
+
+                {/* Materials Needed */}
+                {subContextData.materialsNeeded && (
+                  <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
+                    <p className="text-xs font-semibold text-orange-800 flex items-center gap-1.5 mb-1.5">
+                      <BookMarked className="w-4 h-4" /> Materials Needed
+                    </p>
+                    <p className="text-[11px] text-orange-800">
+                      {Array.isArray(subContextData.materialsNeeded) ? subContextData.materialsNeeded.join(', ') : subContextData.materialsNeeded}
+                    </p>
+                  </div>
                 )}
               </div>
             )}
@@ -3223,6 +3422,41 @@ function TeachersSection({
   const [subjectFilter, setSubjectFilter] = useState<string>('all');
   const [gradeFilter, setGradeFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [addTeacherOpen, setAddTeacherOpen] = useState(false);
+  const [addingTeacher, setAddingTeacher] = useState(false);
+  const [newTeacher, setNewTeacher] = useState({
+    name: '', email: '', phone: '', subject: '', grades: [] as string[], password: 'teacher123',
+    qualification: '', experience: '', specialization: '', dateOfJoining: '', address: '', emergencyContact: '', bloodGroup: '', gender: '',
+  });
+  const { toast } = useToast();
+
+  const handleAddTeacher = async () => {
+    if (!newTeacher.name || !newTeacher.email || !newTeacher.subject || newTeacher.grades.length === 0) {
+      toast({ title: 'Missing Fields', description: 'Name, email, subject, and grades are required', variant: 'destructive' });
+      return;
+    }
+    setAddingTeacher(true);
+    try {
+      const res = await fetch('/api/teachers/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTeacher),
+      });
+      if (res.ok) {
+        toast({ title: 'Teacher Added', description: `${newTeacher.name} has been added successfully` });
+        setAddTeacherOpen(false);
+        setNewTeacher({ name: '', email: '', phone: '', subject: '', grades: [], password: 'teacher123', qualification: '', experience: '', specialization: '', dateOfJoining: '', address: '', emergencyContact: '', bloodGroup: '', gender: '' });
+        onRefresh();
+      } else {
+        const data = await res.json();
+        toast({ title: 'Failed to Add Teacher', description: data.error || 'Unknown error', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Failed to add teacher', variant: 'destructive' });
+    } finally {
+      setAddingTeacher(false);
+    }
+  };
 
   const getTeacherWeeklySchedule = (teacher: Teacher) => {
     // Use the schedules embedded in the teacher object from the API (includes ALL days)
@@ -3258,9 +3492,14 @@ function TeachersSection({
           <h2 className="text-2xl font-bold text-emerald-800">Teachers</h2>
           <p className="text-sm text-muted-foreground">View teacher profiles and schedules</p>
         </div>
-        <Button onClick={onRefresh} variant="outline" size="sm">
-          <RefreshCw className="w-4 h-4 mr-2" /> Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={onRefresh} variant="outline" size="sm">
+            <RefreshCw className="w-4 h-4 mr-2" /> Refresh
+          </Button>
+          <Button onClick={() => setAddTeacherOpen(true)} size="sm" className="bg-emerald-600 hover:bg-emerald-700">
+            <UserPlus className="w-4 h-4 mr-2" /> Add Teacher
+          </Button>
+        </div>
       </div>
 
       {/* Filter Row */}
@@ -3433,6 +3672,145 @@ function TeachersSection({
                 </div>
               </div>
             )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add New Teacher Dialog */}
+      <Dialog open={addTeacherOpen} onOpenChange={setAddTeacherOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] p-0">
+          <DialogHeader className="p-6 pb-0">
+            <DialogTitle className="flex items-center gap-2 text-emerald-800">
+              <UserPlus className="w-5 h-5" /> Add New Teacher
+            </DialogTitle>
+            <DialogDescription>Enter the teacher's information to add them to the system</DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="max-h-[75vh] px-6">
+            <div className="space-y-4 pb-6">
+              {/* Personal Information */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><User className="w-4 h-4" /> Personal Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Full Name *</Label>
+                    <Input value={newTeacher.name} onChange={e => setNewTeacher({...newTeacher, name: e.target.value})} placeholder="Dr. Sarah Johnson" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Gender</Label>
+                    <Select value={newTeacher.gender} onValueChange={v => setNewTeacher({...newTeacher, gender: v})}>
+                      <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Male">Male</SelectItem>
+                        <SelectItem value="Female">Female</SelectItem>
+                        <SelectItem value="Other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Email Address *</Label>
+                    <Input type="email" value={newTeacher.email} onChange={e => setNewTeacher({...newTeacher, email: e.target.value})} placeholder="sarah.johnson@school.edu" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Phone Number</Label>
+                    <Input value={newTeacher.phone} onChange={e => setNewTeacher({...newTeacher, phone: e.target.value})} placeholder="+91 98765 43210" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Blood Group</Label>
+                    <Select value={newTeacher.bloodGroup} onValueChange={v => setNewTeacher({...newTeacher, bloodGroup: v})}>
+                      <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
+                      <SelectContent>
+                        {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => <SelectItem key={bg} value={bg}>{bg}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Emergency Contact</Label>
+                    <Input value={newTeacher.emergencyContact} onChange={e => setNewTeacher({...newTeacher, emergencyContact: e.target.value})} placeholder="+91 98765 43210" />
+                  </div>
+                </div>
+                <div className="space-y-1.5 mt-3">
+                  <Label className="text-xs">Address</Label>
+                  <Input value={newTeacher.address} onChange={e => setNewTeacher({...newTeacher, address: e.target.value})} placeholder="Full residential address" />
+                </div>
+              </div>
+              <Separator />
+              {/* Professional Information */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><GraduationCap className="w-4 h-4" /> Professional Information</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Subject Specialization *</Label>
+                    <Select value={newTeacher.subject} onValueChange={v => setNewTeacher({...newTeacher, subject: v})}>
+                      <SelectTrigger><SelectValue placeholder="Select Subject" /></SelectTrigger>
+                      <SelectContent>
+                        {['Mathematics', 'Physics', 'Chemistry', 'Biology', 'English', 'Hindi', 'Sanskrit', 'History', 'Geography', 'Civics', 'Social Science', 'Science', 'Computer Science', 'Economics', 'Environmental Science', 'Physical Education', 'Art', 'Music', 'EVS'].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Qualification</Label>
+                    <Input value={newTeacher.qualification} onChange={e => setNewTeacher({...newTeacher, qualification: e.target.value})} placeholder="M.Ed, B.Ed, Ph.D" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Years of Experience</Label>
+                    <Input value={newTeacher.experience} onChange={e => setNewTeacher({...newTeacher, experience: e.target.value})} placeholder="5 years" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Additional Specialization</Label>
+                    <Input value={newTeacher.specialization} onChange={e => setNewTeacher({...newTeacher, specialization: e.target.value})} placeholder="Curriculum Design, Special Education" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Date of Joining</Label>
+                    <Input type="date" value={newTeacher.dateOfJoining} onChange={e => setNewTeacher({...newTeacher, dateOfJoining: e.target.value})} />
+                  </div>
+                </div>
+              </div>
+              <Separator />
+              {/* Grade Assignment */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><BookOpen className="w-4 h-4" /> Grade Assignment</h4>
+                <p className="text-[10px] text-muted-foreground mb-2">Select the grades this teacher will teach *</p>
+                <div className="flex flex-wrap gap-2">
+                  {Array.from({length: 12}, (_, i) => `Grade ${i + 1}`).map(grade => {
+                    const isSelected = newTeacher.grades.includes(grade);
+                    return (
+                      <button key={grade} type="button" onClick={() => {
+                        setNewTeacher({
+                          ...newTeacher,
+                          grades: isSelected ? newTeacher.grades.filter(g => g !== grade) : [...newTeacher.grades, grade]
+                        });
+                      }} className={`px-3 py-1.5 text-xs rounded-lg border transition-all ${isSelected ? 'bg-emerald-100 border-emerald-300 text-emerald-700 font-medium' : 'bg-gray-50 border-gray-200 text-gray-500 hover:border-emerald-300'}`}>
+                        {grade}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <Separator />
+              {/* Login Credentials */}
+              <div>
+                <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2"><Lock className="w-4 h-4" /> Login Credentials</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Email (Auto-filled)</Label>
+                    <Input value={newTeacher.email} disabled className="bg-gray-50" />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs">Default Password</Label>
+                    <Input value={newTeacher.password} onChange={e => setNewTeacher({...newTeacher, password: e.target.value})} />
+                  </div>
+                </div>
+                <p className="text-[10px] text-muted-foreground mt-2">Teacher will use their email and this password to log in. They can change it later.</p>
+              </div>
+              {/* Submit */}
+              <div className="flex items-center gap-3 pt-2">
+                <Button onClick={handleAddTeacher} disabled={addingTeacher} className="flex-1 bg-emerald-600 hover:bg-emerald-700">
+                  {addingTeacher ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <UserPlus className="w-4 h-4 mr-2" />}
+                  {addingTeacher ? 'Adding Teacher...' : 'Add Teacher'}
+                </Button>
+                <Button variant="outline" onClick={() => setAddTeacherOpen(false)} disabled={addingTeacher}>Cancel</Button>
+              </div>
+            </div>
           </ScrollArea>
         </DialogContent>
       </Dialog>
