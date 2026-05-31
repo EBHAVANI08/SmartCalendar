@@ -2411,7 +2411,18 @@ function SubstitutionsSection({
   const [subContextPopupOpen, setSubContextPopupOpen] = useState(false);
   const [subContextData, setSubContextData] = useState<any>(null);
   const [generatingSubContext, setGeneratingSubContext] = useState(false);
+  const [subContextError, setSubContextError] = useState<string | null>(null);
   const { toast } = useToast();
+
+  // Keep selectedSub in sync when substitutions array updates (e.g. after onRefresh)
+  useEffect(() => {
+    if (selectedSub) {
+      const updated = substitutions.find(s => s.id === selectedSub.id);
+      if (updated && updated !== selectedSub) {
+        setSelectedSub(updated);
+      }
+    }
+  }, [substitutions, selectedSub]);
 
   const filteredSubs = substitutions.filter((sub) => {
     if (statusFilter !== 'all' && sub.status !== statusFilter) return false;
@@ -2834,17 +2845,19 @@ function SubstitutionsSection({
                     <Button
                       onClick={async () => {
                         if (!selectedSub) return;
+                        setSubContextError(null);
                         // If context already exists and is valid, just show it
                         if (selectedSub.subContext && selectedSub.subContext !== 'null') {
                           try {
                             const ctx = typeof selectedSub.subContext === 'string' ? JSON.parse(selectedSub.subContext) : selectedSub.subContext;
-                            if (ctx && typeof ctx === 'object') {
+                            if (ctx && typeof ctx === 'object' && !Array.isArray(ctx)) {
                               setSubContextData(ctx);
                               setSubContextPopupOpen(true);
                               return;
                             }
-                          } catch {
-                            // Failed to parse, regenerate
+                          } catch (parseErr) {
+                            console.error('Failed to parse existing subContext, regenerating...', parseErr);
+                            // Failed to parse, regenerate below
                           }
                         }
                         // Generate new context
@@ -2857,9 +2870,16 @@ function SubstitutionsSection({
                           });
                           if (res.ok) {
                             const data = await res.json();
-                            setSubContextData(data.context || data);
-                            setSubContextPopupOpen(true);
-                            toast({ title: 'AI Context Generated', description: 'Comprehensive substitute teaching guidance is ready' });
+                            const contextData = data.context || data;
+                            // Validate the context data before setting it
+                            if (contextData && typeof contextData === 'object') {
+                              setSubContextData(contextData);
+                              setSubContextPopupOpen(true);
+                              toast({ title: 'AI Context Generated', description: 'Comprehensive substitute teaching guidance is ready' });
+                            } else {
+                              setSubContextError('AI returned invalid context data. Please try again.');
+                              toast({ title: 'Invalid Data', description: 'AI returned unexpected data format. Please try regenerating.', variant: 'destructive' });
+                            }
                             onRefresh();
                           } else {
                             let errorMsg = 'Failed to generate context';
@@ -2869,10 +2889,12 @@ function SubstitutionsSection({
                             } catch {
                               errorMsg = `Server error (${res.status})`;
                             }
+                            setSubContextError(errorMsg);
                             toast({ title: 'Generation Failed', description: errorMsg, variant: 'destructive' });
                           }
                         } catch (fetchError) {
                           console.error('Generate sub context fetch error:', fetchError);
+                          setSubContextError('Failed to connect to server');
                           toast({ title: 'Error', description: 'Failed to connect to server. Please try again.', variant: 'destructive' });
                         } finally {
                           setGeneratingSubContext(false);
@@ -2885,21 +2907,28 @@ function SubstitutionsSection({
                       {generatingSubContext ? <RefreshCw className="w-4 h-4 mr-2 animate-spin" /> : <Brain className="w-4 h-4 mr-2" />}
                       {generatingSubContext ? 'Generating AI Context...' : (selectedSub.subContext && selectedSub.subContext !== 'null') ? 'View AI Substitute Context' : 'Generate AI Substitute Context'}
                     </Button>
+                    {subContextError && (
+                      <p className="text-[10px] text-red-600 px-1">{subContextError}</p>
+                    )}
                     {selectedSub.subContext && selectedSub.subContext !== 'null' && !generatingSubContext && (
                       <Button
                         variant="outline"
                         className="w-full border-blue-300 hover:bg-blue-50 hover:text-blue-700"
                         size="sm"
                         onClick={() => {
+                          setSubContextError(null);
                           try {
                             const ctx = typeof selectedSub.subContext === 'string' ? JSON.parse(selectedSub.subContext) : selectedSub.subContext;
-                            if (ctx && typeof ctx === 'object') {
+                            if (ctx && typeof ctx === 'object' && !Array.isArray(ctx)) {
                               setSubContextData(ctx);
                               setSubContextPopupOpen(true);
                             } else {
+                              setSubContextError('Invalid context data format');
                               toast({ title: 'No Context', description: 'Generate AI Substitute Context first', variant: 'destructive' });
                             }
-                          } catch {
+                          } catch (err) {
+                            console.error('View subContext parse error:', err);
+                            setSubContextError('Could not parse context data');
                             toast({ title: 'Error', description: 'Could not parse context data. Try regenerating.', variant: 'destructive' });
                           }
                         }}
@@ -3311,7 +3340,10 @@ function SubstitutionsSection({
       </Dialog>
 
       {/* AI Substitute Context Popup */}
-      <Dialog open={subContextPopupOpen} onOpenChange={setSubContextPopupOpen}>
+      <Dialog open={subContextPopupOpen} onOpenChange={(open) => {
+        setSubContextPopupOpen(open);
+        if (!open) setSubContextError(null);
+      }}>
         <DialogContent className="max-w-2xl max-h-[90vh] p-0">
           <DialogHeader className="p-6 pb-0">
             <DialogTitle className="flex items-center gap-2 text-blue-800">
@@ -3322,66 +3354,94 @@ function SubstitutionsSection({
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="max-h-[75vh] px-6">
-            {subContextData && (() => {
+            {subContextData && typeof subContextData === 'object' && !Array.isArray(subContextData) ? (() => {
               // Safely render any value as text (handles objects, arrays, null, undefined)
               const safeText = (val: unknown): string => {
-                if (val === null || val === undefined) return '';
-                if (typeof val === 'string') return val;
-                if (typeof val === 'number' || typeof val === 'boolean') return String(val);
-                if (Array.isArray(val)) return val.map(v => safeText(v)).join(', ');
-                if (typeof val === 'object') {
-                  // For todayCoveragePlan-like objects with topic/objectives/keyPoints
-                  const obj = val as Record<string, unknown>;
-                  if (obj.topic) {
-                    const parts: string[] = [safeText(obj.topic)];
-                    if (obj.objectives && Array.isArray(obj.objectives)) {
-                      parts.push('Objectives: ' + (obj.objectives as unknown[]).map(v => safeText(v)).join('; '));
+                try {
+                  if (val === null || val === undefined) return '';
+                  if (typeof val === 'string') return val;
+                  if (typeof val === 'number' || typeof val === 'boolean') return String(val);
+                  if (Array.isArray(val)) return val.map(v => safeText(v)).join(', ');
+                  if (typeof val === 'object') {
+                    const obj = val as Record<string, unknown>;
+                    if (obj.topic) {
+                      const parts: string[] = [safeText(obj.topic)];
+                      if (obj.objectives && Array.isArray(obj.objectives)) {
+                        parts.push('Objectives: ' + (obj.objectives as unknown[]).map(v => safeText(v)).join('; '));
+                      }
+                      if (obj.keyPoints && Array.isArray(obj.keyPoints)) {
+                        parts.push('Key Points: ' + (obj.keyPoints as unknown[]).map(v => safeText(v)).join('; '));
+                      }
+                      return parts.join('. ');
                     }
-                    if (obj.keyPoints && Array.isArray(obj.keyPoints)) {
-                      parts.push('Key Points: ' + (obj.keyPoints as unknown[]).map(v => safeText(v)).join('; '));
-                    }
-                    return parts.join('. ');
+                    return JSON.stringify(val);
                   }
-                  return JSON.stringify(val);
+                  return String(val);
+                } catch {
+                  return '';
                 }
-                return String(val);
+              };
+
+              // Safely get a nested property without throwing
+              const getNested = (obj: Record<string, unknown>, ...path: string[]): unknown => {
+                try {
+                  let current: unknown = obj;
+                  for (const key of path) {
+                    if (current === null || current === undefined || typeof current !== 'object') return undefined;
+                    current = (current as Record<string, unknown>)[key];
+                  }
+                  return current;
+                } catch {
+                  return undefined;
+                }
               };
 
               // Safely render todayCoveragePlan section
               const renderTodayCoveragePlan = (val: unknown) => {
                 if (!val) return null;
-                if (typeof val === 'string') {
-                  return <p className="text-sm text-emerald-900 font-medium">{val}</p>;
+                try {
+                  if (typeof val === 'string') {
+                    return <p className="text-sm text-emerald-900 font-medium">{val}</p>;
+                  }
+                  if (typeof val === 'object' && val !== null) {
+                    const obj = val as Record<string, unknown>;
+                    return (
+                      <div className="space-y-1.5">
+                        {obj.topic && <p className="text-sm text-emerald-900 font-medium">{safeText(obj.topic)}</p>}
+                        {obj.objectives && Array.isArray(obj.objectives) && obj.objectives.length > 0 && (
+                          <div>
+                            <p className="text-[11px] text-emerald-700 font-semibold">Learning Objectives:</p>
+                            <ul className="text-[11px] text-emerald-700 list-disc ml-4">
+                              {(obj.objectives as unknown[]).map((o, i) => <li key={i}>{safeText(o)}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {obj.keyPoints && Array.isArray(obj.keyPoints) && obj.keyPoints.length > 0 && (
+                          <div>
+                            <p className="text-[11px] text-emerald-700 font-semibold">Key Points to Cover:</p>
+                            <ul className="text-[11px] text-emerald-700 list-disc ml-4">
+                              {(obj.keyPoints as unknown[]).map((k, i) => <li key={i}>{safeText(k)}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {!obj.topic && !obj.objectives && !obj.keyPoints && (
+                          <p className="text-sm text-emerald-900 font-medium">{safeText(val)}</p>
+                        )}
+                      </div>
+                    );
+                  }
+                  return <p className="text-sm text-emerald-900 font-medium">{safeText(val)}</p>;
+                } catch {
+                  return <p className="text-sm text-emerald-900 font-medium">{safeText(val)}</p>;
                 }
-                if (typeof val === 'object' && val !== null) {
-                  const obj = val as Record<string, unknown>;
-                  return (
-                    <div className="space-y-1.5">
-                      {obj.topic && <p className="text-sm text-emerald-900 font-medium">{safeText(obj.topic)}</p>}
-                      {obj.objectives && Array.isArray(obj.objectives) && obj.objectives.length > 0 && (
-                        <div>
-                          <p className="text-[11px] text-emerald-700 font-semibold">Learning Objectives:</p>
-                          <ul className="text-[11px] text-emerald-700 list-disc ml-4">
-                            {(obj.objectives as unknown[]).map((o, i) => <li key={i}>{safeText(o)}</li>)}
-                          </ul>
-                        </div>
-                      )}
-                      {obj.keyPoints && Array.isArray(obj.keyPoints) && obj.keyPoints.length > 0 && (
-                        <div>
-                          <p className="text-[11px] text-emerald-700 font-semibold">Key Points to Cover:</p>
-                          <ul className="text-[11px] text-emerald-700 list-disc ml-4">
-                            {(obj.keyPoints as unknown[]).map((k, i) => <li key={i}>{safeText(k)}</li>)}
-                          </ul>
-                        </div>
-                      )}
-                      {!obj.topic && !obj.objectives && !obj.keyPoints && (
-                        <p className="text-sm text-emerald-900 font-medium">{safeText(val)}</p>
-                      )}
-                    </div>
-                  );
-                }
-                return <p className="text-sm text-emerald-900 font-medium">{safeText(val)}</p>;
               };
+
+              // Safely access subContextData properties
+              const data = subContextData as Record<string, unknown>;
+              const absentTeacher = (typeof data.absentTeacher === 'object' && data.absentTeacher !== null) ? data.absentTeacher as Record<string, unknown> : null;
+              const yesterdayDetails = (typeof data.yesterdayDetails === 'object' && data.yesterdayDetails !== null && !Array.isArray(data.yesterdayDetails)) ? data.yesterdayDetails as Record<string, unknown> : null;
+              const teachingInstructions = data.teachingInstructions;
+              const materialsNeeded = data.materialsNeeded;
 
               return (
               <div className="space-y-4 pb-6">
@@ -3389,42 +3449,42 @@ function SubstitutionsSection({
                 <div className="grid grid-cols-4 gap-2">
                   <div className="p-2 bg-blue-50 rounded-lg border border-blue-100 text-center">
                     <p className="text-[9px] text-blue-600">Subject</p>
-                    <p className="text-xs font-semibold text-blue-800">{selectedSub?.subject}</p>
+                    <p className="text-xs font-semibold text-blue-800">{selectedSub?.subject || safeText(data.substitution && typeof data.substitution === 'object' ? (data.substitution as Record<string, unknown>).subject : '') || 'N/A'}</p>
                   </div>
                   <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-100 text-center">
                     <p className="text-[9px] text-emerald-600">Grade & Section</p>
-                    <p className="text-xs font-semibold text-emerald-800">{selectedSub?.grade} {selectedSub?.section}</p>
+                    <p className="text-xs font-semibold text-emerald-800">{selectedSub?.grade || ''} {selectedSub?.section || ''}</p>
                   </div>
                   <div className="p-2 bg-purple-50 rounded-lg border border-purple-100 text-center">
                     <p className="text-[9px] text-purple-600">Period</p>
-                    <p className="text-xs font-semibold text-purple-800">P{selectedSub?.period}</p>
+                    <p className="text-xs font-semibold text-purple-800">{selectedSub?.period ? `P${selectedSub.period}` : 'N/A'}</p>
                   </div>
                   <div className="p-2 bg-rose-50 rounded-lg border border-rose-100 text-center">
                     <p className="text-[9px] text-rose-600">Absent Teacher</p>
-                    <p className="text-xs font-semibold text-rose-800">{subContextData.absentTeacher?.name || selectedSub?.absentTeacherId || 'N/A'}</p>
+                    <p className="text-xs font-semibold text-rose-800">{safeText(absentTeacher?.name) || selectedSub?.absentTeacherId || 'N/A'}</p>
                   </div>
                 </div>
 
                 {/* Yesterday's Topic */}
-                {subContextData.yesterdayTopic && (
+                {data.yesterdayTopic && (
                   <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5 mb-1.5">
                       <BookOpen className="w-4 h-4" /> What Was Taught Yesterday
                     </p>
-                    <p className="text-sm text-amber-900 font-medium">{safeText(subContextData.yesterdayTopic)}</p>
-                    {subContextData.yesterdayDetails && (
+                    <p className="text-sm text-amber-900 font-medium">{safeText(data.yesterdayTopic)}</p>
+                    {yesterdayDetails && (
                       <div className="mt-2 space-y-1">
-                        {subContextData.yesterdayDetails.keyConcepts && (
-                          <p className="text-[11px] text-amber-700"><b>Key Concepts:</b> {safeText(subContextData.yesterdayDetails.keyConcepts)}</p>
+                        {yesterdayDetails.keyConcepts && (
+                          <p className="text-[11px] text-amber-700"><b>Key Concepts:</b> {safeText(yesterdayDetails.keyConcepts)}</p>
                         )}
-                        {subContextData.yesterdayDetails.activities && (
-                          <p className="text-[11px] text-amber-700"><b>Activities:</b> {safeText(subContextData.yesterdayDetails.activities)}</p>
+                        {yesterdayDetails.activities && (
+                          <p className="text-[11px] text-amber-700"><b>Activities:</b> {safeText(yesterdayDetails.activities)}</p>
                         )}
-                        {subContextData.yesterdayDetails.homework && (
-                          <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(subContextData.yesterdayDetails.homework)}</p>
+                        {yesterdayDetails.homework && (
+                          <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(yesterdayDetails.homework)}</p>
                         )}
-                        {subContextData.yesterdayDetails.homeworkAssigned && (
-                          <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(subContextData.yesterdayDetails.homeworkAssigned)}</p>
+                        {yesterdayDetails.homeworkAssigned && (
+                          <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(yesterdayDetails.homeworkAssigned)}</p>
                         )}
                       </div>
                     )}
@@ -3432,23 +3492,23 @@ function SubstitutionsSection({
                 )}
 
                 {/* Today's Coverage Plan */}
-                {subContextData.todayCoveragePlan && (
+                {data.todayCoveragePlan && (
                   <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
                     <p className="text-xs font-semibold text-emerald-800 flex items-center gap-1.5 mb-1.5">
                       <Target className="w-4 h-4" /> What to Cover Today
                     </p>
-                    {renderTodayCoveragePlan(subContextData.todayCoveragePlan)}
+                    {renderTodayCoveragePlan(data.todayCoveragePlan)}
                   </div>
                 )}
 
                 {/* Teaching Instructions */}
-                {subContextData.teachingInstructions && (
+                {teachingInstructions && (
                   <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                     <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5 mb-1.5">
                       <ListChecks className="w-4 h-4" /> Step-by-Step Teaching Instructions
                     </p>
                     <div className="space-y-1.5">
-                      {(Array.isArray(subContextData.teachingInstructions) ? subContextData.teachingInstructions : [subContextData.teachingInstructions]).map((step: unknown, i: number) => (
+                      {(Array.isArray(teachingInstructions) ? teachingInstructions : [teachingInstructions]).map((step: unknown, i: number) => (
                         <div key={i} className="flex items-start gap-2 text-[11px] text-blue-800">
                           <span className="bg-blue-200 text-blue-800 rounded-full w-5 h-5 flex items-center justify-center text-[9px] font-bold shrink-0">{i + 1}</span>
                           <span>{safeText(step)}</span>
@@ -3459,39 +3519,48 @@ function SubstitutionsSection({
                 )}
 
                 {/* Student Expectations */}
-                {subContextData.studentExpectations && (
+                {data.studentExpectations && (
                   <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
                     <p className="text-xs font-semibold text-purple-800 flex items-center gap-1.5 mb-1.5">
                       <GraduationCap className="w-4 h-4" /> Student Expectations
                     </p>
-                    <p className="text-[11px] text-purple-800">{safeText(subContextData.studentExpectations)}</p>
+                    <p className="text-[11px] text-purple-800">{safeText(data.studentExpectations)}</p>
                   </div>
                 )}
 
                 {/* Assessment Idea */}
-                {subContextData.assessmentIdea && (
+                {data.assessmentIdea && (
                   <div className="p-3 bg-teal-50 rounded-lg border border-teal-200">
                     <p className="text-xs font-semibold text-teal-800 flex items-center gap-1.5 mb-1.5">
                       <Lightbulb className="w-4 h-4" /> Quick Assessment Idea
                     </p>
-                    <p className="text-[11px] text-teal-800">{safeText(subContextData.assessmentIdea)}</p>
+                    <p className="text-[11px] text-teal-800">{safeText(data.assessmentIdea)}</p>
                   </div>
                 )}
 
                 {/* Materials Needed */}
-                {subContextData.materialsNeeded && (
+                {materialsNeeded && (
                   <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
                     <p className="text-xs font-semibold text-orange-800 flex items-center gap-1.5 mb-1.5">
                       <BookMarked className="w-4 h-4" /> Materials Needed
                     </p>
-                    <p className="text-[11px] text-orange-800">
-                      {safeText(subContextData.materialsNeeded)}
-                    </p>
+                    {Array.isArray(materialsNeeded) ? (
+                      <ul className="text-[11px] text-orange-800 list-disc ml-4">
+                        {materialsNeeded.map((item: unknown, i: number) => <li key={i}>{safeText(item)}</li>)}
+                      </ul>
+                    ) : (
+                      <p className="text-[11px] text-orange-800">{safeText(materialsNeeded)}</p>
+                    )}
                   </div>
                 )}
               </div>
               );
-            })()}
+            })() : (
+              <div className="p-6 text-center text-muted-foreground">
+                <AlertCircle className="w-8 h-8 mx-auto mb-2" />
+                <p className="text-sm">No context data available. Please generate AI Substitute Context first.</p>
+              </div>
+            )}
           </ScrollArea>
         </DialogContent>
       </Dialog>

@@ -56,22 +56,39 @@ async function callAIChat(messages: { role: string; content: string }[], maxToke
 // Enhanced to fetch yesterday's lesson plan and generate popup-ready context
 export async function POST(request: Request) {
   try {
-    const { substitutionId } = await request.json();
+    let body: { substitutionId?: string };
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+    }
 
-    if (!substitutionId) {
+    const { substitutionId } = body;
+
+    if (!substitutionId || typeof substitutionId !== 'string') {
       return NextResponse.json({ error: 'substitutionId is required' }, { status: 400 });
     }
 
-    const substitution = await db.substitution.findUnique({
-      where: { id: substitutionId },
-      include: {
-        absentTeacher: true,
-        substitute: true,
-      },
-    });
+    let substitution;
+    try {
+      substitution = await db.substitution.findUnique({
+        where: { id: substitutionId },
+        include: {
+          absentTeacher: true,
+          substitute: true,
+        },
+      });
+    } catch (dbErr) {
+      console.error('Database error finding substitution:', dbErr);
+      return NextResponse.json({ error: 'Database error while finding substitution' }, { status: 500 });
+    }
 
     if (!substitution) {
       return NextResponse.json({ error: 'Substitution not found' }, { status: 404 });
+    }
+
+    if (!substitution.absentTeacher) {
+      return NextResponse.json({ error: 'Absent teacher data not found for this substitution' }, { status: 404 });
     }
 
     // Get the absent teacher's full schedule for context
@@ -85,15 +102,21 @@ export async function POST(request: Request) {
     const yesterdayStr = yesterday.toISOString().split('T')[0];
 
     // Get absent teacher's schedule for today and yesterday
-    const teacherTodaySchedule = await db.schedule.findMany({
-      where: { teacherId: substitution.absentTeacherId, day: today },
-      orderBy: { period: 'asc' },
-    });
+    let teacherTodaySchedule: { period: number; grade: string; section: string; subject: string; topic: string | null; startTime: string; endTime: string }[] = [];
+    let teacherYesterdaySchedule: { period: number; grade: string; section: string; subject: string; topic: string | null; startTime: string; endTime: string }[] = [];
+    try {
+      teacherTodaySchedule = await db.schedule.findMany({
+        where: { teacherId: substitution.absentTeacherId, day: today },
+        orderBy: { period: 'asc' },
+      });
+    } catch { /* schedule query might fail */ }
 
-    const teacherYesterdaySchedule = await db.schedule.findMany({
-      where: { teacherId: substitution.absentTeacherId, day: yesterdayDay },
-      orderBy: { period: 'asc' },
-    });
+    try {
+      teacherYesterdaySchedule = await db.schedule.findMany({
+        where: { teacherId: substitution.absentTeacherId, day: yesterdayDay },
+        orderBy: { period: 'asc' },
+      });
+    } catch { /* schedule query might fail */ }
 
     // Find yesterday's specific period details — same grade, same subject, same period
     const yesterdayPeriod = teacherYesterdaySchedule.find(
