@@ -1,0 +1,216 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Teacher {
+  id                    String         @id @default(cuid())
+  name                  String
+  email                 String         @unique
+  password              String         @default("teacher123")
+  phone                 String?
+  subject               String
+  grades                String         @default("[]") // JSON array of grades like ["Grade 1","Grade 2"]
+  availability          String         @default("[]") // JSON array of available periods
+  role                  String         @default("teacher")
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+  schedules             Schedule[]
+  absentSubstitutions   Substitution[] @relation("AbsentTeacher")
+  substituteSubstitutions Substitution[] @relation("SubstituteTeacher")
+  lessonPlans           LessonPlan[]
+  notifications         TeacherNotification[]
+  biometricAttendance   BiometricAttendance[]
+  leaveApplications     LeaveApplication[]
+}
+
+model Student {
+  id        String   @id @default(cuid())
+  name      String
+  grade     String
+  section   String
+  rollNo    Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Schedule {
+  id        String   @id @default(cuid())
+  grade     String
+  section   String
+  day       String   // Monday, Tuesday, etc.
+  period    Int      // 1-8
+  subject   String
+  teacherId String?
+  topic     String?
+  roomId    String?
+  startTime String   // e.g., "08:00"
+  endTime   String   // e.g., "08:45"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  teacher   Teacher? @relation(fields: [teacherId], references: [id])
+
+  @@unique([grade, section, day, period])
+}
+
+model Substitution {
+  id              String   @id @default(cuid())
+  date            String
+  period          Int
+  absentTeacherId String
+  substituteId    String?
+  grade           String
+  section         String
+  subject         String
+  reason          String?
+  lessonDNA       String?  // JSON string with lesson DNA data
+  yesterdayTopic  String?  // What the absent teacher taught yesterday in this period
+  todayTopic      String?  // What should be taught today in this period
+  subContext      String?  // Full JSON context for substitute teacher
+  source          String   @default("manual") // manual, biometric, ai-agent
+  status          String   @default("pending") // pending, assigned, completed
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  absentTeacher   Teacher  @relation("AbsentTeacher", fields: [absentTeacherId], references: [id])
+  substitute      Teacher? @relation("SubstituteTeacher", fields: [substituteId], references: [id])
+}
+
+model BiometricAttendance {
+  id            String   @id @default(cuid())
+  date          String   // YYYY-MM-DD
+  teacherId     String
+  checkInTime   String?  // HH:MM timestamp
+  checkOutTime  String?  // HH:MM timestamp
+  status        String   @default("absent") // present, absent, late, half-day
+  deviceId      String?  // Biometric device identifier
+  syncSource    String   @default("biometric") // biometric, manual, api
+  syncedAt      DateTime @default(now())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  teacher       Teacher  @relation(fields: [teacherId], references: [id])
+
+  @@unique([date, teacherId])
+}
+
+model Admin {
+  id        String   @id @default(cuid())
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("admin")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Curriculum {
+  id          String   @id @default(cuid())
+  name        String   // IB, Cambridge, American, British, French, Australian, CBSE
+  board       String
+  grades      String   @default("[]") // JSON array
+  subjects    String   @default("[]") // JSON array
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model CurriculumTopic {
+  id                String   @id @default(cuid())
+  board             String   // CBSE, ICSE, IB, etc.
+  grade             String
+  subject           String
+  unit              String
+  chapter           String
+  topic             String
+  subtopics         String   @default("[]") // JSON array
+  estimatedPeriods  Int      @default(1)
+  sequenceOrder     Int      @default(0)
+  learningOutcomes  String   @default("[]") // JSON array
+  bloomLevel        String   @default("Remember") // Bloom's taxonomy
+  prerequisiteIds   String   @default("[]") // JSON array of topic IDs
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model LessonPlan {
+  id              String   @id @default(cuid())
+  teacherId       String?
+  grade           String
+  section         String?
+  subject         String
+  topic           String
+  board           String   @default("CBSE")
+  duration        Int      @default(40) // minutes
+  aiGenerated     Boolean  @default(true)
+  planContent     String   // Full JSON string of the lesson plan
+  objectives      String   @default("[]") // JSON array
+  warmUp          String?
+  mainContent     String?  // JSON string
+  differentiation String?  // JSON string
+  assessment      String?  // JSON string
+  resources       String   @default("[]") // JSON array
+  homework        String?
+  keyVocabulary   String   @default("[]") // JSON array
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  teacher         Teacher? @relation(fields: [teacherId], references: [id])
+}
+
+model CurriculumDocument {
+  id                String   @id @default(cuid())
+  board             String
+  grade             String
+  subject           String
+  academicYear      String   @default("2025-2026")
+  totalWeeks        Int      @default(40)
+  periodsPerWeek    Int      @default(5)
+  periodDuration    Int      @default(40)
+  termStructure     String   @default("2-semester")
+  medium            String   @default("English")
+  specialRequirements String  @default("")
+  // Full 7-section JSON output from CurriculumArchitect AI
+  sectionA          String   @default("{}") // Curriculum Overview
+  sectionB          String   @default("{}") // Annual Scope & Sequence
+  sectionC          String   @default("[]") // Unit-wise Detailed Breakdown
+  sectionD          String   @default("{}") // Assessment Framework
+  sectionE          String   @default("{}") // Resource & Material List
+  sectionF          String   @default("{}") // Pacing Calendar
+  sectionG          String   @default("{}") // Integration Layers
+  fullDocument      String   @default("{}") // Complete raw JSON
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model LeaveApplication {
+  id              String   @id @default(cuid())
+  teacherId       String
+  leaveType       String   // "sick", "personal", "casual", "maternity", "official_duty", "training", "family_emergency", "medical_appointment"
+  reason          String   // Detailed reason provided by teacher
+  startDate       String   // YYYY-MM-DD
+  endDate         String   // YYYY-MM-DD
+  status          String   @default("approved") // "pending", "approved", "rejected"
+  appliedAt       DateTime @default(now())
+  approvedBy      String?  // Admin who approved
+  teacherNotes    String?  // Additional notes from teacher
+  coveringInfo    String?  // JSON: info about what classes need coverage
+  isEmergency     Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  teacher         Teacher  @relation(fields: [teacherId], references: [id])
+}
+
+model TeacherNotification {
+  id              String   @id @default(cuid())
+  type            String   // "curriculum" or "lesson_plan"
+  referenceId     String   // ID of the curriculum topic or lesson plan
+  teacherId       String
+  sentBy          String   @default("manual") // "manual" or "ai"
+  title           String   // Display title
+  description     String?  // Optional description
+  isRead          Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  teacher         Teacher  @relation(fields: [teacherId], references: [id])
+}

@@ -1,0 +1,6 @@
+# Exclude from git archive (download)
+.zscripts export-ignore
+.gitattributes export-ignore
+.downloadignore export-ignore
+worklog.md export-ignore
+bun.lock export-ignore

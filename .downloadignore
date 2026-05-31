@@ -1,0 +1,9 @@
+node_modules
+.next
+.git
+upload/extracted
+upload/original-src
+skills
+examples
+*.map
+*.tsbuildinfo
