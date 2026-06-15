@@ -1,12 +1,12 @@
 /**
- * Lesson Pack Generator — Feature 2.2
+ * Lesson Pack Generator â€” Feature 2.2
  *
  * Auto-generates lesson continuity packs for substitute teachers.
- * Uses z-ai-web-dev-sdk to generate a 45-min lesson plan.
+ * Uses groq-sdk to generate a 45-min lesson plan.
  */
 
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import ZAI from '@/lib/ollama';
 
 interface LessonPackData {
   assignmentId: string;
@@ -182,7 +182,7 @@ async function getPreviousTopics(subjectId: string, sectionId: string, date: str
 }
 
 /**
- * Generate a lesson plan using z-ai-web-dev-sdk.
+ * Generate a lesson plan using groq-sdk.
  */
 async function generateLessonPlanAI(params: {
   subject: string;
@@ -231,7 +231,7 @@ function generateFallbackLessonPlan(subject: string, grade: string, previousTopi
     ? previousTopics.map((t, i) => `${i + 1}. ${t}`).join('\n')
     : 'No previous topics available. Start with a general review.';
 
-  return `# Lesson Plan: ${subject} — Grade ${grade}
+  return `# Lesson Plan: ${subject} â€” Grade ${grade}
 
 ## Today's Topic: ${todayTopic}
 
@@ -269,3 +269,4 @@ ${prevTopicsText}
 ---
 *This is an auto-generated plan. Adjust based on class dynamics.*`;
 }
+

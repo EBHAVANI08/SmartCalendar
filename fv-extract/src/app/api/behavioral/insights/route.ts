@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import ZAI from '@/lib/ollama';
 
 export async function GET(req: NextRequest) {
   try {
@@ -119,7 +119,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: mapped });
     }
 
-    // No insights exist — generate them on the fly
+    // No insights exist â€” generate them on the fly
     const studentCount = await db.student.count({ where: { sectionId } });
     const schedules = await db.schedule.findMany({
       where: { sectionId },
@@ -393,3 +393,4 @@ Focus on patterns that a SUBSTITUTE teacher would need to know. Include at least
     );
   }
 }
+

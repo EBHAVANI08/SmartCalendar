@@ -21,11 +21,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Substitution not found' }, { status: 404 });
     }
 
-    // Use z-ai-web-dev-sdk to generate lesson DNA
+    // Use groq-sdk to generate lesson DNA
     let ZAI: any;
     try {
-      const zaiModule = await import('z-ai-web-dev-sdk');
-      ZAI = zaiModule.default || zaiModule;
+      const ZAI = (await import('@/lib/ollama')).default;
     } catch {
       // Fallback if SDK not available
       const lessonDNA = {
@@ -119,3 +118,4 @@ Only return valid JSON, no markdown formatting.`,
     return NextResponse.json({ error: 'Failed to generate lesson DNA' }, { status: 500 });
   }
 }
+

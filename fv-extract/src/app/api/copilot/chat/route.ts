@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import ZAI from '@/lib/ollama';
 
 /**
  * POST /api/copilot/chat
  * Conversational AI Co-Pilot for school admins.
- * Uses z-ai-web-dev-sdk with tool-calling to answer questions about the school.
+ * Uses groq-sdk with tool-calling to answer questions about the school.
  * Streams responses via Server-Sent Events.
  *
  * Body: { messages: Array<{role, content}>, date?: string }
@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
   const { messages, date: dateParam } = await request.json();
   const today = dateParam || new Date().toISOString().split('T')[0];
 
-  // ── Tool Definitions ──
+  // â”€â”€ Tool Definitions â”€â”€
   const tools: any[] = [
     {
       type: 'function',
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
     },
   ];
 
-  // ── Tool Execution ──
+  // â”€â”€ Tool Execution â”€â”€
   async function executeTool(name: string, args: Record<string, any>): Promise<string> {
     try {
       switch (name) {
@@ -159,7 +159,7 @@ export async function POST(request: NextRequest) {
             .filter(s => !s.timeSlot.isBreak)
             .map(s => `${s.timeSlot.name} (${s.timeSlot.startTime}-${s.timeSlot.endTime}): ${s.subject.name} for Grade ${s.grade.name} Sec ${s.section.name}`)
             .join('\n');
-          return `Teacher: ${teacher.name} (${teacher.department || 'No dept'})${isAbsent ? ' — ⚠️ ABSENT (on approved leave)' : ''}\nSchedule for ${date}:\n${periods || 'No classes scheduled'}`;
+          return `Teacher: ${teacher.name} (${teacher.department || 'No dept'})${isAbsent ? ' â€” âš ï¸ ABSENT (on approved leave)' : ''}\nSchedule for ${date}:\n${periods || 'No classes scheduled'}`;
         }
 
         case 'getAbsencesForDate': {
@@ -198,7 +198,7 @@ export async function POST(request: NextRequest) {
             orderBy: { createdAt: 'desc' },
           });
           if (pending.length === 0) return 'No pending substitutions found.';
-          return pending.map(p => `${p.subject.name} — Gr ${p.schedule.grade.name} Sec ${p.schedule.section.name} ${p.schedule.timeSlot.name} (${p.schedule.timeSlot.startTime}-${p.schedule.timeSlot.endTime}) — Original: ${p.originalTeacher.name} — Date: ${p.date}`).join('\n');
+          return pending.map(p => `${p.subject.name} â€” Gr ${p.schedule.grade.name} Sec ${p.schedule.section.name} ${p.schedule.timeSlot.name} (${p.schedule.timeSlot.startTime}-${p.schedule.timeSlot.endTime}) â€” Original: ${p.originalTeacher.name} â€” Date: ${p.date}`).join('\n');
         }
 
         case 'getTeacherWorkload': {
@@ -257,7 +257,7 @@ export async function POST(request: NextRequest) {
             take: 15,
           });
           if (freeTeachers.length === 0) return `No free teachers found for ${timeSlotName} on ${fDate}.`;
-          return freeTeachers.map(t => `${t.name} (${t.department || 'No dept'}) — Teaches: ${t.teacherSubjects.map(ts => ts.subject.name).join(', ') || 'General'}`).join('\n');
+          return freeTeachers.map(t => `${t.name} (${t.department || 'No dept'}) â€” Teaches: ${t.teacherSubjects.map(ts => ts.subject.name).join(', ') || 'General'}`).join('\n');
         }
 
         case 'predictAbsences': {
@@ -265,7 +265,7 @@ export async function POST(request: NextRequest) {
           const { runPredictionEngine } = await import('@/lib/services/prediction-engine');
           const predictions = await runPredictionEngine(baseDate || today);
           if (predictions.length === 0) return 'No absence predictions found for upcoming days.';
-          return predictions.map(p => `${p.teacherName} (${p.department || 'No dept'}) — Risk: ${p.riskScore}/100 on ${p.predictedDate} — Signals: ${p.signalsList?.map((s: any) => s.description).join('; ') || 'Various'}`).join('\n');
+          return predictions.map(p => `${p.teacherName} (${p.department || 'No dept'}) â€” Risk: ${p.riskScore}/100 on ${p.predictedDate} â€” Signals: ${p.signalsList?.map((s: any) => s.description).join('; ') || 'Various'}`).join('\n');
         }
 
         case 'getInsights': {
@@ -301,7 +301,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // ── Main Chat Logic ──
+  // â”€â”€ Main Chat Logic â”€â”€
   try {
     const zai = await ZAI.create();
 
@@ -384,3 +384,4 @@ Rules:
     });
   }
 }
+

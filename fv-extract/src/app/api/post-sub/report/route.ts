@@ -1,6 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+﻿import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import ZAI from '@/lib/ollama';
 
 export async function GET(req: NextRequest) {
   try {
@@ -263,3 +263,4 @@ Generate JSON with these fields:
     );
   }
 }
+

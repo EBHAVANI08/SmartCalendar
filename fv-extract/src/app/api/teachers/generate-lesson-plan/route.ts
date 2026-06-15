@@ -35,11 +35,10 @@ export async function POST(request: Request) {
     const timeSlot = periodTimes[period] || { start: '08:00', end: '08:45' };
     const duration = period >= 6 ? '45 minutes' : '45 minutes';
 
-    // Use z-ai-web-dev-sdk to generate comprehensive lesson plan
+    // Use groq-sdk to generate comprehensive lesson plan
     let lessonPlan;
     try {
-      const zaiModule = await import('z-ai-web-dev-sdk');
-      const ZAI = zaiModule.default || zaiModule;
+      const ZAI = (await import('@/lib/ollama')).default;
       const zai = await ZAI.create();
 
       const result = await zai.chat.completions.create({
@@ -220,3 +219,4 @@ Return ONLY a JSON object with these exact fields:
     return NextResponse.json({ error: 'Failed to generate lesson plan' }, { status: 500 });
   }
 }
+

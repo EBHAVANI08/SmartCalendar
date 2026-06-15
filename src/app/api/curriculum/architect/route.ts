@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import ZAI from '@/lib/ollama';
+import { CBSE_CHAPTERS, ICSE_CHAPTERS, getBoardChapterContext } from '@/lib/curriculum-data';
 
 // CurriculumArchitect AI — Hybrid Generation Strategy
 // 1. Instantly generate a comprehensive board-specific fallback curriculum

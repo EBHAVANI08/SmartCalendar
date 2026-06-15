@@ -21,11 +21,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Substitution not found' }, { status: 404 });
     }
 
-    // Use z-ai-web-dev-sdk to generate lesson DNA
+    // Use Ollama to generate lesson DNA
     let ZAI: any;
     try {
-      const zaiModule = await import('z-ai-web-dev-sdk');
-      ZAI = zaiModule.default || zaiModule;
+      ZAI = (await import('@/lib/ollama')).default;
     } catch {
       // Fallback if SDK not available
       const lessonDNA = {

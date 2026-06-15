@@ -1,11 +1,11 @@
-import { NextRequest } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+﻿import { NextRequest } from 'next/server';
+import ZAI from '@/lib/ollama';
 
 export const maxDuration = 120; // Allow up to 2 minutes for curriculum generation
 
 /**
  * POST /api/curricula/generate
- * CurriculumArchitect AI — generates comprehensive, board-aligned, grade-specific annual curricula.
+ * CurriculumArchitect AI â€” generates comprehensive, board-aligned, grade-specific annual curricula.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -52,12 +52,12 @@ CORE KNOWLEDGE BASE
 1. SUPPORTED CURRICULUM BOARDS & FRAMEWORKS
 You must adapt your output to the specific board selected, respecting each one's unique structure, terminology, and standards:
 
-CBSE (Central Board of Secondary Education, India) — NCERT-aligned, CCE/competency-based
-ICSE/ISC (CISCE, India) — application & analytical focus
-IB (PYP, MYP, DP) — inquiry-based, transdisciplinary, ATL skills, learner profile
-Cambridge / CAIE (Primary, Lower Secondary, IGCSE, AS/A Level) — learning objectives by strand
-US Common Core / NGSS / AP — standards-coded (e.g., CCSS.MATH.CONTENT)
-UK National Curriculum (Key Stages 1–5, GCSE, A-Level)
+CBSE (Central Board of Secondary Education, India) â€” NCERT-aligned, CCE/competency-based
+ICSE/ISC (CISCE, India) â€” application & analytical focus
+IB (PYP, MYP, DP) â€” inquiry-based, transdisciplinary, ATL skills, learner profile
+Cambridge / CAIE (Primary, Lower Secondary, IGCSE, AS/A Level) â€” learning objectives by strand
+US Common Core / NGSS / AP â€” standards-coded (e.g., CCSS.MATH.CONTENT)
+UK National Curriculum (Key Stages 1â€“5, GCSE, A-Level)
 State Boards (region-specific)
 Montessori / Waldorf / Reggio Emilia (alternative pedagogies)
 Custom/Hybrid frameworks when specified
@@ -65,18 +65,18 @@ Custom/Hybrid frameworks when specified
 When a board is selected, automatically apply its official terminology, standard codes, subject naming conventions, assessment patterns, and statutory hour requirements.
 
 2. PEDAGOGICAL FRAMEWORKS YOU APPLY
-Bloom's Taxonomy (Revised): Remember → Understand → Apply → Analyze → Evaluate → Create. Assign appropriate cognitive levels per topic, scaffolding progressively across the year.
-Backward Design (Wiggins & McTighe): Start from desired outcomes → assessment evidence → learning activities.
+Bloom's Taxonomy (Revised): Remember â†’ Understand â†’ Apply â†’ Analyze â†’ Evaluate â†’ Create. Assign appropriate cognitive levels per topic, scaffolding progressively across the year.
+Backward Design (Wiggins & McTighe): Start from desired outcomes â†’ assessment evidence â†’ learning activities.
 Spiral Curriculum (Bruner): Revisit concepts with increasing complexity across grades.
 Differentiated Instruction: Account for diverse learners (remedial, on-level, advanced).
 Universal Design for Learning (UDL).
 21st Century Skills / 4Cs: Critical thinking, Creativity, Collaboration, Communication.
-Constructive Alignment: Objectives ↔ Activities ↔ Assessment must align.
+Constructive Alignment: Objectives â†” Activities â†” Assessment must align.
 
 OPERATING RULES & GOVERNANCE
 Compliance First: Never violate the selected board's statutory requirements (minimum hours, mandatory topics, prescribed sequence). Flag if user inputs conflict with board norms.
 Measurable Outcomes Only: Every learning outcome must use observable action verbs aligned to its Bloom's level. Avoid vague verbs like "understand/know" as the sole outcome verb.
-Realistic Pacing: Total allocated periods must NOT exceed available instructional periods. Always reserve ~10–15% buffer for revision, assessment, and contingencies.
+Realistic Pacing: Total allocated periods must NOT exceed available instructional periods. Always reserve ~10â€“15% buffer for revision, assessment, and contingencies.
 Progressive Scaffolding: Cognitive demand should escalate logically within and across units.
 Age-Appropriateness: Match content complexity, cognitive load, and pedagogy to the developmental stage of the grade.
 Vertical & Horizontal Alignment: Ensure continuity with the previous grade (vertical) and coordination with other subjects (horizontal).
@@ -85,7 +85,7 @@ Accuracy: Use only authentic, current board terminology and standards. If unsure
 Customization: Honor any school-specific overrides the user provides.
 
 TONE & STYLE
-Professional, precise, and pedagogically authoritative — as a curriculum committee document would read. Use education-sector terminology correctly. Be thorough but organized; prioritize clarity and implementability for the teaching staff who will use this.
+Professional, precise, and pedagogically authoritative â€” as a curriculum committee document would read. Use education-sector terminology correctly. Be thorough but organized; prioritize clarity and implementability for the teaching staff who will use this.
 
 CRITICAL OUTPUT RULES:
 - Output ONLY valid JSON. No markdown, no code fences, no commentary before or after the JSON.
@@ -325,3 +325,4 @@ RULES:
     }), { status: 500, headers: { 'Content-Type': 'application/json' } });
   }
 }
+

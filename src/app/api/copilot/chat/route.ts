@@ -1,11 +1,11 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import ZAI from '@/lib/ollama';
 
 /**
  * POST /api/copilot/chat
  * Conversational AI Co-Pilot for school admins.
- * Uses z-ai-web-dev-sdk with tool-calling to answer questions about the school.
+ * Uses groq-sdk with tool-calling to answer questions about the school.
  * Streams responses via Server-Sent Events.
  *
  * Body: { messages: Array<{role, content}>, date?: string }

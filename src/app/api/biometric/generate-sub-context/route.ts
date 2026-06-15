@@ -21,7 +21,7 @@ function loadAIConfig(): { baseUrl: string; apiKey: string; chatId?: string; tok
   return null;
 }
 
-// Call AI chat completions using native fetch (avoids z-ai-web-dev-sdk import that crashes Turbopack)
+// Call AI chat completions using native fetch (avoids groq-sdk import that crashes Turbopack)
 async function callAIChat(messages: { role: string; content: string }[], maxTokens: number = 4000) {
   const config = loadAIConfig();
   if (!config) throw new Error('AI config not found');

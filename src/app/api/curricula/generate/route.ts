@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import ZAI from 'z-ai-web-dev-sdk';
+import ZAI from '@/lib/ollama';
+import { getBoardChapterContext } from '@/lib/curriculum-data';
 
 export const maxDuration = 120; // Allow up to 2 minutes for curriculum generation
 
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest) {
 
     const totalPeriods = (totalWeeks || 40) * (periodsPerWeek || 5);
     const totalHours = totalPeriods * ((periodDuration || 45) / 60);
+
+    // Inject official board chapter data to anchor AI to the real syllabus
+    const chapterContext = getBoardChapterContext(board, grade, subject);
 
     const zai = await ZAI.create();
 
@@ -109,6 +113,9 @@ TOTAL AVAILABLE HOURS: ${totalHours.toFixed(1)}
 TERM STRUCTURE: ${termStructure || '2-semester'}
 MEDIUM OF INSTRUCTION: ${mediumOfInstruction || 'English'}
 ${specialRequirements ? `SPECIAL REQUIREMENTS: ${specialRequirements}` : ''}
+
+OFFICIAL SYLLABUS REFERENCE (use these exact chapter/topic names in the curriculum you generate):
+${chapterContext}
 
 Output valid JSON with this exact structure (no markdown, no code fences):
 

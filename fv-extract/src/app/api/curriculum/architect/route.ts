@@ -202,8 +202,7 @@ export async function POST(request: Request) {
     const bufferPeriods = Math.round(totalPeriodsAvailable * 0.12); // 12% buffer
     const teachingPeriods = totalPeriodsAvailable - bufferPeriods;
 
-    const zaiModule = await import('z-ai-web-dev-sdk');
-    const ZAI = zaiModule.default || zaiModule;
+    const ZAI = (await import('@/lib/ollama')).default;
     const zai = await ZAI.create();
 
     const result = await zai.chat.completions.create({
@@ -396,3 +395,4 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'Failed to fetch curriculum documents' }, { status: 500 });
   }
 }
+

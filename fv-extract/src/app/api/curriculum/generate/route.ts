@@ -69,8 +69,7 @@ export async function POST(request: Request) {
       const subjects = subjectMap[grade] || ['Mathematics', 'English', 'Science'];
 
       try {
-        const zaiModule = await import('z-ai-web-dev-sdk');
-        const ZAI = zaiModule.default || zaiModule;
+        const ZAI = (await import('@/lib/ollama')).default;
         const zai = await ZAI.create();
 
         const result = await zai.chat.completions.create({
@@ -198,3 +197,4 @@ Return ONLY a JSON object with this structure:
     return NextResponse.json({ error: 'Failed to generate curriculum' }, { status: 500 });
   }
 }
+

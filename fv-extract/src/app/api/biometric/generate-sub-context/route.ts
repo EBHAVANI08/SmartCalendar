@@ -1,4 +1,4 @@
-import { db } from '@/lib/db';
+﻿import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
 // Generate comprehensive substitute teacher context using AI
@@ -116,8 +116,7 @@ export async function POST(request: Request) {
     // Use AI to generate enhanced lesson DNA for the substitute
     let aiLessonDNA = null;
     try {
-      const zaiModule = await import('z-ai-web-dev-sdk');
-      const ZAI = zaiModule.default || zaiModule;
+      const ZAI = (await import('@/lib/ollama')).default;
       const zai = await ZAI.create();
 
       const result = await zai.chat.completions.create({
@@ -210,3 +209,4 @@ Only return valid JSON, no markdown.`,
     return NextResponse.json({ error: 'Failed to generate substitute context' }, { status: 500 });
   }
 }
+

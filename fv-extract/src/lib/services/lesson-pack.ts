@@ -2,11 +2,11 @@
  * Lesson Pack Generator — Feature 2.2
  *
  * Auto-generates lesson continuity packs for substitute teachers.
- * Uses z-ai-web-dev-sdk to generate a 45-min lesson plan.
+ * Uses groq-sdk to generate a 45-min lesson plan.
  */
 
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import ZAI from '@/lib/ollama';
 
 interface LessonPackData {
   assignmentId: string;
@@ -182,7 +182,7 @@ async function getPreviousTopics(subjectId: string, sectionId: string, date: str
 }
 
 /**
- * Generate a lesson plan using z-ai-web-dev-sdk.
+ * Generate a lesson plan using groq-sdk.
  */
 async function generateLessonPlanAI(params: {
   subject: string;
