@@ -1,101 +1,66 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
-    const timeSlotId = searchParams.get('timeSlotId');
-    const subjectId = searchParams.get('subjectId');
+    const period = searchParams.get('period');
+    const subject = searchParams.get('subject');
 
-    if (!date || !timeSlotId) {
-      return NextResponse.json({ success: false, error: 'date and timeSlotId required' }, { status: 400 });
+    if (!date || !period) {
+      return NextResponse.json({ success: false, error: 'date and period required' }, { status: 400 });
     }
-
-    const timeSlot = await db.timeSlot.findUnique({ where: { id: timeSlotId } });
-    if (!timeSlot) return NextResponse.json({ success: false, error: 'Time slot not found' }, { status: 404 });
 
     const dayOfWeek = new Date(date + 'T00:00:00').getDay();
     const scheduleDay = dayOfWeek >= 1 && dayOfWeek <= 5 ? dayOfWeek : 1;
+    const dayName = DAY_NAMES[scheduleDay];
+    const periodNum = parseInt(period);
+    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
-    let prioritizedCandidates: any[] = [];
+    const allTeachers = await db.teacher.findMany({ orderBy: { name: 'asc' } });
 
-    if (subjectId) {
-      const subjectTeachers = await db.teacherSubject.findMany({
-        where: { subjectId },
-        include: {
-          teacher: {
-            include: {
-              leaves: { where: { status: 'APPROVED', startDate: { lte: date }, endDate: { gte: date } } },
-              schedules: { where: { dayOfWeek: scheduleDay }, include: { timeSlot: true, subject: true, section: true, grade: true } },
-              substitutionsAsSubstitute: { where: { status: 'ACCEPTED', createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
-              teacherSubjects: { include: { subject: true } },
-            },
-          },
-          subject: true,
-        },
+    const prioritizedCandidates = await Promise.all(allTeachers.map(async (teacher) => {
+      const isOnLeave = await db.leaveApplication.count({
+        where: { teacherId: teacher.id, status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
+      }) > 0;
+
+      const scheduleConflict = await db.schedule.findFirst({
+        where: { teacherId: teacher.id, day: dayName, period: periodNum },
       });
-
-      for (const st of subjectTeachers) {
-        const teacher = st.teacher;
-        if (!teacher.isActive) continue;
-
-        const isOnLeave = teacher.leaves.length > 0;
-        const scheduleConflict = teacher.schedules.find((s: any) => s.timeSlotId === timeSlotId);
-        const available = !isOnLeave && !scheduleConflict;
-        const conflicts: string[] = [];
-        if (isOnLeave) conflicts.push('On approved leave');
-        if (scheduleConflict) conflicts.push(`Teaching ${scheduleConflict.subject.name}`);
-
-        let score = 50;
-        if (st.isPrimary) score += 30;
-        if (teacher.designation?.includes('HOD')) score += 15;
-        else if (teacher.designation?.includes('Senior')) score += 10;
-
-        prioritizedCandidates.push({
-          teacherId: teacher.id, teacherName: teacher.name, employeeId: teacher.employeeId,
-          department: teacher.department || '', designation: teacher.designation || '',
-          subjects: teacher.teacherSubjects.map((ts: any) => ts.subject.name),
-          isAvailable: available, conflicts, score, teachesSameSubject: true, isPrimary: st.isPrimary,
-          currentLoad: teacher.schedules.length, weeklySubCount: teacher.substitutionsAsSubstitute.length,
-        });
-      }
-    }
-
-    // Cross-subject teachers
-    const allActiveTeachers = await db.teacher.findMany({
-      where: { isActive: true },
-      include: {
-        leaves: { where: { status: 'APPROVED', startDate: { lte: date }, endDate: { gte: date } } },
-        schedules: { where: { dayOfWeek: scheduleDay }, include: { timeSlot: true, subject: true, section: true, grade: true } },
-        substitutionsAsSubstitute: { where: { status: 'ACCEPTED', createdAt: { gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) } } },
-        teacherSubjects: { include: { subject: true } },
-      },
-      orderBy: { name: 'asc' },
-    });
-
-    const seenIds = new Set(prioritizedCandidates.map(c => c.teacherId));
-    for (const teacher of allActiveTeachers) {
-      if (seenIds.has(teacher.id)) continue;
-
-      const isOnLeave = teacher.leaves.length > 0;
-      const scheduleConflict = teacher.schedules.find((s: any) => s.timeSlotId === timeSlotId);
       const available = !isOnLeave && !scheduleConflict;
       const conflicts: string[] = [];
       if (isOnLeave) conflicts.push('On approved leave');
-      if (scheduleConflict) conflicts.push(`Teaching ${scheduleConflict.subject.name}`);
+      if (scheduleConflict) conflicts.push(`Teaching ${scheduleConflict.subject}`);
 
-      let score = 10;
-      if (teacher.designation?.includes('HOD')) score += 10;
-
-      prioritizedCandidates.push({
-        teacherId: teacher.id, teacherName: teacher.name, employeeId: teacher.employeeId,
-        department: teacher.department || '', designation: teacher.designation || '',
-        subjects: teacher.teacherSubjects.map((ts: any) => ts.subject.name),
-        isAvailable: available, conflicts, score, teachesSameSubject: false, isPrimary: false,
-        currentLoad: teacher.schedules.length, weeklySubCount: teacher.substitutionsAsSubstitute.length,
+      const currentLoad = await db.schedule.count({ where: { teacherId: teacher.id, day: dayName } });
+      const weeklySubCount = await db.substitution.count({
+        where: { substituteId: teacher.id, status: { in: ['assigned', 'completed'] }, date: { gte: weekAgo } },
       });
-    }
+
+      const teachesSameSubject = !!subject && teacher.subject === subject;
+      let score = teachesSameSubject ? 50 : 10;
+      if (teachesSameSubject) {
+        const teacherGrades: string[] = JSON.parse(teacher.grades || '[]');
+        if (teacherGrades.length > 0) score += 30; // has defined grade coverage
+      }
+
+      return {
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        department: teacher.subject,
+        subjects: [teacher.subject],
+        isAvailable: available,
+        conflicts,
+        score,
+        teachesSameSubject,
+        isPrimary: teachesSameSubject,
+        currentLoad,
+        weeklySubCount,
+      };
+    }));
 
     prioritizedCandidates.sort((a, b) => {
       if (a.isAvailable !== b.isAvailable) return a.isAvailable ? -1 : 1;

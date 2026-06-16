@@ -6,22 +6,18 @@ export async function POST(req: NextRequest) {
     const { assignmentId, rejectionReason } = await req.json();
     if (!assignmentId) return NextResponse.json({ success: false, error: 'assignmentId required' }, { status: 400 });
 
-    await db.substitutionAssignment.update({
-      where: { id: assignmentId },
-      data: { status: 'REJECTED', rejectionReason: rejectionReason || 'Rejected' },
-    });
+    const substitution = await db.substitution.findUnique({ where: { id: assignmentId } });
+    if (!substitution) return NextResponse.json({ success: false, error: 'Assignment not found' }, { status: 404 });
 
-    const assignment = await db.substitutionAssignment.findUnique({
+    // Flat schema's Substitution has no rejectionReason field; fold it into reason for visibility
+    await db.substitution.update({
       where: { id: assignmentId },
-      include: { substitutionRequest: true },
+      data: {
+        substituteId: null,
+        status: 'pending',
+        reason: rejectionReason ? `${substitution.reason} (rejected: ${rejectionReason})` : substitution.reason,
+      },
     });
-
-    if (assignment) {
-      await db.substitutionRequest.update({
-        where: { id: assignment.substitutionRequestId },
-        data: { status: 'PENDING' },
-      });
-    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

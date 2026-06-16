@@ -2,163 +2,82 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import ZAI from '@/lib/ollama';
 
+/**
+ * POST /api/lesson-dna/generate
+ * Generates an AI lesson plan for a substitute teacher covering a specific
+ * Substitution, and saves it as a LessonPlan record.
+ * Body: { substitutionId: string }
+ */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { assignmentId } = body as { assignmentId: string };
+    const { substitutionId } = body as { substitutionId: string };
 
-    if (!assignmentId) {
-      return NextResponse.json(
-        { success: false, error: 'assignmentId is required' },
-        { status: 400 },
-      );
+    if (!substitutionId) {
+      return NextResponse.json({ success: false, error: 'substitutionId is required' }, { status: 400 });
     }
 
-    // Fetch the substitution assignment with full context
-    const assignment = await db.substitutionAssignment.findUnique({
-      where: { id: assignmentId },
-      include: {
-        substitutionRequest: {
-          include: {
-            schedule: {
-              include: {
-                subject: true,
-                section: {
-                  include: {
-                    grade: true,
-                    students: { select: { id: true, name: true, rollNo: true } },
-                  },
-                },
-                timeSlot: true,
-                teacher: true,
-              },
-            },
-            originalTeacher: true,
-          },
-        },
-        substituteTeacher: true,
-        lessonPack: true,
-      },
+    const substitution = await db.substitution.findUnique({
+      where: { id: substitutionId },
+      include: { absentTeacher: true, substitute: true },
     });
 
-    if (!assignment) {
-      return NextResponse.json(
-        { success: false, error: 'Substitution assignment not found' },
-        { status: 404 },
-      );
+    if (!substitution) {
+      return NextResponse.json({ success: false, error: 'Substitution not found' }, { status: 404 });
+    }
+    if (!substitution.substituteId) {
+      return NextResponse.json({ success: false, error: 'No substitute assigned yet' }, { status: 400 });
     }
 
-    const subReq = assignment.substitutionRequest;
-    const schedule = subReq.schedule;
-    const section = schedule.section;
-    const subject = schedule.subject;
-    const originalTeacher = subReq.originalTeacher;
-    const substituteTeacher = assignment.substituteTeacher;
-    const students = section.students;
-    const gradeLevel = section.grade.level;
+    const studentCount = await db.student.count({ where: { grade: substitution.grade, section: substitution.section } });
 
-    // Get the absent teacher's lesson plans for this subject/grade
-    const teacherLessonPlans = await db.lessonPlan.findMany({
-      where: {
-        teacherId: originalTeacher.id,
-        subjectId: subject.id,
-        gradeLevel,
-      },
+    // Recent topics taught by the absent teacher for this subject (most recent lesson plans)
+    const recentPlans = await db.lessonPlan.findMany({
+      where: { teacherId: substitution.absentTeacherId, subject: substitution.subject },
+      orderBy: { createdAt: 'desc' },
       take: 5,
-      orderBy: { createdAt: 'desc' },
-    });
-
-    // Get curriculum-aligned topics if available
-    const school = await db.school.findFirst({
-      include: { curriculum: true },
-    });
-    let curriculumTopics: string[] = [];
-    let curriculumObjectives: string[] = [];
-    let curriculumAssessment: string[] = [];
-    if (school?.curriculum) {
-      const cs = await db.curriculumSubject.findUnique({
-        where: {
-          curriculumId_subjectId_gradeLevel: {
-            curriculumId: school.curriculum.id,
-            subjectId: subject.id,
-            gradeLevel,
-          },
-        },
-      });
-      if (cs) {
-        curriculumTopics = JSON.parse(cs.topics);
-        curriculumObjectives = JSON.parse(cs.learningObjectives);
-        if (cs.assessmentCriteria) curriculumAssessment = JSON.parse(cs.assessmentCriteria);
-      }
-    }
-
-    // Get previous substitution data for this section+subject (if any)
-    const previousSubs = await db.substitutionRequest.findMany({
-      where: {
-        subjectId: subject.id,
-        status: 'RESOLVED',
-        schedule: { sectionId: section.id },
-      },
-      include: {
-        assignments: { where: { status: 'ACCEPTED' }, take: 1 },
-      },
-      take: 3,
-      orderBy: { createdAt: 'desc' },
     });
 
     const zai = await ZAI.create();
 
-    const systemPrompt = `You are an expert AI lesson planner specializing in creating tailored substitute teacher lesson plans. You produce ONLY valid JSON, no markdown, no code fences, no extra text. Your plans must be practical, engaging, and curriculum-aligned, while being specifically adapted for a substitute teacher who may not know the class well.`;
+    const systemPrompt = `You are an expert AI lesson planner specializing in creating tailored substitute teacher lesson plans. You produce ONLY valid JSON, no markdown, no code fences, no extra text. Your plans must be practical, engaging, and specifically adapted for a substitute teacher who may not know the class well.`;
 
     const userPrompt = `Generate a comprehensive TAILORED substitute lesson plan with the following context:
 
 SUBSTITUTION CONTEXT:
-- Subject: ${subject.name} (Grade ${gradeLevel}, Section ${section.name})
-- Original Teacher: ${originalTeacher.name} (${originalTeacher.designation || 'Teacher'}, ${originalTeacher.department || 'Department'})
-- Substitute Teacher: ${substituteTeacher.name} (${substituteTeacher.designation || 'Teacher'}, ${substituteTeacher.department || 'Department'})
-- Date: ${subReq.date}
-- Time Slot: ${schedule.timeSlot.name} (${schedule.timeSlot.startTime} - ${schedule.timeSlot.endTime})
-- Scheduled Topic: ${schedule.topic || 'As per curriculum'}
-- Number of Students: ${students.length}
-- Absence Reason: ${subReq.reason} ${subReq.reasonDetail || ''}
+- Subject: ${substitution.subject} (${substitution.grade}, Section ${substitution.section})
+- Original Teacher: ${substitution.absentTeacher.name}
+- Substitute Teacher: ${substitution.substitute?.name}
+- Date: ${substitution.date}, Period: ${substitution.period}
+- Scheduled Topic: ${substitution.todayTopic || substitution.yesterdayTopic || 'As per curriculum'}
+- Number of Students: ${studentCount}
+- Absence Reason: ${substitution.reason}
 
-CURRICULUM ALIGNMENT:
-- Curriculum: ${school?.curriculum?.name || 'Standard'}
-- Curriculum Topics for this Grade: ${curriculumTopics.length > 0 ? curriculumTopics.join(', ') : 'Not specified'}
-- Curriculum Learning Objectives: ${curriculumObjectives.length > 0 ? curriculumObjectives.join('; ') : 'Not specified'}
-- Assessment Criteria: ${curriculumAssessment.length > 0 ? curriculumAssessment.join('; ') : 'Standard'}
-
-PREVIOUS LESSON CONTEXT:
-- Recent Topics by Original Teacher: ${teacherLessonPlans.map(lp => lp.topic).join(', ') || 'None available'}
-- Previous Substitutions for this Class: ${previousSubs.length} (topics covered: ${previousSubs.map(ps => ps.assignments[0]?.topic || 'unknown').join(', ') || 'none'})
-
-STUDENT ROSTER (first 10): ${students.slice(0, 10).map(s => `${s.rollNo}. ${s.name}`).join(', ')}
+RECENT TOPICS BY ORIGINAL TEACHER: ${recentPlans.map(lp => lp.topic).join(', ') || 'None available'}
 
 Generate a JSON response with these fields:
 {
-  "topic": "Specific topic for this session (aligned with curriculum progression and previous lessons)",
-  "learningObjectives": ["3-5 measurable objectives aligned with curriculum standards"],
-  "teachingMethod": "Detailed methodology adapted for a substitute teacher - step by step approach with timing breakdown",
-  "materials": ["List of materials needed - board, textbook chapters, worksheets, etc."],
-  "activities": ["3-5 structured activities with estimated duration (e.g., 'Introduction & Review - 5 min', 'Main Activity - 15 min')"],
-  "assessment": "Quick assessment strategy to gauge understanding before the period ends",
-  "classroomTips": "3-5 specific tips for managing this grade/section as a substitute",
+  "topic": "Specific topic for this session",
+  "objectives": ["3-5 measurable learning objectives"],
+  "warmUp": "Opening activity (5 min)",
+  "mainContent": "Step-by-step teaching approach with timing breakdown",
   "differentiation": "How to adapt for advanced, on-level, and struggling students",
-  "dnaMatch": "How this plan connects to the original teacher's teaching sequence and curriculum progression",
-  "connectionToNextLesson": "What the returning teacher should pick up from in the next class"
+  "assessment": "Quick assessment strategy to gauge understanding",
+  "resources": ["materials needed - board, textbook chapters, worksheets, etc."],
+  "homework": "Suggested homework or follow-up task",
+  "keyVocabulary": ["key terms for this topic"]
 }`;
 
-    let lessonDNA: Record<string, unknown> = {
-      topic: schedule.topic || `${subject.name} - Review and Practice`,
-      learningObjectives: [`Review key ${subject.name} concepts for Grade ${gradeLevel}`],
-      teachingMethod: 'Review previous content and guide students through practice exercises',
-      materials: ['Textbook', 'Whiteboard'],
-      activities: ['Review - 10 min', 'Guided Practice - 15 min', 'Independent Work - 10 min', 'Wrap-up - 5 min'],
-      assessment: 'Observe student responses during guided practice',
-      classroomTips: 'Follow the seating chart, maintain consistent expectations',
+    let plan: Record<string, unknown> = {
+      topic: substitution.todayTopic || `${substitution.subject} - Review and Practice`,
+      objectives: [`Review key ${substitution.subject} concepts for ${substitution.grade}`],
+      warmUp: 'Quick recap of previous topic (5 min)',
+      mainContent: 'Review previous content and guide students through practice exercises',
       differentiation: 'Provide simpler problems for struggling students, extension questions for advanced',
-      dnaMatch: 'This plan serves as a bridge in the curriculum sequence',
-      connectionToNextLesson: 'Returning teacher should continue from where this session ends',
+      assessment: 'Observe student responses during guided practice',
+      resources: ['Textbook', 'Whiteboard'],
+      homework: 'Practice problems from the current chapter',
+      keyVocabulary: [],
     };
 
     try {
@@ -173,47 +92,45 @@ Generate a JSON response with these fields:
       const content = completion.choices?.[0]?.message?.content || '';
       const jsonMatch = content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        lessonDNA = JSON.parse(jsonMatch[0]);
+        plan = JSON.parse(jsonMatch[0]);
       }
     } catch (aiError) {
       console.error('[LESSON_DNA_AI_ERROR]', aiError);
       // Fallback plan is already set above
     }
 
-    // Save/update the lesson pack
-    const pack = await db.lessonPack.upsert({
-      where: { assignmentId },
-      create: {
-        assignmentId,
-        previousTopics: JSON.stringify(teacherLessonPlans.map(lp => lp.topic)),
-        generatedPlan: JSON.stringify(lessonDNA),
-        rosterSnapshot: JSON.stringify(students.map(s => ({ name: s.name, rollNo: s.rollNo }))),
-        emergencyContacts: JSON.stringify([]),
-      },
-      update: {
-        previousTopics: JSON.stringify(teacherLessonPlans.map(lp => lp.topic)),
-        generatedPlan: JSON.stringify(lessonDNA),
-        rosterSnapshot: JSON.stringify(students.map(s => ({ name: s.name, rollNo: s.rollNo }))),
+    const saved = await db.lessonPlan.create({
+      data: {
+        teacherId: substitution.substituteId,
+        grade: substitution.grade,
+        section: substitution.section,
+        subject: substitution.subject,
+        topic: (plan.topic as string) || substitution.subject,
+        aiGenerated: true,
+        planContent: JSON.stringify(plan),
+        objectives: JSON.stringify(plan.objectives || []),
+        warmUp: plan.warmUp as string,
+        mainContent: plan.mainContent as string,
+        differentiation: plan.differentiation as string,
+        assessment: plan.assessment as string,
+        resources: JSON.stringify(plan.resources || []),
+        homework: plan.homework as string,
+        keyVocabulary: JSON.stringify(plan.keyVocabulary || []),
       },
     });
 
     return NextResponse.json({
       success: true,
       data: {
-        lessonDNA,
-        pack,
-        curriculumTopics,
-        curriculumObjectives,
-        previousTopics: teacherLessonPlans.map(lp => lp.topic),
-        studentCount: students.length,
+        lessonPlan: saved,
+        studentCount,
         substitutionContext: {
-          subject: subject.name,
-          grade: section.grade.name,
-          section: section.name,
-          date: subReq.date,
-          timeSlot: `${schedule.timeSlot.startTime} - ${schedule.timeSlot.endTime}`,
-          originalTeacher: originalTeacher.name,
-          substituteTeacher: substituteTeacher.name,
+          subject: substitution.subject,
+          grade: substitution.grade,
+          section: substitution.section,
+          date: substitution.date,
+          originalTeacher: substitution.absentTeacher.name,
+          substituteTeacher: substitution.substitute?.name,
         },
       },
     });

@@ -8,74 +8,42 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'requestId and newTeacherId required' }, { status: 400 });
     }
 
-    const request = await db.substitutionRequest.findUnique({
+    const substitution = await db.substitution.findUnique({
       where: { id: requestId },
-      include: {
-        schedule: { include: { subject: true, grade: true, section: true, timeSlot: true, teacher: true } },
-        assignments: { include: { substituteTeacher: true } },
-      },
+      include: { absentTeacher: true, substitute: true },
     });
 
-    if (!request) {
+    if (!substitution) {
       return NextResponse.json({ success: false, error: 'Substitution request not found' }, { status: 404 });
     }
 
-    // Find the current active assignment
-    const currentAssignment = request.assignments.find(
-      a => a.status === 'ACCEPTED' || a.status === 'PENDING'
-    );
+    const previousTeacherName = substitution.substitute?.name || 'Unknown';
 
-    const previousTeacherName = currentAssignment?.substituteTeacher?.name || 'Unknown';
-
-    // Deactivate existing assignments
-    await db.substitutionAssignment.updateMany({
-      where: { substitutionRequestId: requestId, status: { in: ['ACCEPTED', 'PENDING'] } },
-      data: {
-        status: 'REJECTED',
-        rejectionReason: `Reassigned by ${assignedBy || 'ADMIN'} — replaced with different substitute`,
-      },
-    });
-
-    // Create new assignment
-    const newAssignment = await db.substitutionAssignment.create({
-      data: {
-        substitutionRequestId: requestId,
-        substituteTeacherId: newTeacherId,
-        status: 'ACCEPTED',
-        assignedBy: assignedBy || 'ADMIN',
-        topic: request.schedule.topic,
-      },
-    });
-
-    // Ensure request is still resolved
-    await db.substitutionRequest.update({
+    const updated = await db.substitution.update({
       where: { id: requestId },
-      data: { status: 'RESOLVED' },
+      data: { substituteId: newTeacherId, status: 'completed', source: assignedBy === 'AI_AGENT' ? 'ai-agent' : 'manual' },
     });
 
-    // Notify the new substitute teacher
-    await db.notification.create({
+    await db.teacherNotification.create({
       data: {
-        type: 'REASSIGNED_SUBSTITUTE',
-        title: `Substitution Reassignment - ${request.schedule.subject.name}`,
-        message: `You have been assigned as substitute for Grade ${request.schedule.grade.name} Section ${request.schedule.section.name} ${request.schedule.subject.name} class on ${request.date} (${request.schedule.timeSlot.startTime}-${request.schedule.timeSlot.endTime}). Original teacher: ${request.schedule.teacher.name}. Topic: ${request.schedule.topic || 'N/A'}`,
+        type: 'lesson_plan',
+        referenceId: updated.id,
         teacherId: newTeacherId,
-        targetRole: 'TEACHER',
-        assignmentId: newAssignment.id,
-        substitutionRequestId: requestId,
+        sentBy: assignedBy || 'admin',
+        title: `Substitution Reassignment - ${substitution.subject}`,
+        description: `You have been assigned as substitute for ${substitution.grade} Section ${substitution.section} ${substitution.subject} class on ${substitution.date} (Period ${substitution.period}). Original teacher: ${substitution.absentTeacher.name}. Topic: ${substitution.todayTopic || 'N/A'}`,
       },
     });
 
-    // Notify the previous substitute teacher about reassignment
-    if (currentAssignment?.substituteTeacherId) {
-      await db.notification.create({
+    if (substitution.substituteId) {
+      await db.teacherNotification.create({
         data: {
-          type: 'SUBSTITUTION_CHANGED',
-          title: `Substitution Changed - ${request.schedule.subject.name}`,
-          message: `Your substitution assignment for Grade ${request.schedule.grade.name} Section ${request.schedule.section.name} ${request.schedule.subject.name} class on ${request.date} has been reassigned by the admin. No action required from you.`,
-          teacherId: currentAssignment.substituteTeacherId,
-          targetRole: 'TEACHER',
-          substitutionRequestId: requestId,
+          type: 'lesson_plan',
+          referenceId: updated.id,
+          teacherId: substitution.substituteId,
+          sentBy: assignedBy || 'admin',
+          title: `Substitution Changed - ${substitution.subject}`,
+          description: `Your substitution assignment for ${substitution.grade} Section ${substitution.section} ${substitution.subject} class on ${substitution.date} has been reassigned by the admin. No action required from you.`,
         },
       });
     }
@@ -83,7 +51,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        assignmentId: newAssignment.id,
+        assignmentId: updated.id,
         previousTeacher: previousTeacherName,
         message: `Substitute changed from ${previousTeacherName} to new teacher`,
       },

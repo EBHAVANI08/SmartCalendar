@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+const TIME_SLOTS = [
+  { period: 1, name: 'Period 1', startTime: '08:00', endTime: '08:40' },
+  { period: 2, name: 'Period 2', startTime: '08:40', endTime: '09:20' },
+  { period: 3, name: 'Period 3', startTime: '09:20', endTime: '10:00' },
+  { period: 4, name: 'Period 4', startTime: '10:20', endTime: '11:00' },
+  { period: 5, name: 'Period 5', startTime: '11:00', endTime: '11:40' },
+  { period: 6, name: 'Period 6', startTime: '11:40', endTime: '12:20' },
+  { period: 7, name: 'Period 7', startTime: '13:00', endTime: '13:40' },
+  { period: 8, name: 'Period 8', startTime: '13:40', endTime: '14:20' },
+];
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 export async function GET(req: NextRequest) {
   try {
     const teacherId = req.nextUrl.searchParams.get('teacherId');
@@ -14,113 +27,76 @@ export async function GET(req: NextRequest) {
     if (dayOfWeek === 0 || dayOfWeek === 6) {
       return NextResponse.json({ success: true, data: { schedules: [], substitutions: [], isWeekend: true } });
     }
+    const dayName = DAY_NAMES[dayOfWeek];
 
     // Get teacher's regular schedule for the day
     const schedules = await db.schedule.findMany({
-      where: { teacherId, dayOfWeek },
-      include: {
-        subject: true,
-        grade: true,
-        section: true,
-        timeSlot: true,
-      },
-      orderBy: { timeSlot: { order: 'asc' } },
+      where: { teacherId, day: dayName },
+      orderBy: { period: 'asc' },
     });
 
-    // Get substitution assignments where this teacher is the substitute
-    const substitutionAssignments = await db.substitutionAssignment.findMany({
-      where: {
-        substituteTeacherId: teacherId,
-        status: 'ACCEPTED',
-        substitutionRequest: { date },
-      },
-      include: {
-        substitutionRequest: {
-          include: {
-            schedule: { include: { subject: true, grade: true, section: true, timeSlot: true, teacher: true } },
-            originalTeacher: true,
-          },
-        },
-      },
+    // Get substitutions where this teacher is the substitute today
+    const substitutions = await db.substitution.findMany({
+      where: { substituteId: teacherId, date, status: { in: ['assigned', 'completed'] } },
+      include: { absentTeacher: true },
     });
 
     // Get notifications for this teacher
-    const notifications = await db.notification.findMany({
+    const notifications = await db.teacherNotification.findMany({
       where: { teacherId, isRead: false },
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
 
-    // Build combined day schedule
-    const timeSlots = await db.timeSlot.findMany({ orderBy: { order: 'asc' } });
-
-    const daySchedule = timeSlots.map(slot => {
-      const regular = schedules.find(s => s.timeSlotId === slot.id);
-      const substitution = substitutionAssignments.find(
-        sa => sa.substitutionRequest.schedule.timeSlotId === slot.id
-      );
+    // Build combined day schedule across all periods
+    const daySchedule = TIME_SLOTS.map(slot => {
+      const regular = schedules.find(s => s.period === slot.period);
+      const substitution = substitutions.find(s => s.period === slot.period);
 
       if (substitution) {
-        const sub = substitution.substitutionRequest;
         return {
-          timeSlotId: slot.id,
+          period: slot.period,
           timeSlotName: slot.name,
           startTime: slot.startTime,
           endTime: slot.endTime,
-          isBreak: slot.isBreak,
+          isBreak: false,
           isSubstitution: true,
-          subjectId: sub.schedule.subjectId,
-          subjectName: sub.schedule.subject.name,
-          subjectColor: sub.schedule.subject.color,
-          gradeId: sub.schedule.gradeId,
-          gradeName: sub.schedule.grade.name,
-          gradeLevel: sub.schedule.grade.level,
-          sectionId: sub.schedule.sectionId,
-          sectionName: sub.schedule.section.name,
-          topic: substitution.topic || sub.schedule.topic,
-          originalTeacherId: sub.originalTeacherId,
-          originalTeacherName: sub.originalTeacher.name,
-          absenceReason: sub.reason,
-          absenceDetail: sub.reasonDetail,
-          isSubjectSwap: sub.reason === 'SUBJECT_SWAP',
-          assignedBy: substitution.assignedBy,
-          room: sub.schedule.room,
+          subjectName: substitution.subject,
+          gradeName: substitution.grade,
+          sectionName: substitution.section,
+          topic: substitution.todayTopic,
+          originalTeacherId: substitution.absentTeacherId,
+          originalTeacherName: substitution.absentTeacher.name,
+          absenceReason: substitution.reason,
+          room: null,
         };
       }
 
       if (regular) {
         return {
-          timeSlotId: slot.id,
+          period: slot.period,
           timeSlotName: slot.name,
           startTime: slot.startTime,
           endTime: slot.endTime,
-          isBreak: slot.isBreak,
+          isBreak: false,
           isSubstitution: false,
-          subjectId: regular.subjectId,
-          subjectName: regular.subject.name,
-          subjectColor: regular.subject.color,
-          gradeId: regular.gradeId,
-          gradeName: regular.grade.name,
-          gradeLevel: regular.grade.level,
-          sectionId: regular.sectionId,
-          sectionName: regular.section.name,
+          subjectName: regular.subject,
+          gradeName: regular.grade,
+          sectionName: regular.section,
           topic: regular.topic,
           originalTeacherId: null,
           originalTeacherName: null,
           absenceReason: null,
-          absenceDetail: null,
-          isSubjectSwap: false,
-          assignedBy: null,
-          room: regular.room,
+          room: regular.roomId,
         };
       }
 
       return {
-        timeSlotId: slot.id,
+        period: slot.period,
         timeSlotName: slot.name,
         startTime: slot.startTime,
         endTime: slot.endTime,
-        isBreak: slot.isBreak,
+        isBreak: false,
         isSubstitution: false,
         isFree: true,
       };
@@ -130,21 +106,15 @@ export async function GET(req: NextRequest) {
       success: true,
       data: {
         schedules: daySchedule,
-        substitutions: substitutionAssignments.map(sa => ({
-          id: sa.id,
-          requestId: sa.substitutionRequestId,
-          subjectName: sa.substitutionRequest.schedule.subject.name,
-          gradeName: sa.substitutionRequest.schedule.grade.name,
-          sectionName: sa.substitutionRequest.schedule.section.name,
-          timeSlotName: sa.substitutionRequest.schedule.timeSlot.name,
-          startTime: sa.substitutionRequest.schedule.timeSlot.startTime,
-          endTime: sa.substitutionRequest.schedule.timeSlot.endTime,
-          originalTeacherName: sa.substitutionRequest.originalTeacher.name,
-          reason: sa.substitutionRequest.reason,
-          reasonDetail: sa.substitutionRequest.reasonDetail,
-          topic: sa.topic,
-          assignedBy: sa.assignedBy,
-          isSubjectSwap: sa.substitutionRequest.reason === 'SUBJECT_SWAP',
+        substitutions: substitutions.map(s => ({
+          id: s.id,
+          subjectName: s.subject,
+          gradeName: s.grade,
+          sectionName: s.section,
+          period: s.period,
+          originalTeacherName: s.absentTeacher.name,
+          reason: s.reason,
+          topic: s.todayTopic,
         })),
         notifications,
         isWeekend: false,

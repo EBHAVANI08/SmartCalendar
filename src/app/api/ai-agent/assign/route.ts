@@ -6,48 +6,26 @@ export async function POST(req: NextRequest) {
     const { requestId, teacherId, assignedBy } = await req.json();
     if (!requestId || !teacherId) return NextResponse.json({ success: false, error: 'requestId and teacherId required' }, { status: 400 });
 
-    const request = await db.substitutionRequest.findUnique({
+    const substitution = await db.substitution.findUnique({ where: { id: requestId }, include: { absentTeacher: true } });
+    if (!substitution) return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
+
+    const updated = await db.substitution.update({
       where: { id: requestId },
-      include: { schedule: { include: { subject: true, grade: true, section: true, timeSlot: true, teacher: true } } },
+      data: { substituteId: teacherId, status: 'completed', source: assignedBy === 'AI_AGENT' ? 'ai-agent' : 'manual' },
     });
 
-    if (!request) return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
-
-    // Deactivate any existing assignments
-    await db.substitutionAssignment.updateMany({
-      where: { substitutionRequestId: requestId, status: 'PENDING' },
-      data: { status: 'REJECTED', rejectionReason: 'Replaced by admin assignment' },
-    });
-
-    const assignment = await db.substitutionAssignment.create({
+    await db.teacherNotification.create({
       data: {
-        substitutionRequestId: requestId,
-        substituteTeacherId: teacherId,
-        status: 'ACCEPTED',
-        assignedBy: assignedBy || 'ADMIN',
-        topic: request.schedule.topic,
-      },
-    });
-
-    await db.substitutionRequest.update({
-      where: { id: requestId },
-      data: { status: 'RESOLVED' },
-    });
-
-    // Notify substitute teacher
-    await db.notification.create({
-      data: {
-        type: 'MANUAL_ASSIGNED',
-        title: `Substitution Assignment - ${request.schedule.subject.name}`,
-        message: `You have been assigned as substitute for Grade ${request.schedule.grade.name} Section ${request.schedule.section.name} ${request.schedule.subject.name} class on ${request.date} (${request.schedule.timeSlot.startTime}-${request.schedule.timeSlot.endTime}). Original teacher: ${request.schedule.teacher.name}. Topic: ${request.schedule.topic || 'N/A'}`,
+        type: 'lesson_plan',
+        referenceId: updated.id,
         teacherId,
-        targetRole: 'TEACHER',
-        assignmentId: assignment.id,
-        substitutionRequestId: requestId,
+        sentBy: assignedBy || 'admin',
+        title: `Substitution Assignment - ${substitution.subject}`,
+        description: `You have been assigned as substitute for ${substitution.grade} Section ${substitution.section} ${substitution.subject} class on ${substitution.date} (Period ${substitution.period}). Original teacher: ${substitution.absentTeacher.name}. Topic: ${substitution.todayTopic || 'N/A'}`,
       },
     });
 
-    return NextResponse.json({ success: true, data: { assignmentId: assignment.id } });
+    return NextResponse.json({ success: true, data: { assignmentId: updated.id } });
   } catch (error) {
     console.error('[AI ASSIGN ERROR]', error);
     return NextResponse.json({ success: false, error: 'Assignment failed' }, { status: 500 });

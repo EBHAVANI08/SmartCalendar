@@ -1,12 +1,25 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+const TIME_SLOTS = [
+  { period: 1, name: 'Period 1', startTime: '08:00', endTime: '08:40' },
+  { period: 2, name: 'Period 2', startTime: '08:40', endTime: '09:20' },
+  { period: 3, name: 'Period 3', startTime: '09:20', endTime: '10:00' },
+  { period: 4, name: 'Period 4', startTime: '10:20', endTime: '11:00' },
+  { period: 5, name: 'Period 5', startTime: '11:00', endTime: '11:40' },
+  { period: 6, name: 'Period 6', startTime: '11:40', endTime: '12:20' },
+  { period: 7, name: 'Period 7', startTime: '13:00', endTime: '13:40' },
+  { period: 8, name: 'Period 8', startTime: '13:40', endTime: '14:20' },
+];
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 export async function GET() {
   try {
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
     const dayOfWeek = today.getDay();
-    const scheduleDay = dayOfWeek >= 1 && dayOfWeek <= 5 ? dayOfWeek : 1;
+    const dayName = DAY_NAMES[dayOfWeek >= 1 && dayOfWeek <= 5 ? dayOfWeek : 1];
 
     const [
       totalTeachers,
@@ -19,33 +32,29 @@ export async function GET() {
       aiAutoAssigned,
       activeNotifications,
     ] = await Promise.all([
-      db.teacher.count({ where: { isActive: true } }),
+      db.teacher.count(),
       db.student.count(),
-      db.leave.count({ where: { status: 'APPROVED', startDate: { lte: todayStr }, endDate: { gte: todayStr } } }),
-      db.leave.count({ where: { status: 'APPROVED', startDate: { lte: todayStr }, endDate: { gte: todayStr } } }),
-      db.substitutionRequest.count({ where: { status: 'PENDING' } }),
-      db.substitutionRequest.count({ where: { date: todayStr, status: 'RESOLVED' } }),
-      db.schedule.count({ where: { dayOfWeek: scheduleDay } }),
-      db.substitutionAssignment.count({ where: { assignedBy: 'AI_AGENT', status: 'ACCEPTED' } }),
-      db.notification.count({ where: { targetRole: 'ADMIN', isRead: false } }),
+      db.biometricAttendance.count({ where: { date: todayStr, status: 'absent' } }),
+      db.leaveApplication.count({ where: { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } } }),
+      db.substitution.count({ where: { status: 'pending' } }),
+      db.substitution.count({ where: { date: todayStr, status: 'completed' } }),
+      db.schedule.count({ where: { day: dayName } }),
+      db.substitution.count({ where: { source: 'ai-agent', status: { in: ['assigned', 'completed'] } } }),
+      db.teacherNotification.count({ where: { isRead: false } }),
     ]);
 
-    const grades = await db.grade.findMany({
-      include: { sections: { select: { id: true, name: true } } },
-      orderBy: { level: 'asc' },
-    });
+    const gradeRows = await db.schedule.findMany({ select: { grade: true }, distinct: ['grade'] });
+    const gradeNames = gradeRows.length > 0
+      ? gradeRows.map(g => g.grade).sort((a, b) => parseInt(a.replace('Grade ', '')) - parseInt(b.replace('Grade ', '')))
+      : Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`);
+    const grades = gradeNames.map(name => ({ name, level: parseInt(name.replace('Grade ', '')) || 0 }));
 
     const teachers = await db.teacher.findMany({
-      where: { isActive: true },
-      select: { id: true, name: true, employeeId: true, email: true, department: true, designation: true, role: true },
+      select: { id: true, name: true, email: true, phone: true, subject: true, grades: true, role: true },
       orderBy: { name: 'asc' },
     });
 
-    const timeSlots = await db.timeSlot.findMany({
-      where: { isBreak: false },
-      select: { id: true, name: true, startTime: true, endTime: true },
-      orderBy: { order: 'asc' },
-    });
+    const timeSlots = TIME_SLOTS;
 
     return NextResponse.json({
       success: true,

@@ -6,11 +6,12 @@ export async function POST(req: NextRequest) {
     const { notificationId, targetRole, teacherId } = await req.json();
 
     if (notificationId) {
-      await db.notification.update({ where: { id: notificationId }, data: { isRead: true } });
-    } else if (targetRole) {
-      await db.notification.updateMany({ where: { targetRole, isRead: false }, data: { isRead: true } });
+      await db.teacherNotification.update({ where: { id: notificationId }, data: { isRead: true } });
     } else if (teacherId) {
-      await db.notification.updateMany({ where: { teacherId, isRead: false }, data: { isRead: true } });
+      await db.teacherNotification.updateMany({ where: { teacherId, isRead: false }, data: { isRead: true } });
+    } else if (targetRole) {
+      // No admin-targeted table in the flat schema; treat as "mark all visible"
+      await db.teacherNotification.updateMany({ where: { isRead: false }, data: { isRead: true } });
     }
 
     return NextResponse.json({ success: true });
@@ -24,10 +25,10 @@ export async function PUT(req: NextRequest) {
   try {
     const { targetRole, teacherId } = await req.json();
 
-    if (targetRole) {
-      await db.notification.updateMany({ where: { targetRole, isRead: false }, data: { isRead: true } });
-    } else if (teacherId) {
-      await db.notification.updateMany({ where: { teacherId, isRead: false }, data: { isRead: true } });
+    if (teacherId) {
+      await db.teacherNotification.updateMany({ where: { teacherId, isRead: false }, data: { isRead: true } });
+    } else if (targetRole) {
+      await db.teacherNotification.updateMany({ where: { isRead: false }, data: { isRead: true } });
     }
 
     return NextResponse.json({ success: true });

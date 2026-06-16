@@ -3,7 +3,7 @@ import { db } from '@/lib/db';
 
 /**
  * Admin manual substitution creation
- * Creates a new substitution request + assignment directly
+ * Creates a new Substitution record directly (already resolved)
  */
 export async function POST(request: NextRequest) {
   try {
@@ -17,121 +17,70 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Get the schedule
-    const schedule = await db.schedule.findUnique({
-      where: { id: scheduleId },
-      include: { subject: true, grade: true, section: true, timeSlot: true, teacher: true },
-    });
-
+    const schedule = await db.schedule.findUnique({ where: { id: scheduleId }, include: { teacher: true } });
     if (!schedule) {
-      return NextResponse.json(
-        { success: false, error: 'Schedule not found' },
-        { status: 404 }
-      );
+      return NextResponse.json({ success: false, error: 'Schedule not found' }, { status: 404 });
+    }
+    if (!schedule.teacherId) {
+      return NextResponse.json({ success: false, error: 'This schedule has no assigned teacher' }, { status: 400 });
     }
 
-    // Check for existing substitution
-    const existingRequest = await db.substitutionRequest.findFirst({
-      where: { scheduleId, date, status: { in: ['PENDING', 'ASSIGNED', 'RESOLVED'] } },
+    // Check for an existing unresolved substitution for this slot/date
+    const existing = await db.substitution.findFirst({
+      where: { date, period: schedule.period, grade: schedule.grade, section: schedule.section, status: { in: ['pending', 'assigned', 'completed'] } },
     });
-
-    if (existingRequest) {
+    if (existing) {
       return NextResponse.json(
         { success: false, error: 'A substitution request already exists for this schedule and date' },
         { status: 409 }
       );
     }
 
-    // Create the substitution request
-    const subRequest = await db.substitutionRequest.create({
+    const substitution = await db.substitution.create({
       data: {
-        scheduleId,
-        originalTeacherId: schedule.teacherId,
-        subjectId: schedule.subjectId,
         date,
-        reason: reason || 'MANUAL_ASSIGN',
-        reasonDetail: `Manually assigned by ${assignedBy || 'admin'}`,
-        status: 'RESOLVED',
-        aiRecommendation: `Manual assignment by ${assignedBy || 'admin'}. Substitute: ${substituteTeacherId}`,
+        period: schedule.period,
+        absentTeacherId: schedule.teacherId,
+        substituteId: substituteTeacherId,
+        grade: schedule.grade,
+        section: schedule.section,
+        subject: schedule.subject,
+        reason: reason || 'Manual assignment',
+        todayTopic: topic || schedule.topic,
+        source: 'manual',
+        status: 'completed',
       },
     });
 
-    // Create the assignment with ACCEPTED status
-    const assignment = await db.substitutionAssignment.create({
-      data: {
-        substitutionRequestId: subRequest.id,
-        substituteTeacherId,
-        status: 'ACCEPTED',
-        assignedBy: assignedBy || 'ADMIN',
-        topic: topic || schedule.topic || `Manual substitution for ${schedule.subject.name}`,
-      },
-    });
+    const substituteTeacher = await db.teacher.findUnique({ where: { id: substituteTeacherId } });
 
-    // Get teacher info for notification
-    const substituteTeacher = await db.teacher.findUnique({
-      where: { id: substituteTeacherId },
-    });
-
-    // Send notification to the substitute teacher
     if (substituteTeacher) {
-      await db.notification.create({
+      await db.teacherNotification.create({
         data: {
-          type: 'TEACHER_ASSIGNED',
-          title: `Substitution Assignment - ${schedule.subject.name}`,
-          message: `You have been assigned to take ${schedule.subject.name} for Grade ${schedule.grade.name} Section ${schedule.section.name} on ${date} from ${schedule.timeSlot.startTime} to ${schedule.timeSlot.endTime}.\n\nOriginal teacher: ${schedule.teacher.name}\n📝 Topic: ${topic || schedule.topic || 'As per plan'}`,
-          data: JSON.stringify({
-            assignmentId: assignment.id,
-            requestId: subRequest.id,
-            scheduleId,
-            subject: schedule.subject.name,
-            grade: schedule.grade.name,
-            section: schedule.section.name,
-            time: `${schedule.timeSlot.startTime}-${schedule.timeSlot.endTime}`,
-          }),
+          type: 'lesson_plan',
+          referenceId: substitution.id,
           teacherId: substituteTeacherId,
-          targetRole: 'TEACHER',
-          assignmentId: assignment.id,
-          substitutionRequestId: subRequest.id,
+          sentBy: assignedBy || 'admin',
+          title: `Substitution Assignment - ${schedule.subject}`,
+          description: `You have been assigned to take ${schedule.subject} for ${schedule.grade} Section ${schedule.section} on ${date} from ${schedule.startTime} to ${schedule.endTime}. Original teacher: ${schedule.teacher?.name}. Topic: ${topic || schedule.topic || 'As per plan'}`,
         },
       });
     }
 
-    // Notify admin
-    await db.notification.create({
-      data: {
-        type: 'TEACHER_ASSIGNED',
-        title: `Admin Manual Assignment - ${schedule.subject.name}`,
-        message: `${assignedBy || 'Admin'} manually assigned ${substituteTeacher?.name || 'a teacher'} for ${schedule.subject.name} (Grade ${schedule.grade.name} Section ${schedule.section.name}) on ${date} ${schedule.timeSlot.startTime}-${schedule.timeSlot.endTime}. Original teacher: ${schedule.teacher.name}.`,
-        data: JSON.stringify({
-          requestId: subRequest.id,
-          assignmentId: assignment.id,
-          substituteTeacherId,
-          scheduleId,
-        }),
-        targetRole: 'ADMIN',
-        substitutionRequestId: subRequest.id,
-        assignmentId: assignment.id,
-      },
-    });
-
     return NextResponse.json({
       success: true,
       data: {
-        requestId: subRequest.id,
-        assignmentId: assignment.id,
-        status: 'RESOLVED',
+        substitutionId: substitution.id,
+        status: 'completed',
         substituteTeacher: substituteTeacher?.name,
-        subject: schedule.subject.name,
-        grade: schedule.grade.name,
-        section: schedule.section.name,
+        subject: schedule.subject,
+        grade: schedule.grade,
+        section: schedule.section,
       },
     });
   } catch (error) {
     console.error('[ADMIN CREATE SUBSTITUTION ERROR]', error);
     const message = error instanceof Error ? error.message : 'Failed to create substitution';
-    return NextResponse.json(
-      { success: false, error: message },
-      { status: 500 }
-    );
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

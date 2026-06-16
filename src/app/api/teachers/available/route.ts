@@ -1,60 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const subjectId = searchParams.get('subjectId');
+    const subject = searchParams.get('subject');
     const date = searchParams.get('date');
-    const timeSlotId = searchParams.get('timeSlotId');
+    const period = searchParams.get('period');
 
-    if (!subjectId || !date || !timeSlotId) {
-      return NextResponse.json({ success: false, error: 'subjectId, date, timeSlotId required' }, { status: 400 });
+    if (!subject || !date || !period) {
+      return NextResponse.json({ success: false, error: 'subject, date, period required' }, { status: 400 });
     }
-
-    const timeSlot = await db.timeSlot.findUnique({ where: { id: timeSlotId } });
-    if (!timeSlot) return NextResponse.json({ success: false, error: 'Time slot not found' }, { status: 404 });
 
     const dayOfWeek = new Date(date + 'T00:00:00').getDay();
     const scheduleDay = dayOfWeek >= 1 && dayOfWeek <= 5 ? dayOfWeek : 1;
+    const dayName = DAY_NAMES[scheduleDay];
+    const periodNum = parseInt(period);
 
-    const qualifiedTeachers = await db.teacherSubject.findMany({
-      where: { subjectId },
-      include: {
-        teacher: {
-          include: {
-            leaves: { where: { status: 'APPROVED', startDate: { lte: date }, endDate: { gte: date } } },
-            schedules: { where: { dayOfWeek: scheduleDay }, include: { timeSlot: true, subject: true, section: true, grade: true } },
-            substitutionsAsSubstitute: { where: { status: 'ACCEPTED' } },
-          },
-        },
-        subject: true,
-      },
-    });
+    const qualifiedTeachers = await db.teacher.findMany({ where: { subject } });
 
     const availableTeachers = [];
     const unavailableTeachers = [];
 
-    for (const qt of qualifiedTeachers) {
-      const teacher = qt.teacher;
-      if (!teacher.isActive) continue;
-
+    for (const teacher of qualifiedTeachers) {
       const unavailabilityReasons: string[] = [];
 
-      const isOnLeave = teacher.leaves.length > 0;
+      const isOnLeave = await db.leaveApplication.count({
+        where: { teacherId: teacher.id, status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
+      }) > 0;
       if (isOnLeave) unavailabilityReasons.push('On approved leave');
 
-      const scheduleConflict = teacher.schedules.find(s => s.timeSlotId === timeSlotId);
+      const scheduleConflict = await db.schedule.findFirst({ where: { teacherId: teacher.id, day: dayName, period: periodNum } });
       if (scheduleConflict) {
-        unavailabilityReasons.push(`Teaching ${scheduleConflict.subject.name} for Grade ${scheduleConflict.grade?.name} Section ${scheduleConflict.section?.name}`);
+        unavailabilityReasons.push(`Teaching ${scheduleConflict.subject} for ${scheduleConflict.grade} Section ${scheduleConflict.section}`);
       }
 
+      const currentLoad = await db.schedule.count({ where: { teacherId: teacher.id, day: dayName } });
+      const recentSubstitutions = await db.substitution.count({ where: { substituteId: teacher.id, status: { in: ['assigned', 'completed'] } } });
+      const teacherGrades: string[] = JSON.parse(teacher.grades || '[]');
+
       const teacherData = {
-        teacherId: teacher.id, teacherName: teacher.name, employeeId: teacher.employeeId,
-        department: teacher.department || '', designation: teacher.designation || '',
-        isPrimary: qt.isPrimary, gradeLevel: qt.gradeLevel,
-        currentLoad: teacher.schedules.length, recentSubstitutions: teacher.substitutionsAsSubstitute.length,
-        isAvailable: unavailabilityReasons.length === 0, unavailabilityReasons,
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        department: teacher.subject,
+        isPrimary: teacherGrades.length > 0,
+        currentLoad,
+        recentSubstitutions,
+        isAvailable: unavailabilityReasons.length === 0,
+        unavailabilityReasons,
       };
 
       if (unavailabilityReasons.length === 0) availableTeachers.push(teacherData);
@@ -69,7 +64,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: { subjectId, date, timeSlotId, availableCount: availableTeachers.length, unavailableCount: unavailableTeachers.length, availableTeachers, unavailableTeachers },
+      data: { subject, date, period: periodNum, availableCount: availableTeachers.length, unavailableCount: unavailableTeachers.length, availableTeachers, unavailableTeachers },
     });
   } catch (error) {
     console.error('[TEACHERS AVAILABLE ERROR]', error);

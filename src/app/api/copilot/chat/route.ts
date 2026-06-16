@@ -2,11 +2,12 @@ import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import ZAI from '@/lib/ollama';
 
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 /**
  * POST /api/copilot/chat
  * Conversational AI Co-Pilot for school admins.
  * Uses groq-sdk with tool-calling to answer questions about the school.
- * Streams responses via Server-Sent Events.
  *
  * Body: { messages: Array<{role, content}>, date?: string }
  */
@@ -20,11 +21,11 @@ export async function POST(request: NextRequest) {
       type: 'function',
       function: {
         name: 'getTeacherSchedule',
-        description: 'Get a teacher\'s schedule for a specific date. Provide teacher name or employee ID.',
+        description: 'Get a teacher\'s schedule for a specific date. Provide teacher name.',
         parameters: {
           type: 'object',
           properties: {
-            teacherIdentifier: { type: 'string', description: 'Teacher name (partial match) or employee ID' },
+            teacherIdentifier: { type: 'string', description: 'Teacher name (partial match) or email' },
             date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
           },
           required: ['teacherIdentifier', 'date'],
@@ -66,7 +67,7 @@ export async function POST(request: NextRequest) {
         parameters: {
           type: 'object',
           properties: {
-            teacherIdentifier: { type: 'string', description: 'Teacher name or employee ID' },
+            teacherIdentifier: { type: 'string', description: 'Teacher name or email' },
           },
           required: ['teacherIdentifier'],
         },
@@ -76,27 +77,14 @@ export async function POST(request: NextRequest) {
       type: 'function',
       function: {
         name: 'findFreeTeachers',
-        description: 'Find teachers who are free (not teaching, not on leave) during a specific time slot on a date.',
+        description: 'Find teachers who are free (not teaching, not on leave) during a specific period on a date.',
         parameters: {
           type: 'object',
           properties: {
             date: { type: 'string', description: 'Date in YYYY-MM-DD format' },
-            timeSlotName: { type: 'string', description: 'Period/time slot name (e.g., "Period 3", "Period 4")' },
+            period: { type: 'number', description: 'Period number (1-8)' },
           },
-          required: ['date', 'timeSlotName'],
-        },
-      },
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'predictAbsences',
-        description: 'Run the predictive absence engine for upcoming dates.',
-        parameters: {
-          type: 'object',
-          properties: {
-            baseDate: { type: 'string', description: 'Base date to predict from (YYYY-MM-DD)' },
-          },
+          required: ['date', 'period'],
         },
       },
     },
@@ -104,7 +92,7 @@ export async function POST(request: NextRequest) {
       type: 'function',
       function: {
         name: 'getInsights',
-        description: 'Get AI insights and analytics for a specific date including heatmap data, confidence metrics, and department breakdown.',
+        description: 'Get AI insights and analytics for a specific date including heatmap data and subject breakdown.',
         parameters: {
           type: 'object',
           properties: {
@@ -118,7 +106,7 @@ export async function POST(request: NextRequest) {
       type: 'function',
       function: {
         name: 'getSubstitutionDetails',
-        description: 'Get details of a specific substitution request including assigned substitute, confidence, and reasoning.',
+        description: 'Get details of a specific substitution request including assigned substitute.',
         parameters: {
           type: 'object',
           properties: {
@@ -137,135 +125,86 @@ export async function POST(request: NextRequest) {
         case 'getTeacherSchedule': {
           const { teacherIdentifier, date } = args;
           const teacher = await db.teacher.findFirst({
-            where: {
-              OR: [
-                { name: { contains: teacherIdentifier } },
-                { employeeId: teacherIdentifier },
-                { email: teacherIdentifier },
-              ],
-            },
-            include: {
-              schedules: {
-                where: { dayOfWeek: new Date(date + 'T00:00:00').getDay() || 1 },
-                include: { subject: true, grade: true, section: true, timeSlot: true },
-                orderBy: { timeSlot: { order: 'asc' } },
-              },
-              leaves: { where: { status: 'APPROVED', startDate: { lte: date }, endDate: { gte: date } } },
-            },
+            where: { OR: [{ name: { contains: teacherIdentifier } }, { email: { contains: teacherIdentifier } }] },
           });
           if (!teacher) return `No teacher found matching "${teacherIdentifier}".`;
-          const isAbsent = teacher.leaves.length > 0;
-          const periods = teacher.schedules
-            .filter(s => !s.timeSlot.isBreak)
-            .map(s => `${s.timeSlot.name} (${s.timeSlot.startTime}-${s.timeSlot.endTime}): ${s.subject.name} for Grade ${s.grade.name} Sec ${s.section.name}`)
-            .join('\n');
-          return `Teacher: ${teacher.name} (${teacher.department || 'No dept'})${isAbsent ? ' — ⚠️ ABSENT (on approved leave)' : ''}\nSchedule for ${date}:\n${periods || 'No classes scheduled'}`;
+
+          const dayName = DAY_NAMES[new Date(date + 'T00:00:00').getDay()];
+          const schedules = await db.schedule.findMany({ where: { teacherId: teacher.id, day: dayName }, orderBy: { period: 'asc' } });
+          const isAbsent = await db.leaveApplication.count({
+            where: { teacherId: teacher.id, status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
+          }) > 0;
+
+          const periods = schedules.map(s => `Period ${s.period} (${s.startTime}-${s.endTime}): ${s.subject} for ${s.grade} Sec ${s.section}`).join('\n');
+          return `Teacher: ${teacher.name} (${teacher.subject})${isAbsent ? ' — ⚠️ ABSENT (on approved leave)' : ''}\nSchedule for ${date}:\n${periods || 'No classes scheduled'}`;
         }
 
         case 'getAbsencesForDate': {
           const { date } = args;
-          const leaves = await db.leave.findMany({
-            where: { status: 'APPROVED', startDate: { lte: date }, endDate: { gte: date } },
-            include: {
-              teacher: {
-                include: {
-                  schedules: {
-                    where: { dayOfWeek: new Date(date + 'T00:00:00').getDay() || 1 },
-                    include: { subject: true, grade: true, section: true, timeSlot: true },
-                  },
-                },
-              },
-            },
+          const leaves = await db.leaveApplication.findMany({
+            where: { status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
+            include: { teacher: true },
           });
           if (leaves.length === 0) return `No approved absences for ${date}.`;
-          return leaves.map(l => {
-            const affectedClasses = l.teacher.schedules
-              .filter(s => !s.timeSlot.isBreak)
-              .map(s => `${s.subject.name} Gr ${s.grade.name} Sec ${s.section.name} (${s.timeSlot.name})`)
-              .join(', ');
-            return `${l.teacher.name} (${l.teacher.department}): ${l.reason}${affectedClasses ? `. Affected: ${affectedClasses}` : ''}`;
-          }).join('\n');
+          const dayName = DAY_NAMES[new Date(date + 'T00:00:00').getDay()];
+          const results = await Promise.all(leaves.map(async (l) => {
+            const schedules = await db.schedule.findMany({ where: { teacherId: l.teacherId, day: dayName } });
+            const affected = schedules.map(s => `${s.subject} ${s.grade} Sec ${s.section} (Period ${s.period})`).join(', ');
+            return `${l.teacher.name} (${l.teacher.subject}): ${l.reason}${affected ? `. Affected: ${affected}` : ''}`;
+          }));
+          return results.join('\n');
         }
 
         case 'getPendingSubstitutions': {
           const { date: filterDate } = args;
-          const where: any = { status: 'PENDING' };
+          const where: any = { status: 'pending' };
           if (filterDate) where.date = filterDate;
-          const pending = await db.substitutionRequest.findMany({
+          const pending = await db.substitution.findMany({
             where,
-            include: { originalTeacher: true, subject: true, schedule: { include: { grade: true, section: true, timeSlot: true } } },
+            include: { absentTeacher: true },
             take: 20,
             orderBy: { createdAt: 'desc' },
           });
           if (pending.length === 0) return 'No pending substitutions found.';
-          return pending.map(p => `${p.subject.name} — Gr ${p.schedule.grade.name} Sec ${p.schedule.section.name} ${p.schedule.timeSlot.name} (${p.schedule.timeSlot.startTime}-${p.schedule.timeSlot.endTime}) — Original: ${p.originalTeacher.name} — Date: ${p.date}`).join('\n');
+          return pending.map(p => `${p.subject} — ${p.grade} Sec ${p.section} Period ${p.period} — Original: ${p.absentTeacher.name} — Date: ${p.date}`).join('\n');
         }
 
         case 'getTeacherWorkload': {
           const { teacherIdentifier } = args;
           const teacher = await db.teacher.findFirst({
-            where: { OR: [{ name: { contains: teacherIdentifier } }, { employeeId: teacherIdentifier }] },
-            include: {
-              substitutionsAsSubstitute: {
-                where: { status: 'ACCEPTED' },
-                include: {
-                  substitutionRequest: {
-                    include: {
-                      subject: true,
-                      schedule: { include: { grade: true, section: true, timeSlot: true } },
-                    },
-                  },
-                },
-              },
-            },
+            where: { OR: [{ name: { contains: teacherIdentifier } }, { email: { contains: teacherIdentifier } }] },
           });
           if (!teacher) return `No teacher found matching "${teacherIdentifier}".`;
+
           const weekStart = new Date();
           const day = weekStart.getDay();
           const diff = day === 0 ? 6 : day - 1;
           weekStart.setDate(weekStart.getDate() - diff);
           const weekStartStr = weekStart.toISOString().split('T')[0];
-          const weekSubs = teacher.substitutionsAsSubstitute.filter(s => s.createdAt >= new Date(weekStartStr));
-          return `Teacher: ${teacher.name} (${teacher.department})\nSubstitutions this week: ${weekSubs.length}\n${weekSubs.map(s => `- ${s.substitutionRequest.subject.name} Gr ${s.substitutionRequest.schedule.grade.name} on ${s.substitutionRequest.date}`).join('\n') || 'No substitutions this week'}`;
+
+          const weekSubs = await db.substitution.findMany({
+            where: { substituteId: teacher.id, status: { in: ['assigned', 'completed'] }, date: { gte: weekStartStr } },
+          });
+          return `Teacher: ${teacher.name} (${teacher.subject})\nSubstitutions this week: ${weekSubs.length}\n${weekSubs.map(s => `- ${s.subject} ${s.grade} on ${s.date}`).join('\n') || 'No substitutions this week'}`;
         }
 
         case 'findFreeTeachers': {
-          const { date: fDate, timeSlotName } = args;
-          const timeSlot = await db.timeSlot.findFirst({ where: { name: { contains: timeSlotName } } });
-          if (!timeSlot) {
-            const allSlots = await db.timeSlot.findMany({ orderBy: { order: 'asc' } });
-            return `Time slot "${timeSlotName}" not found. Available: ${allSlots.map(s => s.name).join(', ')}`;
-          }
+          const { date: fDate, period } = args;
           const dayOfWeek = new Date(fDate + 'T00:00:00').getDay();
           const scheduleDay = dayOfWeek >= 1 && dayOfWeek <= 5 ? dayOfWeek : 1;
-          const busyTeacherIds = await db.schedule.findMany({
-            where: { timeSlotId: timeSlot.id, dayOfWeek: scheduleDay },
-            select: { teacherId: true },
-          });
-          const busyIds = new Set(busyTeacherIds.map(s => s.teacherId));
-          const onLeaveTeacherIds = await db.leave.findMany({
-            where: { status: 'APPROVED', startDate: { lte: fDate }, endDate: { gte: fDate } },
-            select: { teacherId: true },
-          });
-          const leaveIds = new Set(onLeaveTeacherIds.map(l => l.teacherId));
-          const freeTeachers = await db.teacher.findMany({
-            where: {
-              isActive: true,
-              id: { notIn: [...busyIds, ...leaveIds] },
-            },
-            include: { teacherSubjects: { include: { subject: true } } },
-            take: 15,
-          });
-          if (freeTeachers.length === 0) return `No free teachers found for ${timeSlotName} on ${fDate}.`;
-          return freeTeachers.map(t => `${t.name} (${t.department || 'No dept'}) — Teaches: ${t.teacherSubjects.map(ts => ts.subject.name).join(', ') || 'General'}`).join('\n');
-        }
+          const dayName = DAY_NAMES[scheduleDay];
 
-        case 'predictAbsences': {
-          const { baseDate } = args;
-          const { runPredictionEngine } = await import('@/lib/services/prediction-engine');
-          const predictions = await runPredictionEngine(baseDate || today);
-          if (predictions.length === 0) return 'No absence predictions found for upcoming days.';
-          return predictions.map(p => `${p.teacherName} (${p.department || 'No dept'}) — Risk: ${p.riskScore}/100 on ${p.predictedDate} — Signals: ${p.signalsList?.map((s: any) => s.description).join('; ') || 'Various'}`).join('\n');
+          const busyTeacherIds = await db.schedule.findMany({ where: { day: dayName, period }, select: { teacherId: true } });
+          const busyIds = new Set(busyTeacherIds.map(s => s.teacherId).filter((id): id is string => !!id));
+          const onLeave = await db.leaveApplication.findMany({
+            where: { status: 'approved', startDate: { lte: fDate }, endDate: { gte: fDate } },
+            select: { teacherId: true },
+          });
+          onLeave.forEach(l => busyIds.add(l.teacherId));
+
+          const freeTeachers = await db.teacher.findMany({ where: { id: { notIn: Array.from(busyIds) } }, take: 15 });
+          if (freeTeachers.length === 0) return `No free teachers found for Period ${period} on ${fDate}.`;
+          return freeTeachers.map(t => `${t.name} (${t.subject})`).join('\n');
         }
 
         case 'getInsights': {
@@ -274,23 +213,17 @@ export async function POST(request: NextRequest) {
           const insightsJson = await insightsRes.json();
           if (!insightsJson.success) return 'Failed to fetch insights.';
           const d = insightsJson.data;
-          return `AI Confidence: ${d.aiConfidenceMetrics?.average || 'N/A'}% (${d.aiConfidenceMetrics?.total || 0} assignments)\nPeriod Heatmap: ${d.periodHeatmap?.map((p: any) => `${p.periodName}: ${p.absenceCount} absences`).join(', ') || 'No data'}\nTeachers at Risk: ${d.teachersAtRisk?.map((t: any) => t.teacherName).join(', ') || 'None'}\nDepartment Breakdown: ${d.departmentBreakdown?.map((dept: any) => `${dept.department}: ${dept.absentCount}/${dept.totalTeachers} absent`).join(', ') || 'No data'}`;
+          return `AI Auto-assigned: ${d.aiConfidenceMetrics?.total || 0}\nPeriod Heatmap: ${d.periodHeatmap?.map((p: any) => `${p.periodName}: ${p.absenceCount} absences`).join(', ') || 'No data'}\nTeachers at Risk: ${d.teachersAtRisk?.map((t: any) => t.teacherName).join(', ') || 'None'}\nSubject Breakdown: ${d.departmentBreakdown?.map((dept: any) => `${dept.department}: ${dept.absentCount}/${dept.totalTeachers} absent`).join(', ') || 'No data'}`;
         }
 
         case 'getSubstitutionDetails': {
           const { requestId } = args;
-          const sub = await db.substitutionRequest.findUnique({
+          const sub = await db.substitution.findUnique({
             where: { id: requestId },
-            include: {
-              originalTeacher: true,
-              subject: true,
-              schedule: { include: { grade: true, section: true, timeSlot: true } },
-              assignments: { include: { substituteTeacher: true } },
-            },
+            include: { absentTeacher: true, substitute: true },
           });
           if (!sub) return `Substitution request ${requestId} not found.`;
-          const assignment = sub.assignments[0];
-          return `Subject: ${sub.subject.name} | Grade: ${sub.schedule.grade.name} Sec ${sub.schedule.section.name}\nTime: ${sub.schedule.timeSlot.name} (${sub.schedule.timeSlot.startTime}-${sub.schedule.timeSlot.endTime}) on ${sub.date}\nOriginal: ${sub.originalTeacher.name} | Status: ${sub.status}\n${assignment ? `Substitute: ${assignment.substituteTeacher.name} (${assignment.substituteTeacher.department}) | Confidence: ${assignment.aiConfidence}% | Reasons: ${assignment.reasons || 'N/A'}` : 'No substitute assigned yet.'}`;
+          return `Subject: ${sub.subject} | Grade: ${sub.grade} Sec ${sub.section}\nPeriod: ${sub.period} on ${sub.date}\nOriginal: ${sub.absentTeacher.name} | Status: ${sub.status}\n${sub.substitute ? `Substitute: ${sub.substitute.name} (${sub.substitute.subject})` : 'No substitute assigned yet.'}`;
         }
 
         default:
@@ -315,15 +248,13 @@ Rules:
 2. When recommending substitute teachers, explain your reasoning clearly.
 3. For destructive actions (assigning, reassigning), always ask for confirmation.
 4. Be concise but thorough. Use bullet points for lists.
-5. If you don't have enough information, ask clarifying questions.
-6. Show confidence levels when discussing AI recommendations.`;
+5. If you don't have enough information, ask clarifying questions.`;
 
     const chatMessages: any[] = [
       { role: 'system', content: systemPrompt },
       ...messages.map((m: any) => ({ role: m.role, content: m.content })),
     ];
 
-    // First call - may include tool calls
     let response = await zai.chat.completions.create({
       messages: chatMessages,
       tools,
@@ -335,15 +266,12 @@ Rules:
       const choice = response.choices[0];
       if (!choice) break;
 
-      // If no tool calls, we're done
       if (!choice.message?.tool_calls || choice.message.tool_calls.length === 0) {
         break;
       }
 
-      // Add assistant message with tool calls to chat history
       chatMessages.push(choice.message);
 
-      // Execute each tool call
       for (const toolCall of choice.message.tool_calls) {
         const args = JSON.parse(toolCall.function.arguments || '{}');
         const result = await executeTool(toolCall.function.name, args);
@@ -354,7 +282,6 @@ Rules:
         });
       }
 
-      // Call again with tool results
       response = await zai.chat.completions.create({
         messages: chatMessages,
         tools,

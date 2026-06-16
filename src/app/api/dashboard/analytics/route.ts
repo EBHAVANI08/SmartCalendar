@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+const TIME_SLOTS = [
+  { period: 1, startTime: '08:00', endTime: '08:40' },
+  { period: 2, startTime: '08:40', endTime: '09:20' },
+  { period: 3, startTime: '09:20', endTime: '10:00' },
+  { period: 4, startTime: '10:20', endTime: '11:00' },
+  { period: 5, startTime: '11:00', endTime: '11:40' },
+  { period: 6, startTime: '11:40', endTime: '12:20' },
+  { period: 7, startTime: '13:00', endTime: '13:40' },
+  { period: 8, startTime: '13:40', endTime: '14:20' },
+];
+
+const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 export async function GET(req: NextRequest) {
   try {
     const date = req.nextUrl.searchParams.get('date') || new Date().toISOString().split('T')[0];
@@ -11,12 +24,10 @@ export async function GET(req: NextRequest) {
     fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 21);
     const fourWeeksAgoStr = fourWeeksAgo.toISOString().split('T')[0];
 
-    const weeklySubs = await db.substitutionRequest.findMany({
+    const weeklySubs = await db.substitution.findMany({
       where: { date: { gte: fourWeeksAgoStr, lte: date } },
-      include: { assignments: { where: { status: 'ACCEPTED' } } },
     });
 
-    // Group by week
     const weeklyTrends: { week: string; total: number; aiAssigned: number; manualAssigned: number; sameSubject: number; crossSubject: number }[] = [];
     for (let w = 0; w < 4; w++) {
       const wStart = new Date(weekStart + 'T00:00:00');
@@ -27,77 +38,65 @@ export async function GET(req: NextRequest) {
       const wEndStr = wEnd.toISOString().split('T')[0];
 
       const weekSubs = weeklySubs.filter(s => s.date >= wStartStr && s.date <= wEndStr);
-      const aiAssigned = weekSubs.filter(s => s.assignments.some(a => a.assignedBy === 'AI_AGENT')).length;
-      const manualAssigned = weekSubs.filter(s => s.reason === 'MANUAL').length;
-      const sameSubject = weekSubs.filter(s => s.reason !== 'SUBJECT_SWAP' && s.assignments.some(a => a.status === 'ACCEPTED')).length;
+      const aiAssigned = weekSubs.filter(s => s.source === 'ai-agent' && s.substituteId).length;
+      const manualAssigned = weekSubs.filter(s => s.source === 'manual').length;
+      const resolved = weekSubs.filter(s => !!s.substituteId).length;
 
       weeklyTrends.push({
         week: `Week ${4 - w}`,
         total: weekSubs.length,
         aiAssigned,
         manualAssigned,
-        sameSubject,
-        crossSubject: weekSubs.length - sameSubject,
+        sameSubject: resolved,
+        crossSubject: weekSubs.length - resolved,
       });
     }
 
     // ── 2. Most Substituted Subjects (top 5) ──
     const subjectCounts: Record<string, { name: string; count: number; color: string | null }> = {};
-    const allSubsWithSubject = await db.substitutionRequest.findMany({
-      where: { date: { gte: fourWeeksAgoStr } },
-      include: { subject: true },
-    });
-    for (const sub of allSubsWithSubject) {
-      const name = sub.subject.name;
-      if (!subjectCounts[name]) subjectCounts[name] = { name, count: 0, color: sub.subject.color };
+    for (const sub of weeklySubs) {
+      const name = sub.subject;
+      if (!subjectCounts[name]) subjectCounts[name] = { name, count: 0, color: null };
       subjectCounts[name].count++;
     }
     const topSubjects = Object.values(subjectCounts).sort((a, b) => b.count - a.count).slice(0, 5);
 
     // ── 3. Most Frequently Absent Teachers (top 5) ──
     const teacherAbsenceCounts: Record<string, { name: string; department: string | null; count: number }> = {};
-    const allLeaves = await db.leave.findMany({
-      where: { status: 'APPROVED', startDate: { gte: fourWeeksAgoStr } },
+    const allLeaves = await db.leaveApplication.findMany({
+      where: { status: 'approved', startDate: { gte: fourWeeksAgoStr } },
       include: { teacher: true },
     });
     for (const leave of allLeaves) {
       const id = leave.teacherId;
-      if (!teacherAbsenceCounts[id]) teacherAbsenceCounts[id] = { name: leave.teacher.name, department: leave.teacher.department, count: 0 };
+      if (!teacherAbsenceCounts[id]) teacherAbsenceCounts[id] = { name: leave.teacher.name, department: leave.teacher.subject, count: 0 };
       teacherAbsenceCounts[id].count++;
     }
     const topAbsentTeachers = Object.values(teacherAbsenceCounts).sort((a, b) => b.count - a.count).slice(0, 5);
 
     // ── 4. Substitution Coverage Rate ──
-    const todaySubs = await db.substitutionRequest.findMany({
-      where: { date },
-      include: { assignments: { where: { status: 'ACCEPTED' } } },
-    });
-    const resolvedSameSubject = todaySubs.filter(s => s.reason !== 'SUBJECT_SWAP' && s.assignments.length > 0 && s.assignments[0].assignedBy === 'AI_AGENT').length;
-    const resolvedTotal = todaySubs.filter(s => s.assignments.length > 0).length;
-    const pendingTotal = todaySubs.filter(s => s.status === 'PENDING').length;
+    const todaySubs = await db.substitution.findMany({ where: { date } });
+    const resolvedSameSubject = todaySubs.filter(s => s.source === 'ai-agent' && !!s.substituteId).length;
+    const resolvedTotal = todaySubs.filter(s => !!s.substituteId).length;
+    const pendingTotal = todaySubs.filter(s => s.status === 'pending').length;
     const coverageRate = todaySubs.length > 0 ? Math.round((resolvedTotal / todaySubs.length) * 100) : 100;
     const sameSubjectRate = resolvedTotal > 0 ? Math.round((resolvedSameSubject / resolvedTotal) * 100) : 0;
 
-    // ── 5. Department-wise Breakdown ──
+    // ── 5. Subject-wise Breakdown (closest equivalent to department; flat schema has no department field) ──
     const deptBreakdown: Record<string, { department: string; absences: number; substitutions: number; coverageRate: number }> = {};
-    const absentTeacherIds = await db.leave.findMany({
-      where: { status: 'APPROVED', startDate: { lte: date }, endDate: { gte: date } },
+    const absentLeavesToday = await db.leaveApplication.findMany({
+      where: { status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
       include: { teacher: true },
     });
-    for (const leave of absentTeacherIds) {
-      const dept = leave.teacher.department || 'Unknown';
+    for (const leave of absentLeavesToday) {
+      const dept = leave.teacher.subject || 'Unknown';
       if (!deptBreakdown[dept]) deptBreakdown[dept] = { department: dept, absences: 0, substitutions: 0, coverageRate: 0 };
       deptBreakdown[dept].absences++;
     }
-    // Count substitutions per department
-    const todaySubRequests = await db.substitutionRequest.findMany({
-      where: { date },
-      include: { originalTeacher: true, assignments: { where: { status: 'ACCEPTED' } } },
-    });
-    for (const sub of todaySubRequests) {
-      const dept = sub.originalTeacher.department || 'Unknown';
+    for (const sub of todaySubs) {
+      const dept = sub.subject || 'Unknown';
       if (!deptBreakdown[dept]) deptBreakdown[dept] = { department: dept, absences: 0, substitutions: 0, coverageRate: 0 };
-      if (sub.assignments.length > 0) deptBreakdown[dept].substitutions++;
+      if (sub.substituteId) deptBreakdown[dept].substitutions++;
     }
     for (const dept of Object.values(deptBreakdown)) {
       dept.coverageRate = dept.absences > 0 ? Math.round((dept.substitutions / dept.absences) * 100) : 100;
@@ -105,12 +104,9 @@ export async function GET(req: NextRequest) {
 
     // ── 6. Peak Substitution Hours ──
     const peakHours: Record<string, { timeSlot: string; count: number }> = {};
-    const todaySubsWithSlot = await db.substitutionRequest.findMany({
-      where: { date },
-      include: { schedule: { include: { timeSlot: true } } },
-    });
-    for (const sub of todaySubsWithSlot) {
-      const slot = `${sub.schedule.timeSlot.startTime}-${sub.schedule.timeSlot.endTime}`;
+    for (const sub of todaySubs) {
+      const slotInfo = TIME_SLOTS.find(t => t.period === sub.period);
+      const slot = slotInfo ? `${slotInfo.startTime}-${slotInfo.endTime}` : `Period ${sub.period}`;
       if (!peakHours[slot]) peakHours[slot] = { timeSlot: slot, count: 0 };
       peakHours[slot].count++;
     }
@@ -118,20 +114,17 @@ export async function GET(req: NextRequest) {
 
     // ── 7. Overload Alerts ──
     const overloadAlerts: { teacherId: string; teacherName: string; substitutionCount: number; maxClasses: number }[] = [];
-    const todayAssignments = await db.substitutionAssignment.findMany({
-      where: { status: 'ACCEPTED', createdAt: { gte: new Date(date + 'T00:00:00'), lte: new Date(date + 'T23:59:59') } },
-      include: { substituteTeacher: { include: { schedules: { where: { dayOfWeek: new Date(date + 'T00:00:00').getDay() } } } } },
-    });
+    const dayName = DAY_NAMES[new Date(date + 'T00:00:00').getDay()];
+    const todayAssignments = todaySubs.filter(s => !!s.substituteId);
     const teacherSubCounts: Record<string, { name: string; subCount: number; regularClasses: number }> = {};
     for (const a of todayAssignments) {
-      if (!teacherSubCounts[a.substituteTeacherId]) {
-        teacherSubCounts[a.substituteTeacherId] = {
-          name: a.substituteTeacher.name,
-          subCount: 0,
-          regularClasses: a.substituteTeacher.schedules.length,
-        };
+      const subId = a.substituteId!;
+      if (!teacherSubCounts[subId]) {
+        const teacher = await db.teacher.findUnique({ where: { id: subId } });
+        const regularClasses = await db.schedule.count({ where: { teacherId: subId, day: dayName } });
+        teacherSubCounts[subId] = { name: teacher?.name || 'Unknown', subCount: 0, regularClasses };
       }
-      teacherSubCounts[a.substituteTeacherId].subCount++;
+      teacherSubCounts[subId].subCount++;
     }
     for (const [id, info] of Object.entries(teacherSubCounts)) {
       if (info.subCount >= 2) {
@@ -144,15 +137,12 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // ── 8. Department Crisis Alerts ──
+    // ── 8. Subject Crisis Alerts (closest equivalent to department crisis) ──
     const crisisAlerts: { department: string; absentCount: number; totalTeachers: number; severity: 'critical' | 'warning' }[] = [];
-    const allDeptTeachers = await db.teacher.findMany({
-      where: { isActive: true },
-      select: { department: true },
-    });
+    const allTeachers = await db.teacher.findMany({ select: { subject: true } });
     const deptTeacherCounts: Record<string, number> = {};
-    for (const t of allDeptTeachers) {
-      const dept = t.department || 'Unknown';
+    for (const t of allTeachers) {
+      const dept = t.subject || 'Unknown';
       deptTeacherCounts[dept] = (deptTeacherCounts[dept] || 0) + 1;
     }
     for (const [dept, info] of Object.entries(deptBreakdown)) {
