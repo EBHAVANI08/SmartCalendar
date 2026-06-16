@@ -4432,7 +4432,15 @@ function TeacherPortalSection({
                       <FileText className="w-4 h-4" />
                       Homework / Extension
                     </h4>
-                    <p className="text-sm text-muted-foreground">{lessonPlan.homework}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {typeof lessonPlan.homework === 'string'
+                        ? lessonPlan.homework
+                        : [
+                            (lessonPlan.homework as { task?: string }).task,
+                            (lessonPlan.homework as { purpose?: string }).purpose,
+                            (lessonPlan.homework as { estimatedTime?: string }).estimatedTime,
+                          ].filter(Boolean).join(' — ')}
+                    </p>
                   </div>
                 )}
 
@@ -6627,7 +6635,15 @@ function LessonPlanLibrarySection({ teachers }: { teachers: Teacher[] }) {
                       <h4 className="text-sm font-semibold mb-1 flex items-center gap-2">
                         <FileText className="w-4 h-4" /> Homework
                       </h4>
-                      <p className="text-sm text-muted-foreground">{viewPlan.homework}</p>
+                      <p className="text-sm text-muted-foreground">
+                        {typeof viewPlan.homework === 'string'
+                          ? viewPlan.homework
+                          : [
+                              (viewPlan.homework as { task?: string }).task,
+                              (viewPlan.homework as { purpose?: string }).purpose,
+                              (viewPlan.homework as { estimatedTime?: string }).estimatedTime,
+                            ].filter(Boolean).join(' — ')}
+                      </p>
                     </div>
                   )}
                 </div>

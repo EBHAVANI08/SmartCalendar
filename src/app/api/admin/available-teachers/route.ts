@@ -20,31 +20,50 @@ export async function GET(request: NextRequest) {
     const periodNum = parseInt(period);
     const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
 
+    // Batch-fetch everything up front instead of N+1 per-teacher queries
+    // (182 teachers x 4 queries each would exhaust the DB connection pool).
     const allTeachers = await db.teacher.findMany({ orderBy: { name: 'asc' } });
+    const leavesToday = await db.leaveApplication.findMany({
+      where: { status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
+      select: { teacherId: true },
+    });
+    const onLeaveSet = new Set(leavesToday.map(l => l.teacherId));
 
-    const prioritizedCandidates = await Promise.all(allTeachers.map(async (teacher) => {
-      const isOnLeave = await db.leaveApplication.count({
-        where: { teacherId: teacher.id, status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
-      }) > 0;
+    const daySchedules = await db.schedule.findMany({ where: { day: dayName } });
+    const conflictByTeacher = new Map<string, typeof daySchedules[number]>();
+    const loadByTeacher = new Map<string, number>();
+    for (const s of daySchedules) {
+      if (!s.teacherId) continue;
+      loadByTeacher.set(s.teacherId, (loadByTeacher.get(s.teacherId) || 0) + 1);
+      if (s.period === periodNum) conflictByTeacher.set(s.teacherId, s);
+    }
 
-      const scheduleConflict = await db.schedule.findFirst({
-        where: { teacherId: teacher.id, day: dayName, period: periodNum },
-      });
+    const weekSubs = await db.substitution.findMany({
+      where: { status: { in: ['assigned', 'completed'] }, date: { gte: weekAgo } },
+      select: { substituteId: true },
+    });
+    const weeklySubCountByTeacher = new Map<string, number>();
+    for (const s of weekSubs) {
+      if (!s.substituteId) continue;
+      weeklySubCountByTeacher.set(s.substituteId, (weeklySubCountByTeacher.get(s.substituteId) || 0) + 1);
+    }
+
+    const prioritizedCandidates = allTeachers.map((teacher) => {
+      const isOnLeave = onLeaveSet.has(teacher.id);
+      const scheduleConflict = conflictByTeacher.get(teacher.id);
       const available = !isOnLeave && !scheduleConflict;
       const conflicts: string[] = [];
       if (isOnLeave) conflicts.push('On approved leave');
       if (scheduleConflict) conflicts.push(`Teaching ${scheduleConflict.subject}`);
 
-      const currentLoad = await db.schedule.count({ where: { teacherId: teacher.id, day: dayName } });
-      const weeklySubCount = await db.substitution.count({
-        where: { substituteId: teacher.id, status: { in: ['assigned', 'completed'] }, date: { gte: weekAgo } },
-      });
+      const currentLoad = loadByTeacher.get(teacher.id) || 0;
+      const weeklySubCount = weeklySubCountByTeacher.get(teacher.id) || 0;
 
       const teachesSameSubject = !!subject && teacher.subject === subject;
       let score = teachesSameSubject ? 50 : 10;
       if (teachesSameSubject) {
         const teacherGrades: string[] = JSON.parse(teacher.grades || '[]');
-        if (teacherGrades.length > 0) score += 30; // has defined grade coverage
+        if (teacherGrades.length > 0) score += 30;
       }
 
       return {
@@ -60,7 +79,7 @@ export async function GET(request: NextRequest) {
         currentLoad,
         weeklySubCount,
       };
-    }));
+    });
 
     prioritizedCandidates.sort((a, b) => {
       if (a.isAvailable !== b.isAvailable) return a.isAvailable ? -1 : 1;

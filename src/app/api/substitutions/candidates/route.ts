@@ -39,6 +39,23 @@ export async function GET(req: NextRequest) {
       where: { id: { notIn: Array.from(busySet) } },
     });
 
+    // Batch-fetch instead of N+1 per-teacher queries.
+    const allDaySchedules = await db.schedule.findMany({ where: { day: dayName }, select: { teacherId: true } });
+    const classesTodayByTeacher = new Map<string, number>();
+    for (const s of allDaySchedules) {
+      if (!s.teacherId) continue;
+      classesTodayByTeacher.set(s.teacherId, (classesTodayByTeacher.get(s.teacherId) || 0) + 1);
+    }
+    const weekSubs = await db.substitution.findMany({
+      where: { date: { gte: weekStart, lte: weekEnd }, status: { in: ['assigned', 'completed'] } },
+      select: { substituteId: true },
+    });
+    const weeklySubsByTeacher = new Map<string, number>();
+    for (const s of weekSubs) {
+      if (!s.substituteId) continue;
+      weeklySubsByTeacher.set(s.substituteId, (weeklySubsByTeacher.get(s.substituteId) || 0) + 1);
+    }
+
     const candidates: any[] = [];
 
     for (const teacher of allTeachers) {
@@ -46,11 +63,9 @@ export async function GET(req: NextRequest) {
       const teachesSameSubject = teacher.subject === request.subject;
       const teachesThisGrade = teacherGrades.includes(request.grade);
 
-      const classesToday = await db.schedule.count({ where: { teacherId: teacher.id, day: dayName } });
+      const classesToday = classesTodayByTeacher.get(teacher.id) || 0;
       const freePeriods = Math.max(0, 8 - classesToday);
-      const weeklySubs = await db.substitution.count({
-        where: { substituteId: teacher.id, date: { gte: weekStart, lte: weekEnd }, status: { in: ['assigned', 'completed'] } },
-      });
+      const weeklySubs = weeklySubsByTeacher.get(teacher.id) || 0;
 
       let score = teachesSameSubject ? (teachesThisGrade ? 95 : 80) : 30;
       const reasons: string[] = [];

@@ -60,16 +60,32 @@ export async function GET(req: NextRequest) {
 
     const available = await db.teacher.findMany({ where: { id: { notIn: Array.from(busySet) } } });
 
-    const candidates = await Promise.all(available.map(async (t) => {
+    // Batch-fetch instead of N+1 per-teacher queries (avoids exhausting the
+    // DB connection pool when there are 100+ available teachers).
+    const allDaySchedules = await db.schedule.findMany({ where: { day: dayName }, select: { teacherId: true } });
+    const classesTodayByTeacher = new Map<string, number>();
+    for (const s of allDaySchedules) {
+      if (!s.teacherId) continue;
+      classesTodayByTeacher.set(s.teacherId, (classesTodayByTeacher.get(s.teacherId) || 0) + 1);
+    }
+    const weekSubs = await db.substitution.findMany({
+      where: { date: { gte: weekStart, lte: weekEnd }, status: { in: ['assigned', 'completed'] } },
+      select: { substituteId: true },
+    });
+    const weeklySubsByTeacher = new Map<string, number>();
+    for (const s of weekSubs) {
+      if (!s.substituteId) continue;
+      weeklySubsByTeacher.set(s.substituteId, (weeklySubsByTeacher.get(s.substituteId) || 0) + 1);
+    }
+
+    const candidates = available.map((t) => {
       const sameSubjectMatch = t.subject === schedule.subject;
       const teacherGrades: string[] = JSON.parse(t.grades || '[]');
       const primaryMatch = sameSubjectMatch && teacherGrades.includes(schedule.grade);
 
-      const classesToday = await db.schedule.count({ where: { teacherId: t.id, day: dayName } });
+      const classesToday = classesTodayByTeacher.get(t.id) || 0;
       const freePeriods = Math.max(0, 8 - classesToday);
-      const weeklySubs = await db.substitution.count({
-        where: { substituteId: t.id, date: { gte: weekStart, lte: weekEnd }, status: { in: ['assigned', 'completed'] } },
-      });
+      const weeklySubs = weeklySubsByTeacher.get(t.id) || 0;
 
       let score = 0;
       const reasons: string[] = [];
@@ -123,7 +139,7 @@ export async function GET(req: NextRequest) {
         freePeriods,
         weeklySubCount: weeklySubs,
       };
-    }));
+    });
 
     candidates.sort((a, b) => {
       if (a.teachesSameSubject !== b.teachesSameSubject) return a.teachesSameSubject ? -1 : 1;

@@ -20,25 +20,49 @@ export async function GET(request: NextRequest) {
     const periodNum = parseInt(period);
 
     const qualifiedTeachers = await db.teacher.findMany({ where: { subject } });
+    const qualifiedIds = qualifiedTeachers.map(t => t.id);
 
-    const availableTeachers = [];
-    const unavailableTeachers = [];
+    // Batch-fetch instead of N+1 per-teacher queries.
+    const leavesToday = await db.leaveApplication.findMany({
+      where: { teacherId: { in: qualifiedIds }, status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
+      select: { teacherId: true },
+    });
+    const onLeaveSet = new Set(leavesToday.map(l => l.teacherId));
+
+    const daySchedules = await db.schedule.findMany({ where: { teacherId: { in: qualifiedIds }, day: dayName } });
+    const conflictByTeacher = new Map<string, typeof daySchedules[number]>();
+    const loadByTeacher = new Map<string, number>();
+    for (const s of daySchedules) {
+      if (!s.teacherId) continue;
+      loadByTeacher.set(s.teacherId, (loadByTeacher.get(s.teacherId) || 0) + 1);
+      if (s.period === periodNum) conflictByTeacher.set(s.teacherId, s);
+    }
+
+    const subs = await db.substitution.findMany({
+      where: { substituteId: { in: qualifiedIds }, status: { in: ['assigned', 'completed'] } },
+      select: { substituteId: true },
+    });
+    const subCountByTeacher = new Map<string, number>();
+    for (const s of subs) {
+      if (!s.substituteId) continue;
+      subCountByTeacher.set(s.substituteId, (subCountByTeacher.get(s.substituteId) || 0) + 1);
+    }
+
+    const availableTeachers: any[] = [];
+    const unavailableTeachers: any[] = [];
 
     for (const teacher of qualifiedTeachers) {
       const unavailabilityReasons: string[] = [];
 
-      const isOnLeave = await db.leaveApplication.count({
-        where: { teacherId: teacher.id, status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
-      }) > 0;
-      if (isOnLeave) unavailabilityReasons.push('On approved leave');
+      if (onLeaveSet.has(teacher.id)) unavailabilityReasons.push('On approved leave');
 
-      const scheduleConflict = await db.schedule.findFirst({ where: { teacherId: teacher.id, day: dayName, period: periodNum } });
+      const scheduleConflict = conflictByTeacher.get(teacher.id);
       if (scheduleConflict) {
         unavailabilityReasons.push(`Teaching ${scheduleConflict.subject} for ${scheduleConflict.grade} Section ${scheduleConflict.section}`);
       }
 
-      const currentLoad = await db.schedule.count({ where: { teacherId: teacher.id, day: dayName } });
-      const recentSubstitutions = await db.substitution.count({ where: { substituteId: teacher.id, status: { in: ['assigned', 'completed'] } } });
+      const currentLoad = loadByTeacher.get(teacher.id) || 0;
+      const recentSubstitutions = subCountByTeacher.get(teacher.id) || 0;
       const teacherGrades: string[] = JSON.parse(teacher.grades || '[]');
 
       const teacherData = {

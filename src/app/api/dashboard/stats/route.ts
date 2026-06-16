@@ -21,27 +21,18 @@ export async function GET() {
     const dayOfWeek = today.getDay();
     const dayName = DAY_NAMES[dayOfWeek >= 1 && dayOfWeek <= 5 ? dayOfWeek : 1];
 
-    const [
-      totalTeachers,
-      totalStudents,
-      absentToday,
-      onLeaveToday,
-      pendingSubs,
-      resolvedToday,
-      todaySchedules,
-      aiAutoAssigned,
-      activeNotifications,
-    ] = await Promise.all([
-      db.teacher.count(),
-      db.student.count(),
-      db.biometricAttendance.count({ where: { date: todayStr, status: 'absent' } }),
-      db.leaveApplication.count({ where: { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } } }),
-      db.substitution.count({ where: { status: 'pending' } }),
-      db.substitution.count({ where: { date: todayStr, status: 'completed' } }),
-      db.schedule.count({ where: { day: dayName } }),
-      db.substitution.count({ where: { source: 'ai-agent', status: { in: ['assigned', 'completed'] } } }),
-      db.teacherNotification.count({ where: { isRead: false } }),
-    ]);
+    // Run sequentially rather than Promise.all: Neon's free-tier direct
+    // connection string has a low concurrent-connection limit, and issuing
+    // 9+ queries in parallel from a single request can exhaust it.
+    const totalTeachers = await db.teacher.count();
+    const totalStudents = await db.student.count();
+    const absentToday = await db.biometricAttendance.count({ where: { date: todayStr, status: 'absent' } });
+    const onLeaveToday = await db.leaveApplication.count({ where: { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } } });
+    const pendingSubs = await db.substitution.count({ where: { status: 'pending' } });
+    const resolvedToday = await db.substitution.count({ where: { date: todayStr, status: 'completed' } });
+    const todaySchedules = await db.schedule.count({ where: { day: dayName } });
+    const aiAutoAssigned = await db.substitution.count({ where: { source: 'ai-agent', status: { in: ['assigned', 'completed'] } } });
+    const activeNotifications = await db.teacherNotification.count({ where: { isRead: false } });
 
     const gradeRows = await db.schedule.findMany({ select: { grade: true }, distinct: ['grade'] });
     const gradeNames = gradeRows.length > 0
