@@ -390,28 +390,48 @@ export async function POST() {
           const topic = topicList[(timeSlot.period - 1 + days.indexOf(day)) % topicList.length];
 
           for (const section of sectionList) {
-            // ~8% chance of empty period (no teacher) for testing auto-assign
-            const isEmpty = Math.random() < 0.08;
-
             let teacherId: string | null = null;
 
-            if (!isEmpty) {
-              // Find eligible teachers: teaches this subject AND this grade
-              const eligibleTeachers = teachers.filter((t) => {
-                const data = teacherDataMap.get(t.id);
-                return data && data.subject === subject && data.grades.includes(gradeName);
-              });
+            // Find eligible teachers: teaches this subject AND this grade
+            const eligibleTeachers = teachers.filter((t) => {
+              const data = teacherDataMap.get(t.id);
+              return data && data.subject === subject && data.grades.includes(gradeName);
+            });
 
-              // Sort by least busy first (on this day, then overall)
-              const sortedEligible = [...eligibleTeachers].sort((a, b) => {
+            // Sort by least busy first (on this day, then overall)
+            const sortedEligible = [...eligibleTeachers].sort((a, b) => {
+              const aDayCount = getTeacherDayCount(a.id, day);
+              const bDayCount = getTeacherDayCount(b.id, day);
+              if (aDayCount !== bDayCount) return aDayCount - bDayCount;
+              return (teacherAssignments.get(a.id)?.size || 0) - (teacherAssignments.get(b.id)?.size || 0);
+            });
+
+            // Pick the first eligible teacher who: isn't busy at this period, has < MAX_PERIODS_PER_DAY periods today
+            for (const t of sortedEligible) {
+              if (
+                !isTeacherBusy(t.id, day, timeSlot.period) &&
+                getTeacherDayCount(t.id, day) < MAX_PERIODS_PER_DAY
+              ) {
+                teacherId = t.id;
+                markTeacherBusy(t.id, day, timeSlot.period);
+                break;
+              }
+            }
+
+            // If no subject+grade match found, try broader: any teacher who teaches this subject
+            if (!teacherId) {
+              const subjectTeachers = teachers.filter((t) => {
+                const data = teacherDataMap.get(t.id);
+                return data && data.subject === subject;
+              });
+              const sortedSubject = [...subjectTeachers].sort((a, b) => {
                 const aDayCount = getTeacherDayCount(a.id, day);
                 const bDayCount = getTeacherDayCount(b.id, day);
                 if (aDayCount !== bDayCount) return aDayCount - bDayCount;
                 return (teacherAssignments.get(a.id)?.size || 0) - (teacherAssignments.get(b.id)?.size || 0);
               });
 
-              // Pick the first eligible teacher who: isn't busy at this period, has < MAX_PERIODS_PER_DAY periods today
-              for (const t of sortedEligible) {
+              for (const t of sortedSubject) {
                 if (
                   !isTeacherBusy(t.id, day, timeSlot.period) &&
                   getTeacherDayCount(t.id, day) < MAX_PERIODS_PER_DAY
@@ -419,31 +439,6 @@ export async function POST() {
                   teacherId = t.id;
                   markTeacherBusy(t.id, day, timeSlot.period);
                   break;
-                }
-              }
-
-              // If no subject+grade match found, try broader: any teacher who teaches this subject
-              if (!teacherId) {
-                const subjectTeachers = teachers.filter((t) => {
-                  const data = teacherDataMap.get(t.id);
-                  return data && data.subject === subject;
-                });
-                const sortedSubject = [...subjectTeachers].sort((a, b) => {
-                  const aDayCount = getTeacherDayCount(a.id, day);
-                  const bDayCount = getTeacherDayCount(b.id, day);
-                  if (aDayCount !== bDayCount) return aDayCount - bDayCount;
-                  return (teacherAssignments.get(a.id)?.size || 0) - (teacherAssignments.get(b.id)?.size || 0);
-                });
-
-                for (const t of sortedSubject) {
-                  if (
-                    !isTeacherBusy(t.id, day, timeSlot.period) &&
-                    getTeacherDayCount(t.id, day) < MAX_PERIODS_PER_DAY
-                  ) {
-                    teacherId = t.id;
-                    markTeacherBusy(t.id, day, timeSlot.period);
-                    break;
-                  }
                 }
               }
             }
