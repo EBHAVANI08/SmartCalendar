@@ -1769,6 +1769,15 @@ function AcademicCalendarSection({
 
   const gradeGroups = getGradeGroups();
 
+  // Full canonical grade/section list for the AI Generate Timetable picker.
+  // gradeGroups only contains combos that already have a schedule for the
+  // selected day, so a grade/section with zero schedules would never be
+  // selectable -- defeating the purpose of a generator meant to fill gaps.
+  const allGradeSectionGroups: Record<string, string[]> = {};
+  for (let g = 1; g <= 12; g++) {
+    allGradeSectionGroups[`Grade ${g}`] = ['A', 'B', 'C', 'D', 'E'];
+  }
+
   const sectionColors: Record<string, { bg: string; border: string; text: string; badge: string; hoverBg: string }> = {
     A: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', badge: 'bg-blue-100 text-blue-700', hoverBg: 'hover:bg-blue-100' },
     B: { bg: 'bg-emerald-50', border: 'border-emerald-200', text: 'text-emerald-800', badge: 'bg-emerald-100 text-emerald-700', hoverBg: 'hover:bg-emerald-100' },
@@ -1804,7 +1813,7 @@ function AcademicCalendarSection({
                   <SelectValue placeholder="AI Generate Timetable" />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(gradeGroups).sort(([a], [b]) => {
+                  {Object.entries(allGradeSectionGroups).sort(([a], [b]) => {
                     const numA = parseInt(a.replace('Grade ', ''));
                     const numB = parseInt(b.replace('Grade ', ''));
                     return numA - numB;
