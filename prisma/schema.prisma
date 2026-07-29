@@ -7,6 +7,18 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+model School {
+  id        String     @id @default(cuid())
+  name      String
+  code      String     @unique
+  email     String     @unique
+  password  String     @default("school123")
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  teachers  Teacher[]
+  schedules Schedule[]
+}
+
 model Teacher {
   id                    String         @id @default(cuid())
   name                  String
@@ -17,6 +29,8 @@ model Teacher {
   grades                String         @default("[]") // JSON array of grades like ["Grade 1","Grade 2"]
   availability          String         @default("[]") // JSON array of available periods
   role                  String         @default("teacher")
+  schoolId              String?
+  school                School?        @relation(fields: [schoolId], references: [id])
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
   schedules             Schedule[]
@@ -46,6 +60,7 @@ model Schedule {
   period    Int      // 1-8
   subject   String
   teacherId String?
+  schoolId  String?
   topic     String?
   roomId    String?
   startTime String   // e.g., "08:00"
@@ -53,6 +68,7 @@ model Schedule {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
+  school    School?  @relation(fields: [schoolId], references: [id])
 
   @@unique([grade, section, day, period])
 }

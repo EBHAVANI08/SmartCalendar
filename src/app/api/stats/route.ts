@@ -1,17 +1,21 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const { searchParams } = new URL(request.url);
+    const schoolId = searchParams.get('schoolId');
+
     const today = new Date().toISOString().split('T')[0];
+    const schoolWhere = schoolId ? { schoolId } : {};
 
     const [totalTeachers, todaySubstitutions, emptyPeriods] = await Promise.all([
-      db.teacher.count(),
+      db.teacher.count({ where: schoolWhere }),
       db.substitution.count({ where: { date: today } }),
-      db.schedule.count({ where: { teacherId: null } }),
+      db.schedule.count({ where: { ...schoolWhere, teacherId: null } }),
     ]);
 
-    const totalStudents = 25000; // DPS has 25,000 students - hardcoded for practical purposes
+    const totalStudents = 1200;
 
     const pendingSubstitutions = await db.substitution.count({
       where: { date: today, status: 'pending' },
@@ -21,7 +25,7 @@ export async function GET() {
       where: { date: today, status: 'assigned' },
     });
 
-    const totalSchedules = await db.schedule.count();
+    const totalSchedules = await db.schedule.count({ where: schoolWhere });
 
     return NextResponse.json({
       totalTeachers,

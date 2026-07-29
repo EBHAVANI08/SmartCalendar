@@ -6949,14 +6949,13 @@ function LessonPlanLibrarySection({ teachers }: { teachers: Teacher[] }) {
   );
 }
 
-// ─── Login Page ───
+// ─── Login Page Component ───
 function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => void }) {
-  const [loginRole, setLoginRole] = useState<'admin' | 'teacher'>('admin');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loginRole, setLoginRole] = useState<'admin' | 'school' | 'teacher'>('school');
+  const [email, setEmail] = useState('admin@sunrisepublic.edu');
+  const [password, setPassword] = useState('school123');
   const [error, setError] = useState('');
-  const { toast } = useToast();
+  const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -6973,56 +6972,57 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
       const data = await res.json();
 
       if (res.ok && data.success) {
-        toast({ title: 'Welcome!', description: `Signed in as ${data.user.name}` });
-        onLogin(data.user, loginRole);
+        onLogin(data.user, loginRole === 'teacher' ? 'teacher' : 'admin');
       } else {
         setError(data.error || 'Invalid credentials');
       }
     } catch {
-      setError('Connection error. Please try again.');
+      setError('Connection failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-emerald-950 to-gray-900 flex items-center justify-center p-4">
-      {/* Background decorations */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-emerald-500/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-emerald-600/5 rounded-full blur-3xl" />
-      </div>
+  const handleQuickSchool = (schoolEmail: string) => {
+    setLoginRole('school');
+    setEmail(schoolEmail);
+    setPassword('school123');
+  };
 
-      <div className="relative w-full max-w-md">
-        {/* Logo & Title */}
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-slate-900 to-emerald-950 flex items-center justify-center p-4">
+      <div className="w-full max-w-md">
+        {/* Header */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-2xl shadow-lg shadow-emerald-500/30 mb-4">
             <Brain className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold text-white mb-1">AI Smart Calendar</h1>
-          <p className="text-emerald-300/80 text-sm">Smart School Calendar Platform</p>
+          <p className="text-emerald-300/80 text-sm">Multi-Tenant School Management Platform</p>
         </div>
 
         {/* Login Card */}
         <Card className="bg-gray-900/80 border-gray-700/50 backdrop-blur-xl shadow-2xl">
           <CardContent className="p-6">
             {/* Role Tabs */}
-            <Tabs value={loginRole} onValueChange={(v) => { setLoginRole(v as 'admin' | 'teacher'); setError(''); }} className="mb-6">
+            <Tabs value={loginRole} onValueChange={(v) => { setLoginRole(v as 'admin' | 'school' | 'teacher'); setError(''); }} className="mb-6">
               <TabsList className="w-full bg-gray-800 border border-gray-700 h-11">
-                <TabsTrigger value="admin" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9">
-                  <ShieldCheck className="w-4 h-4 mr-2" />
-                  Admin
+                <TabsTrigger value="school" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
+                  <GraduationCap className="w-3.5 h-3.5 mr-1" />
+                  School Admin
                 </TabsTrigger>
-                <TabsTrigger value="teacher" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9">
-                  <GraduationCap className="w-4 h-4 mr-2" />
+                <TabsTrigger value="admin" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
+                  <ShieldCheck className="w-3.5 h-3.5 mr-1" />
+                  Global Admin
+                </TabsTrigger>
+                <TabsTrigger value="teacher" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
+                  <User className="w-3.5 h-3.5 mr-1" />
                   Teacher
                 </TabsTrigger>
               </TabsList>
             </Tabs>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Email */}
               <div className="space-y-2">
                 <Label className="text-gray-300 text-xs font-medium">Email Address</Label>
                 <div className="relative">
@@ -7031,14 +7031,13 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    placeholder={loginRole === 'admin' ? 'admin@dps.edu' : 'your.email@school.edu'}
+                    placeholder={loginRole === 'school' ? 'admin@sunrisepublic.edu' : loginRole === 'admin' ? 'admin@dps.edu' : 'your.email@school.edu'}
                     className="pl-10 bg-gray-800/50 border-gray-600/50 text-white placeholder:text-gray-500 focus:border-emerald-500 focus:ring-emerald-500/20 h-11"
                     required
                   />
                 </div>
               </div>
 
-              {/* Password */}
               <div className="space-y-2">
                 <Label className="text-gray-300 text-xs font-medium">Password</Label>
                 <div className="relative">
@@ -7054,7 +7053,6 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                 </div>
               </div>
 
-              {/* Error Message */}
               {error && (
                 <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
@@ -7062,7 +7060,6 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                 </div>
               )}
 
-              {/* Submit */}
               <Button
                 type="submit"
                 disabled={loading || !email || !password}
@@ -7071,45 +7068,39 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                 {loading ? (
                   <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Signing in...</>
                 ) : (
-                  <><LogOut className="w-4 h-4 mr-2 rotate-180" />Sign In as {loginRole === 'admin' ? 'Admin' : 'Teacher'}</>
+                  <><LogOut className="w-4 h-4 mr-2 rotate-180" />Sign In as {loginRole === 'school' ? 'School Admin' : loginRole === 'admin' ? 'Global Admin' : 'Teacher'}</>
                 )}
               </Button>
             </form>
 
-            {/* Demo Credentials */}
-            <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700/50">
-              <p className="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">Demo Credentials</p>
-              {loginRole === 'admin' ? (
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 text-xs">
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[10px]">Admin</Badge>
-                    <span className="text-gray-400">admin@dps.edu</span>
-                    <span className="text-gray-600">/</span>
-                    <span className="text-gray-400">admin123</span>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-1">
-                  <p className="text-[10px] text-gray-500 mb-1">Any teacher email with password: <span className="text-emerald-400">teacher123</span></p>
-                  <div className="flex flex-wrap gap-1">
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px]">priya.sharma@dps.edu</Badge>
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px]">ananya.iyer@dps.edu</Badge>
-                    <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30 text-[9px]">coach.kumar@dps.edu</Badge>
-                  </div>
-                </div>
-              )}
+            <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700/50 space-y-2">
+              <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Select School Demo Login</p>
+              <div className="grid grid-cols-1 gap-2">
+                <Button
+                  type="button"
+                  onClick={() => handleQuickSchool('admin@sunrisepublic.edu')}
+                  variant="outline"
+                  className="w-full justify-start text-xs border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 h-9"
+                >
+                  <GraduationCap className="w-3.5 h-3.5 mr-2 text-emerald-400" />
+                  Sunrise Public School (Excel Demo Data)
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => handleQuickSchool('admin@greenwoodhigh.edu')}
+                  variant="outline"
+                  className="w-full justify-start text-xs border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 h-9"
+                >
+                  <GraduationCap className="w-3.5 h-3.5 mr-2 text-blue-400" />
+                  Greenwood High School (Sample Demo)
+                </Button>
+              </div>
             </div>
-
-            {/* Register Note */}
-            <p className="text-center text-xs text-gray-600 mt-4">
-              Need an account? Contact your school administrator to register.
-            </p>
           </CardContent>
         </Card>
 
-        {/* Footer */}
         <p className="text-center text-[10px] text-gray-600 mt-6">
-          AI Smart Calendar &copy; {new Date().getFullYear()} &middot; Powered by Intelligence
+          AI Smart Calendar &copy; {new Date().getFullYear()} &middot; Multi-Tenant Powered
         </p>
       </div>
     </div>
@@ -7140,7 +7131,8 @@ export default function AISmartCalendar() {
 
   const fetchStats = useCallback(async () => {
     try {
-      const res = await fetch('/api/stats');
+      const schoolParam = loginUser?.schoolId ? `?schoolId=${loginUser.schoolId}` : '';
+      const res = await fetch(`/api/stats${schoolParam}`);
       if (res.ok) {
         const data = await res.json();
         setStats(data);
@@ -7148,11 +7140,12 @@ export default function AISmartCalendar() {
     } catch (error) {
       console.error('Error fetching stats:', error);
     }
-  }, []);
+  }, [loginUser?.schoolId]);
 
   const fetchTeachers = useCallback(async () => {
     try {
-      const res = await fetch('/api/teachers');
+      const schoolParam = loginUser?.schoolId ? `?schoolId=${loginUser.schoolId}` : '';
+      const res = await fetch(`/api/teachers${schoolParam}`);
       if (res.ok) {
         const data = await res.json();
         setTeachers(data);
@@ -7160,11 +7153,12 @@ export default function AISmartCalendar() {
     } catch (error) {
       console.error('Error fetching teachers:', error);
     }
-  }, []);
+  }, [loginUser?.schoolId]);
 
   const fetchSchedules = useCallback(async (day: string) => {
     try {
-      const res = await fetch(`/api/schedules?day=${day}`);
+      const schoolParam = loginUser?.schoolId ? `&schoolId=${loginUser.schoolId}` : '';
+      const res = await fetch(`/api/schedules?day=${day}${schoolParam}`);
       if (res.ok) {
         const data = await res.json();
         setSchedules(data);
@@ -7172,13 +7166,14 @@ export default function AISmartCalendar() {
     } catch (error) {
       console.error('Error fetching schedules:', error);
     }
-  }, []);
+  }, [loginUser?.schoolId]);
 
   const fetchAllSchedules = useCallback(async () => {
     try {
+      const schoolParam = loginUser?.schoolId ? `&schoolId=${loginUser.schoolId}` : '';
       const allData: Schedule[] = [];
       for (const day of DAYS) {
-        const res = await fetch(`/api/schedules?day=${day}`);
+        const res = await fetch(`/api/schedules?day=${day}${schoolParam}`);
         if (res.ok) {
           const data = await res.json();
           allData.push(...data);

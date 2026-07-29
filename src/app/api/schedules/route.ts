@@ -7,11 +7,13 @@ export async function GET(request: Request) {
     const grade = searchParams.get('grade');
     const section = searchParams.get('section');
     const day = searchParams.get('day');
+    const schoolId = searchParams.get('schoolId');
 
     const where: Record<string, string> = {};
     if (grade) where.grade = grade;
     if (section) where.section = section;
     if (day) where.day = day;
+    if (schoolId) where.schoolId = schoolId;
 
     const schedules = await db.schedule.findMany({
       where,
