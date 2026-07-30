@@ -1051,7 +1051,6 @@ export async function assignSubstituteTeacher(
     request.schedule.topic, previousDayContext.topic
   );
 
-  // Admin assignments are ACCEPTED immediately
   const assignment = await db.substitutionAssignment.create({
     data: {
       substitutionRequestId: requestId,
@@ -1060,11 +1059,10 @@ export async function assignSubstituteTeacher(
       assignedBy,
       topic: topicList,
       reasons: JSON.stringify(['Manually assigned by admin']),
-      aiConfidence: null, // No AI confidence for manual assignments
+      aiConfidence: null,
     },
   });
 
-  // Update request status to RESOLVED
   await db.substitutionRequest.update({
     where: { id: requestId },
     data: { status: 'RESOLVED' },
@@ -1149,8 +1147,6 @@ export async function acceptSubstitution(assignmentId: string) {
     },
   });
 
-  // Student notifications removed for MVP - school admin and teachers are the primary users
-
   return assignment;
 }
 
@@ -1181,7 +1177,6 @@ export async function rejectSubstitution(assignmentId: string, rejectionReason: 
   const request = assignment.substitutionRequest;
   const schedule = request.schedule;
 
-  // Try to find the next best candidate
   const candidates = await findSubstituteCandidates({
     subjectId: schedule.subjectId,
     gradeLevel: schedule.grade.level,
@@ -1202,7 +1197,6 @@ export async function rejectSubstitution(assignmentId: string, rejectionReason: 
   );
 
   if (nextCandidate) {
-    // Auto-reassign with ACCEPTED status
     const previousDayContext = await getPreviousDayTopic(schedule.subjectId, schedule.sectionId, request.date);
     const topic = await generateTopicSuggestion(schedule.subject.name, schedule.grade.level, schedule.topic, previousDayContext.topic);
 
@@ -1254,7 +1248,6 @@ export async function rejectSubstitution(assignmentId: string, rejectionReason: 
       },
     });
   } else {
-    // No more candidates - set back to PENDING for admin
     await db.substitutionRequest.update({
       where: { id: request.id },
       data: { status: 'PENDING' },
@@ -1282,7 +1275,6 @@ async function detectAndAlertConflicts(
   scheduleDay: number,
   results: AISubstitutionResult[],
 ) {
-  // 1. Teacher overload: any teacher assigned 3+ substitutions in a single day
   const subCountByTeacher = new Map<string, { name: string; count: number; subjects: string[] }>();
 
   for (const result of results) {
