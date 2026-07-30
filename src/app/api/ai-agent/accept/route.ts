@@ -6,22 +6,10 @@ export async function POST(req: NextRequest) {
     const { assignmentId } = await req.json();
     if (!assignmentId) return NextResponse.json({ success: false, error: 'assignmentId required' }, { status: 400 });
 
-    await db.substitutionAssignment.update({
+    await db.substitution.update({
       where: { id: assignmentId },
-      data: { status: 'ACCEPTED' },
+      data: { status: 'completed' },
     });
-
-    const assignment = await db.substitutionAssignment.findUnique({
-      where: { id: assignmentId },
-      include: { substitutionRequest: true },
-    });
-
-    if (assignment) {
-      await db.substitutionRequest.update({
-        where: { id: assignment.substitutionRequestId },
-        data: { status: 'RESOLVED' },
-      });
-    }
 
     return NextResponse.json({ success: true });
   } catch (error) {

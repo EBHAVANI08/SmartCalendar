@@ -5,8 +5,7 @@ export async function GET(req: NextRequest) {
   try {
     const limit = parseInt(req.nextUrl.searchParams.get('limit') || '50');
 
-    const notifications = await db.notification.findMany({
-      where: { targetRole: { in: ['ADMIN', 'ALL'] } },
+    const notifications = await db.teacherNotification.findMany({
       orderBy: { createdAt: 'desc' },
       take: limit,
     });

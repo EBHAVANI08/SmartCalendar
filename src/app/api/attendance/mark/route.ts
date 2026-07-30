@@ -8,10 +8,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: 'teacherId, date, status required' }, { status: 400 });
     }
 
-    // Use Leave model instead of Attendance
     if (status === 'ABSENT') {
-      await db.leave.create({
-        data: { teacherId, type: 'Sick Leave', startDate: date, endDate: date, reason: reason || 'Marked absent', status: 'APPROVED' },
+      await db.leaveApplication.create({
+        data: {
+          teacherId,
+          type: 'Sick Leave',
+          startDate: date,
+          endDate: date,
+          reason: reason || 'Marked absent',
+          status: 'approved',
+        },
       });
     }
 

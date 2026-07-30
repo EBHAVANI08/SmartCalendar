@@ -3,14 +3,12 @@ import { db } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   try {
-    const { notificationId, targetRole, teacherId } = await req.json();
+    const { notificationId, teacherId } = await req.json();
 
     if (notificationId) {
-      await db.notification.update({ where: { id: notificationId }, data: { isRead: true } });
-    } else if (targetRole) {
-      await db.notification.updateMany({ where: { targetRole, isRead: false }, data: { isRead: true } });
+      await db.teacherNotification.update({ where: { id: notificationId }, data: { isRead: true } });
     } else if (teacherId) {
-      await db.notification.updateMany({ where: { teacherId, isRead: false }, data: { isRead: true } });
+      await db.teacherNotification.updateMany({ where: { teacherId, isRead: false }, data: { isRead: true } });
     }
 
     return NextResponse.json({ success: true });
@@ -22,12 +20,12 @@ export async function POST(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   try {
-    const { targetRole, teacherId } = await req.json();
+    const { teacherId } = await req.json();
 
-    if (targetRole) {
-      await db.notification.updateMany({ where: { targetRole, isRead: false }, data: { isRead: true } });
-    } else if (teacherId) {
-      await db.notification.updateMany({ where: { teacherId, isRead: false }, data: { isRead: true } });
+    if (teacherId) {
+      await db.teacherNotification.updateMany({ where: { teacherId, isRead: false }, data: { isRead: true } });
+    } else {
+      await db.teacherNotification.updateMany({ where: { isRead: false }, data: { isRead: true } });
     }
 
     return NextResponse.json({ success: true });

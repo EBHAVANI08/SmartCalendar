@@ -6,7 +6,7 @@ export async function GET(req: NextRequest) {
     const teacherId = req.nextUrl.searchParams.get('teacherId');
     if (!teacherId) return NextResponse.json({ success: false, error: 'teacherId required' }, { status: 400 });
 
-    const notifications = await db.notification.findMany({
+    const notifications = await db.teacherNotification.findMany({
       where: { teacherId },
       orderBy: { createdAt: 'desc' },
       take: 50,

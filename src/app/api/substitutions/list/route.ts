@@ -9,35 +9,17 @@ export async function GET(req: NextRequest) {
     const where: any = {};
     if (date) where.date = date;
 
-    const substitutions = await db.substitutionRequest.findMany({
+    const substitutions = await db.substitution.findMany({
       where,
       include: {
-        schedule: { include: { subject: true, grade: true, section: true, timeSlot: true } },
-        originalTeacher: { select: { id: true, name: true, department: true, designation: true } },
-        subject: true,
-        assignments: {
-          include: {
-            substituteTeacher: { select: { id: true, name: true, department: true, designation: true } },
-          },
-          orderBy: { createdAt: 'desc' },
-        },
+        absentTeacher: { select: { id: true, name: true, subject: true } },
+        substitute: { select: { id: true, name: true, subject: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
     });
 
-    // Ensure aiRecommendation and assignedBy/reason are always returned
-    const enriched = substitutions.map(sub => ({
-      ...sub,
-      aiRecommendation: sub.aiRecommendation,
-      reason: sub.reason,
-      assignments: sub.assignments.map(a => ({
-        ...a,
-        assignedBy: a.assignedBy,
-      })),
-    }));
-
-    return NextResponse.json({ success: true, data: enriched });
+    return NextResponse.json({ success: true, data: substitutions });
   } catch (error) {
     console.error('[SUBSTITUTIONS LIST ERROR]', error);
     return NextResponse.json({ success: false, error: 'Failed to load' }, { status: 500 });
