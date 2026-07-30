@@ -1,11 +1,11 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 
-// Call AI chat completions using ZAI helper from @/lib/ollama
+// Call AI chat completions using ZAI helper from z-ai-web-dev-sdk
 async function callAIChat(messages: { role: string; content: string }[], maxTokens: number = 4000) {
   let ZAI: any;
   try {
-    ZAI = (await import('@/lib/ollama')).default;
+    ZAI = (await import('z-ai-web-dev-sdk')).default;
     const zai = await ZAI.create();
     const response = await zai.chat.completions.create({
       messages,
