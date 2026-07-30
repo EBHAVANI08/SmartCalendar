@@ -1,55 +1,21 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
 
-// Load AI config at runtime (not at compile time) to avoid memory-heavy SDK import
-function loadAIConfig(): { baseUrl: string; apiKey: string; chatId?: string; token?: string; userId?: string } | null {
-  const configPaths = [
-    path.join(process.cwd(), '.z-ai-config'),
-    path.join(os.homedir(), '.z-ai-config'),
-    '/etc/.z-ai-config'
-  ];
-  for (const filePath of configPaths) {
-    try {
-      const configStr = fs.readFileSync(filePath, 'utf-8');
-      const config = JSON.parse(configStr);
-      if (config.baseUrl && config.apiKey) return config;
-    } catch { /* continue */ }
-  }
-  return null;
-}
-
-// Call AI chat completions using native fetch (avoids z-ai-web-dev-sdk import that crashes Turbopack)
+// Call AI chat completions using ZAI helper from @/lib/ollama
 async function callAIChat(messages: { role: string; content: string }[], maxTokens: number = 4000) {
-  const config = loadAIConfig();
-  if (!config) throw new Error('AI config not found');
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${config.apiKey}`,
-    'X-Z-AI-From': 'Z',
-  };
-  if (config.chatId) headers['X-Chat-Id'] = config.chatId;
-  if (config.userId) headers['X-User-Id'] = config.userId;
-  if (config.token) headers['X-Token'] = config.token;
-
-  const response = await fetch(`${config.baseUrl}/chat/completions`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({
+  let ZAI: any;
+  try {
+    ZAI = (await import('@/lib/ollama')).default;
+    const zai = await ZAI.create();
+    const response = await zai.chat.completions.create({
       messages,
       max_tokens: maxTokens,
-      thinking: { type: 'disabled' },
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`AI API error: ${response.status} ${response.statusText}`);
+    });
+    return response;
+  } catch (err) {
+    console.error('Error in callAIChat:', err);
+    throw err;
   }
-
-  return await response.json();
 }
 
 // Generate comprehensive substitute teacher context using AI
