@@ -23,16 +23,16 @@ export async function POST(request: Request) {
 
     // Period time mapping
     const periodTimes: Record<number, { start: string; end: string }> = {
-      1: { start: '08:00', end: '08:45' },
-      2: { start: '08:50', end: '09:35' },
-      3: { start: '09:40', end: '10:25' },
-      4: { start: '10:40', end: '11:25' },
-      5: { start: '11:30', end: '12:15' },
-      6: { start: '12:45', end: '13:30' },
-      7: { start: '13:35', end: '14:20' },
-      8: { start: '14:25', end: '15:10' },
+      1: { start: '08:00', end: '08:40' },
+      2: { start: '08:40', end: '09:20' },
+      3: { start: '09:20', end: '10:00' },
+      4: { start: '10:30', end: '11:10' },
+      5: { start: '11:10', end: '11:50' },
+      6: { start: '11:50', end: '12:30' },
+      7: { start: '12:30', end: '13:10' },
+      8: { start: '13:10', end: '13:45' },
     };
-    const timeSlot = periodTimes[period] || { start: '08:00', end: '08:45' };
+    const timeSlot = periodTimes[period] || { start: '08:00', end: '08:40' };
     const duration = period >= 6 ? '45 minutes' : '45 minutes';
 
     // Use z-ai-web-dev-sdk to generate comprehensive lesson plan

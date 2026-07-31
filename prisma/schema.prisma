@@ -70,7 +70,7 @@ model Schedule {
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
   school    School?  @relation(fields: [schoolId], references: [id])
 
-  @@unique([grade, section, day, period])
+  @@unique([schoolId, grade, section, day, period])
 }
 
 model Substitution {

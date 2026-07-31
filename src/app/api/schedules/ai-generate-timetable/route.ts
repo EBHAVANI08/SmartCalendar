@@ -8,11 +8,12 @@ const TIME_SLOTS = [
   { period: 1, start: '08:00', end: '08:40' },
   { period: 2, start: '08:40', end: '09:20' },
   { period: 3, start: '09:20', end: '10:00' },
-  { period: 4, start: '10:20', end: '11:00' },
-  { period: 5, start: '11:00', end: '11:40' },
-  { period: 6, start: '11:40', end: '12:20' },
-  { period: 7, start: '13:00', end: '13:40' },
-  { period: 8, start: '13:40', end: '14:20' },
+  // Break 10:00–10:30
+  { period: 4, start: '10:30', end: '11:10' },
+  { period: 5, start: '11:10', end: '11:50' },
+  { period: 6, start: '11:50', end: '12:30' },
+  { period: 7, start: '12:30', end: '13:10' },
+  { period: 8, start: '13:10', end: '13:45' },
 ];
 
 // CBSE Subjects by Grade

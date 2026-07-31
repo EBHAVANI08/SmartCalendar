@@ -122,6 +122,7 @@ interface LoginUser {
   grades?: string;
   phone?: string;
   schoolId?: string;
+  schoolCode?: string;
 }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -130,11 +131,12 @@ const PERIOD_TIMES: Record<number, { start: string; end: string }> = {
   1: { start: '08:00', end: '08:40' },
   2: { start: '08:40', end: '09:20' },
   3: { start: '09:20', end: '10:00' },
-  4: { start: '10:20', end: '11:00' },
-  5: { start: '11:00', end: '11:40' },
-  6: { start: '11:40', end: '12:20' },
-  7: { start: '13:00', end: '13:40' },
-  8: { start: '13:40', end: '14:20' },
+  // Break 10:00–10:30
+  4: { start: '10:30', end: '11:10' },
+  5: { start: '11:10', end: '11:50' },
+  6: { start: '11:50', end: '12:30' },
+  7: { start: '12:30', end: '13:10' },
+  8: { start: '13:10', end: '13:45' },
 };
 
 // ─── Biometric Agent Cards ───
@@ -1131,15 +1133,74 @@ function DashboardSection({
   teachers,
   substitutions,
   schedules,
+  schoolName,
+  schoolCode,
+  isClientPilot,
 }: {
   stats: Stats | null;
   onNavigate: (tab: TabType) => void;
   teachers: Teacher[];
   substitutions: Substitution[];
   schedules: Schedule[];
+  schoolName?: string;
+  schoolCode?: string;
+  isClientPilot?: boolean;
 }) {
+  const classCount = new Set(schedules.map((s) => `${s.grade}|${s.section}`)).size;
+  const subjectCount = new Set(schedules.map((s) => s.subject)).size;
+  const assignedSubs = substitutions.filter((s) => s.status === 'assigned').length;
+
   return (
     <div className="space-y-6">
+      {/* Client Pilot — clear offer summary */}
+      {isClientPilot && (
+        <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-sm overflow-hidden">
+          <CardContent className="p-0">
+            <div className="bg-emerald-700 text-white px-5 py-4">
+              <p className="text-[10px] uppercase tracking-widest text-emerald-200 font-semibold">Client Evaluation Access</p>
+              <h2 className="text-xl font-bold mt-0.5">{schoolName || 'Client Pilot School'}</h2>
+              <p className="text-sm text-emerald-100 mt-1">
+                Full school-admin access for your Grades 3–8 pilot. Explore everything below — this is exactly what your school gets in this trial.
+              </p>
+            </div>
+            <div className="p-5 grid md:grid-cols-2 gap-5">
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-900 mb-2">What you are getting</h3>
+                <ul className="space-y-1.5 text-sm text-slate-700">
+                  <li className="flex gap-2"><span className="text-emerald-600 font-bold">✓</span> <span><strong>{teachers.length} teachers</strong> (17 class teachers + 7 specialists)</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600 font-bold">✓</span> <span><strong>{classCount || 17} classes</strong> — Grades 3 to 8 with sections</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600 font-bold">✓</span> <span><strong>Full weekly timetable</strong> — Mon–Fri, 8 periods, your bell timings</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600 font-bold">✓</span> <span><strong>{subjectCount || 15}+ subjects</strong> mapped to the right teachers</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600 font-bold">✓</span> <span><strong>Lesson plans</strong> ready for class & substitute cover</span></li>
+                  <li className="flex gap-2"><span className="text-emerald-600 font-bold">✓</span> <span><strong>Live substitution demo</strong> ({assignedSubs} assigned covers to try)</span></li>
+                </ul>
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-emerald-900 mb-2">What you can try now</h3>
+                <div className="grid grid-cols-1 gap-2">
+                  <Button variant="outline" className="justify-start h-9 text-xs border-emerald-200" onClick={() => onNavigate('calendar')}>
+                    1. Open Calendar — see Grade 3–8 weekly schedule
+                  </Button>
+                  <Button variant="outline" className="justify-start h-9 text-xs border-emerald-200" onClick={() => onNavigate('teachers')}>
+                    2. Open Teachers — class teachers & specialists
+                  </Button>
+                  <Button variant="outline" className="justify-start h-9 text-xs border-emerald-200" onClick={() => onNavigate('substitutions')}>
+                    3. Open Substitutions — absence → auto cover
+                  </Button>
+                  <Button variant="outline" className="justify-start h-9 text-xs border-emerald-200" onClick={() => onNavigate('curriculum')}>
+                    4. Open Curriculum / Lesson plans
+                  </Button>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-3">
+                  School code: <span className="font-mono font-medium text-emerald-800">{schoolCode || 'PILOT01'}</span>
+                  {' · '}Data is isolated to your school only.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Hero Header */}
       <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-6 md:p-8 text-white">
         <div className="flex items-center gap-3 mb-3">
@@ -1147,15 +1208,17 @@ function DashboardSection({
             <Brain className="w-8 h-8" />
           </div>
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold">AI Smart Calendar</h1>
-            <p className="text-emerald-100 text-sm md:text-base">Smart School Calendar Platform</p>
+            <h1 className="text-2xl md:text-3xl font-bold">{schoolName || 'AI Smart Calendar'}</h1>
+            <p className="text-emerald-100 text-sm md:text-base">
+              {isClientPilot ? 'Your school pilot workspace' : 'Smart School Calendar Platform'}
+            </p>
           </div>
         </div>
         <p className="text-emerald-50 text-sm md:text-base max-w-2xl">
-          Manage academic schedules, teacher assignments, substitutions, and lesson planning with AI-powered intelligence.
-          Automate teacher assignments and generate comprehensive lesson DNA for substitute teachers.
+          {isClientPilot
+            ? 'Test timetable management, teacher allotment, AI substitutions, and lesson planning with your Grades 3–8 data — then decide if this fits your school.'
+            : 'Manage academic schedules, teacher assignments, substitutions, and lesson planning with AI-powered intelligence. Automate teacher assignments and generate comprehensive lesson DNA for substitute teachers.'}
         </p>
-
       </div>
 
       {/* Stats Cards */}
@@ -6953,8 +7016,8 @@ function LessonPlanLibrarySection({ teachers }: { teachers: Teacher[] }) {
 // ─── Login Page Component ───
 function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => void }) {
   const [loginRole, setLoginRole] = useState<'admin' | 'school' | 'teacher'>('school');
-  const [email, setEmail] = useState('admin@demo1.edu');
-  const [password, setPassword] = useState('school123');
+  const [email, setEmail] = useState('pilot@client.school');
+  const [password, setPassword] = useState('ClientPilot2026');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -7077,6 +7140,18 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
             <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700/50 space-y-2">
               <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Select School Demo Login</p>
               <div className="grid grid-cols-1 gap-2">
+                <Button
+                  type="button"
+                  onClick={() => { setLoginRole('school'); setEmail('pilot@client.school'); setPassword('ClientPilot2026'); }}
+                  variant="outline"
+                  className="w-full justify-start text-xs border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 h-auto py-2.5"
+                >
+                  <GraduationCap className="w-3.5 h-3.5 mr-2 text-amber-400 shrink-0" />
+                  <span className="text-left">
+                    <span className="block font-semibold">Client Pilot School ★</span>
+                    <span className="block text-[10px] text-amber-200/70 font-normal">Grades 3–8 · 24 teachers · full access trial</span>
+                  </span>
+                </Button>
                 <Button
                   type="button"
                   onClick={() => handleQuickSchool('admin@demo1.edu')}
@@ -7544,7 +7619,16 @@ export default function AISmartCalendar() {
         ) : (
           <>
             {activeTab === 'dashboard' && (
-              <DashboardSection stats={stats} onNavigate={navigateToTab} teachers={teachers} substitutions={substitutions} schedules={schedules} />
+              <DashboardSection
+                stats={stats}
+                onNavigate={navigateToTab}
+                teachers={teachers}
+                substitutions={substitutions}
+                schedules={schedules}
+                schoolName={loginUser?.name}
+                schoolCode={loginUser?.schoolCode}
+                isClientPilot={loginUser?.schoolId === 'sch_client_pilot_001' || loginUser?.schoolCode === 'PILOT01'}
+              />
             )}
             {activeTab === 'calendar' && (
               <AcademicCalendarSection
