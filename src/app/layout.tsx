@@ -13,6 +13,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 export const metadata: Metadata = {
   title: "AI Smart Calendar - Intelligent School Management",
   description: "AI Smart Calendar - Intelligent school management system for schedules, substitutions, and lesson planning.",
