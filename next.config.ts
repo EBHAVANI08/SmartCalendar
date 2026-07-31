@@ -7,10 +7,6 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: false,
   productionBrowserSourceMaps: false,
-  experimental: {
-    cpus: 1,
-    webpackMemoryOptimizations: true,
-  },
 };
 
 export default nextConfig;
