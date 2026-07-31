@@ -233,7 +233,7 @@ async function main() {
     { period: 8, start: '14:15', end: '15:00' },
   ];
 
-  const days = ['Monday', 'Tuesday'];
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   const demo1Schedules: Prisma.ScheduleCreateManyInput[] = [];
 
   for (const entry of REAL_TEACHER_ALLOTMENTS) {
