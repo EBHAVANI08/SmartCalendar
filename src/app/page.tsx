@@ -6952,7 +6952,7 @@ function LessonPlanLibrarySection({ teachers }: { teachers: Teacher[] }) {
 // ─── Login Page Component ───
 function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => void }) {
   const [loginRole, setLoginRole] = useState<'admin' | 'school' | 'teacher'>('school');
-  const [email, setEmail] = useState('admin@sunrisepublic.edu');
+  const [email, setEmail] = useState('admin@demo1.edu');
   const [password, setPassword] = useState('school123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -7078,21 +7078,21 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
               <div className="grid grid-cols-1 gap-2">
                 <Button
                   type="button"
-                  onClick={() => handleQuickSchool('admin@sunrisepublic.edu')}
+                  onClick={() => handleQuickSchool('admin@demo1.edu')}
                   variant="outline"
                   className="w-full justify-start text-xs border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 h-9"
                 >
                   <GraduationCap className="w-3.5 h-3.5 mr-2 text-emerald-400" />
-                  Sunrise Public School (Excel Demo Data)
+                  Demo 1 School (Excel Demo Data)
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => handleQuickSchool('admin@greenwoodhigh.edu')}
+                  onClick={() => handleQuickSchool('admin@dps.edu')}
                   variant="outline"
                   className="w-full justify-start text-xs border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 h-9"
                 >
                   <GraduationCap className="w-3.5 h-3.5 mr-2 text-blue-400" />
-                  Greenwood High School (Sample Demo)
+                  Delhi Public School (Real Allotment Data)
                 </Button>
               </div>
             </div>

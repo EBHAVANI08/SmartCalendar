@@ -67,13 +67,23 @@ export async function POST() {
       'Psychology': ['Introduction to Psychology', 'Learning & Memory', 'Developmental Psychology', 'Social Psychology', 'Cognitive Psychology', 'Personality', 'Intelligence', 'Emotions', 'Motivation', 'Psychological Disorders'],
     };
 
-    // Create admin account
+    // Create admin account for DPS
     await db.admin.create({
       data: {
         name: 'Dr. Kiran Challa',
         email: 'admin@dps.edu',
         password: 'admin123',
         role: 'admin',
+      },
+    });
+
+    await db.school.create({
+      data: {
+        id: 'sch_dps_001',
+        name: 'Delhi Public School',
+        code: 'DPS2025',
+        email: 'info@dpsdelhi.edu',
+        password: 'school123',
       },
     });
 

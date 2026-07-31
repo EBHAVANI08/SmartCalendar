@@ -12,7 +12,7 @@ export async function POST(req: NextRequest) {
       await db.leaveApplication.create({
         data: {
           teacherId,
-          type: 'Sick Leave',
+          leaveType: 'Sick Leave',
           startDate: date,
           endDate: date,
           reason: reason || 'Marked absent',
