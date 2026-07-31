@@ -121,6 +121,7 @@ interface LoginUser {
   subject?: string;
   grades?: string;
   phone?: string;
+  schoolId?: string;
 }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
@@ -3407,8 +3408,8 @@ function SubstitutionsSection({
                     const obj = val as Record<string, unknown>;
                     return (
                       <div className="space-y-1.5">
-                        {obj.topic && <p className="text-sm text-emerald-900 font-medium">{safeText(obj.topic)}</p>}
-                        {obj.objectives && Array.isArray(obj.objectives) && obj.objectives.length > 0 && (
+                        {Boolean(obj.topic) && <p className="text-sm text-emerald-900 font-medium">{safeText(obj.topic)}</p>}
+                        {Boolean(obj.objectives && Array.isArray(obj.objectives) && obj.objectives.length > 0) && (
                           <div>
                             <p className="text-[11px] text-emerald-700 font-semibold">Learning Objectives:</p>
                             <ul className="text-[11px] text-emerald-700 list-disc ml-4">
@@ -3416,7 +3417,7 @@ function SubstitutionsSection({
                             </ul>
                           </div>
                         )}
-                        {obj.keyPoints && Array.isArray(obj.keyPoints) && obj.keyPoints.length > 0 && (
+                        {Boolean(obj.keyPoints && Array.isArray(obj.keyPoints) && obj.keyPoints.length > 0) && (
                           <div>
                             <p className="text-[11px] text-emerald-700 font-semibold">Key Points to Cover:</p>
                             <ul className="text-[11px] text-emerald-700 list-disc ml-4">
@@ -3466,7 +3467,7 @@ function SubstitutionsSection({
                 </div>
 
                 {/* Yesterday's Topic */}
-                {data.yesterdayTopic && (
+                {Boolean(data.yesterdayTopic) && (
                   <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5 mb-1.5">
                       <BookOpen className="w-4 h-4" /> What Was Taught Yesterday
@@ -3474,16 +3475,16 @@ function SubstitutionsSection({
                     <p className="text-sm text-amber-900 font-medium">{safeText(data.yesterdayTopic)}</p>
                     {yesterdayDetails && (
                       <div className="mt-2 space-y-1">
-                        {yesterdayDetails.keyConcepts && (
+                        {Boolean(yesterdayDetails.keyConcepts) && (
                           <p className="text-[11px] text-amber-700"><b>Key Concepts:</b> {safeText(yesterdayDetails.keyConcepts)}</p>
                         )}
-                        {yesterdayDetails.activities && (
+                        {Boolean(yesterdayDetails.activities) && (
                           <p className="text-[11px] text-amber-700"><b>Activities:</b> {safeText(yesterdayDetails.activities)}</p>
                         )}
-                        {yesterdayDetails.homework && (
+                        {Boolean(yesterdayDetails.homework) && (
                           <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(yesterdayDetails.homework)}</p>
                         )}
-                        {yesterdayDetails.homeworkAssigned && (
+                        {Boolean(yesterdayDetails.homeworkAssigned) && (
                           <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(yesterdayDetails.homeworkAssigned)}</p>
                         )}
                       </div>
@@ -3492,7 +3493,7 @@ function SubstitutionsSection({
                 )}
 
                 {/* Today's Coverage Plan */}
-                {data.todayCoveragePlan && (
+                {Boolean(data.todayCoveragePlan) && (
                   <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
                     <p className="text-xs font-semibold text-emerald-800 flex items-center gap-1.5 mb-1.5">
                       <Target className="w-4 h-4" /> What to Cover Today
@@ -5899,7 +5900,7 @@ function WorkloadAnalyticsSection({ teachers, schedules, onRefresh }: { teachers
                         <Badge className="text-[9px] bg-blue-100 text-blue-700 border-blue-200">{r.matchReason}</Badge>
                         <span className="text-muted-foreground">Score: {r.matchScore}</span>
                       </div>
-                      {r.error && <p className="text-red-500 mt-1">Error: {r.error}</p>}
+                      {(r as any).error && <p className="text-red-500 mt-1">Error: {(r as any).error}</p>}
                     </div>
                   ))}
                 </div>
