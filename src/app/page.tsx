@@ -3467,43 +3467,43 @@ function SubstitutionsSection({
                 </div>
 
                 {/* Yesterday's Topic */}
-                {Boolean(data.yesterdayTopic) && (
+                {Boolean(data.yesterdayTopic) ? (
                   <div className="p-3 bg-amber-50 rounded-lg border border-amber-200">
                     <p className="text-xs font-semibold text-amber-800 flex items-center gap-1.5 mb-1.5">
                       <BookOpen className="w-4 h-4" /> What Was Taught Yesterday
                     </p>
                     <p className="text-sm text-amber-900 font-medium">{safeText(data.yesterdayTopic)}</p>
-                    {yesterdayDetails && (
+                    {yesterdayDetails ? (
                       <div className="mt-2 space-y-1">
-                        {Boolean(yesterdayDetails.keyConcepts) && (
+                        {Boolean(yesterdayDetails.keyConcepts) ? (
                           <p className="text-[11px] text-amber-700"><b>Key Concepts:</b> {safeText(yesterdayDetails.keyConcepts)}</p>
-                        )}
-                        {Boolean(yesterdayDetails.activities) && (
+                        ) : null}
+                        {Boolean(yesterdayDetails.activities) ? (
                           <p className="text-[11px] text-amber-700"><b>Activities:</b> {safeText(yesterdayDetails.activities)}</p>
-                        )}
-                        {Boolean(yesterdayDetails.homework) && (
+                        ) : null}
+                        {Boolean(yesterdayDetails.homework) ? (
                           <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(yesterdayDetails.homework)}</p>
-                        )}
-                        {Boolean(yesterdayDetails.homeworkAssigned) && (
+                        ) : null}
+                        {Boolean(yesterdayDetails.homeworkAssigned) ? (
                           <p className="text-[11px] text-amber-700"><b>Homework Given:</b> {safeText(yesterdayDetails.homeworkAssigned)}</p>
-                        )}
+                        ) : null}
                       </div>
-                    )}
+                    ) : null}
                   </div>
-                )}
+                ) : null}
 
                 {/* Today's Coverage Plan */}
-                {Boolean(data.todayCoveragePlan) && (
+                {Boolean(data.todayCoveragePlan) ? (
                   <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200">
                     <p className="text-xs font-semibold text-emerald-800 flex items-center gap-1.5 mb-1.5">
                       <Target className="w-4 h-4" /> What to Cover Today
                     </p>
                     {renderTodayCoveragePlan(data.todayCoveragePlan)}
                   </div>
-                )}
+                ) : null}
 
                 {/* Teaching Instructions */}
-                {teachingInstructions && (
+                {Boolean(teachingInstructions) ? (
                   <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
                     <p className="text-xs font-semibold text-blue-800 flex items-center gap-1.5 mb-1.5">
                       <ListChecks className="w-4 h-4" /> Step-by-Step Teaching Instructions
@@ -3517,30 +3517,30 @@ function SubstitutionsSection({
                       ))}
                     </div>
                   </div>
-                )}
+                ) : null}
 
                 {/* Student Expectations */}
-                {data.studentExpectations && (
+                {Boolean(data.studentExpectations) ? (
                   <div className="p-3 bg-purple-50 rounded-lg border border-purple-200">
                     <p className="text-xs font-semibold text-purple-800 flex items-center gap-1.5 mb-1.5">
                       <GraduationCap className="w-4 h-4" /> Student Expectations
                     </p>
                     <p className="text-[11px] text-purple-800">{safeText(data.studentExpectations)}</p>
                   </div>
-                )}
+                ) : null}
 
                 {/* Assessment Idea */}
-                {data.assessmentIdea && (
+                {Boolean(data.assessmentIdea) ? (
                   <div className="p-3 bg-teal-50 rounded-lg border border-teal-200">
                     <p className="text-xs font-semibold text-teal-800 flex items-center gap-1.5 mb-1.5">
                       <Lightbulb className="w-4 h-4" /> Quick Assessment Idea
                     </p>
                     <p className="text-[11px] text-teal-800">{safeText(data.assessmentIdea)}</p>
                   </div>
-                )}
+                ) : null}
 
                 {/* Materials Needed */}
-                {materialsNeeded && (
+                {Boolean(materialsNeeded) ? (
                   <div className="p-3 bg-orange-50 rounded-lg border border-orange-200">
                     <p className="text-xs font-semibold text-orange-800 flex items-center gap-1.5 mb-1.5">
                       <BookMarked className="w-4 h-4" /> Materials Needed
@@ -3553,7 +3553,7 @@ function SubstitutionsSection({
                       <p className="text-[11px] text-orange-800">{safeText(materialsNeeded)}</p>
                     )}
                   </div>
-                )}
+                ) : null}
               </div>
               );
             })() : (
