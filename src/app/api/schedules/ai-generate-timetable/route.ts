@@ -80,12 +80,12 @@ interface GeneratedSchedule {
  */
 export async function POST(request: Request) {
   try {
-    const { grade, section, dryRun = false, setup = {} } = await request.json();
+    const { grade, section, schoolId, dryRun = false, setup = {} } = await request.json();
 
     // Validate required parameters
-    if (!grade || !section) {
+    if (!grade || !section || !schoolId) {
       return NextResponse.json(
-        { error: 'Both "grade" and "section" are required parameters. Example: { grade: "Grade 1", section: "A" }' },
+        { error: 'School, grade and section are required.' },
         { status: 400 }
       );
     }
@@ -106,11 +106,12 @@ export async function POST(request: Request) {
     if (endMinutes <= startMinutes + 180) return NextResponse.json({ error: 'End time must be at least three hours after start time.' }, { status: 400 });
     const teachingMinutes = endMinutes - startMinutes - breakMinutes - lunchMinutes;
     const periodMinutes = Math.floor(teachingMinutes / periodsPerDay);
+    const extraPeriodMinutes = teachingMinutes % periodsPerDay;
     if (periodMinutes < 25) return NextResponse.json({ error: 'The selected day is too short for the periods and breaks. Increase the end time or reduce periods/break durations.' }, { status: 400 });
     const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].slice(0, workingDays);
     let cursor = startMinutes;
     const TIME_SLOTS = Array.from({ length: periodsPerDay }, (_, index) => {
-      const period = index + 1; const start = cursor; cursor += periodMinutes; const end = cursor;
+      const period = index + 1; const start = cursor; cursor += periodMinutes + (index < extraPeriodMinutes ? 1 : 0); const end = cursor;
       if (period === breakAfter) cursor += breakMinutes;
       if (period === lunchAfter) cursor += lunchMinutes;
       return { period, start: formatMinutes(start), end: formatMinutes(end) };
@@ -120,6 +121,7 @@ export async function POST(request: Request) {
 
     // ─── Step 1: Load teachers who teach THIS grade ───
     const allTeachers = await db.teacher.findMany({
+      where: { schoolId },
       include: { schedules: true },
     });
 
@@ -308,14 +310,17 @@ export async function POST(request: Request) {
     const buildSubjectOrderForDay = (day: string): { period: number; subject: string }[] => {
       const assignments: { period: number; subject: string }[] = [];
       const usedSubjects = new Map<string, number>(); // subject -> count assigned today
+      const dailySubjectLimit = 1;
 
       // Categorize subjects
-      const coreSubs = subjects.filter((s) => CORE_SUBJECTS.includes(s));
-      const afternoonSubs = subjects.filter((s) => AFTERNOON_PREFERRED.includes(s));
+      const rotate = <T,>(items: T[], offset: number) => items.length ? items.slice(offset % items.length).concat(items.slice(0, offset % items.length)) : items;
+      const dayOffset = Math.max(0, DAYS.indexOf(day));
+      const coreSubs = rotate(subjects.filter((s) => CORE_SUBJECTS.includes(s)), dayOffset);
+      const afternoonSubs = rotate(subjects.filter((s) => AFTERNOON_PREFERRED.includes(s)), dayOffset);
       const peSubject = subjects.find((s) => s === 'Physical Education');
-      const otherSubs = subjects.filter(
+      const otherSubs = rotate(subjects.filter(
         (s) => !CORE_SUBJECTS.includes(s) && !AFTERNOON_PREFERRED.includes(s) && s !== 'Physical Education'
-      );
+      ), dayOffset);
 
       // Track which subjects still need periods
       const subjectNeeded = new Map<string, number>();
@@ -339,7 +344,7 @@ export async function POST(request: Request) {
         for (const sub of morningQueue) {
           const currentCount = usedSubjects.get(sub) || 0;
           // Pedagogical constraint: no more than 2 consecutive periods of same subject
-          if (currentCount >= 2) continue;
+          if (currentCount >= dailySubjectLimit) continue;
 
           // PE should not be in period 1
           if (sub === 'Physical Education' && slot.period === 1) continue;
@@ -363,7 +368,7 @@ export async function POST(request: Request) {
           // Fallback: assign any subject that hasn't been used too much
           for (const sub of subjects) {
             const currentCount = usedSubjects.get(sub) || 0;
-            if (currentCount >= 2) continue;
+            if (currentCount >= dailySubjectLimit) continue;
             if (sub === 'Physical Education' && slot.period === 1) continue;
             const lastAssigned = assignments[assignments.length - 1];
             if (lastAssigned && lastAssigned.subject === sub) {
@@ -377,14 +382,7 @@ export async function POST(request: Request) {
           }
         }
 
-        if (!assigned) {
-          // Last resort: fill with whatever subject
-          const leastUsed = subjects.reduce((a, b) =>
-            (usedSubjects.get(a) || 0) <= (usedSubjects.get(b) || 0) ? a : b
-          );
-          assignments.push({ period: slot.period, subject: leastUsed });
-          usedSubjects.set(leastUsed, (usedSubjects.get(leastUsed) || 0) + 1);
-        }
+        if (!assigned) { const unused = subjects.find((subject) => !usedSubjects.has(subject)); if (unused) { assignments.push({ period: slot.period, subject: unused }); usedSubjects.set(unused, 1); } }
       }
 
       // Fill afternoon periods — prioritize Art/Music
@@ -395,7 +393,7 @@ export async function POST(request: Request) {
 
         for (const sub of afternoonQueue) {
           const currentCount = usedSubjects.get(sub) || 0;
-          if (currentCount >= 2) continue;
+          if (currentCount >= dailySubjectLimit) continue;
 
           const lastAssigned = assignments[assignments.length - 1];
           if (lastAssigned && lastAssigned.subject === sub) {
@@ -409,13 +407,7 @@ export async function POST(request: Request) {
           break;
         }
 
-        if (!assigned) {
-          const leastUsed = subjects.reduce((a, b) =>
-            (usedSubjects.get(a) || 0) <= (usedSubjects.get(b) || 0) ? a : b
-          );
-          assignments.push({ period: slot.period, subject: leastUsed });
-          usedSubjects.set(leastUsed, (usedSubjects.get(leastUsed) || 0) + 1);
-        }
+        if (!assigned) { const unused = subjects.find((subject) => !usedSubjects.has(subject)); if (unused) { assignments.push({ period: slot.period, subject: unused }); usedSubjects.set(unused, 1); } }
       }
 
       return assignments;
@@ -627,7 +619,7 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
     // ─── Step 9: Write to database ───
     // Only clear existing schedules for THIS specific grade+section
     await db.schedule.deleteMany({
-      where: { grade: targetGrade, section: targetSection },
+      where: { schoolId, grade: targetGrade, section: targetSection },
     });
 
     // Batch insert new schedules
@@ -635,6 +627,7 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
     const scheduleDataList = generatedSchedules.map((s) => ({
       grade: s.grade,
       section: s.section,
+      schoolId,
       day: s.day,
       period: s.period,
       subject: s.subject,
@@ -709,7 +702,7 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
 
     // ─── Step 12: Final verification ───
     const dbSchedules = await db.schedule.findMany({
-      where: { teacherId: { not: null }, grade: targetGrade, section: targetSection },
+      where: { schoolId, teacherId: { not: null }, grade: targetGrade, section: targetSection },
     });
     const dbMap = new Map<string, number>();
     for (const s of dbSchedules) {

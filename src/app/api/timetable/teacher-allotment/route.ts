@@ -119,8 +119,9 @@ export async function POST(request: Request) {
       if (matrixLayout && matrixAllotments.length) {
         const classes = [...new Set(matrixAllotments.map((item) => `${item.grade}|${item.section}`))];
         await tx.schedule.deleteMany({ where: { schoolId, OR: classes.map((item) => { const [grade, section] = item.split('|'); return { grade, section }; }) } });
-        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; const times = [['09:30','10:13'],['10:13','10:56'],['11:11','11:54'],['11:54','12:37'],['13:22','14:05'],['14:05','14:48'],['14:48','15:31'],['15:31','16:14']];
+        const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; const times = [['09:30','10:19'],['10:19','11:08'],['11:23','12:12'],['12:12','13:01'],['13:46','14:35'],['14:35','15:24'],['15:24','16:12'],['16:12','17:00']];
         const occupied = new Set<string>(); let generated = 0; let unallocated = 0;
+        const usedClassSubjectDay = new Set<string>();
         const teacherDayLoad = new Map<string, number>();
         const fullDayFor = (teacherId: string) => days[Math.abs([...teacherId].reduce((sum, char) => sum + char.charCodeAt(0), 0)) % 5];
         const dailyLimit = (teacherId: string, day: string) => day === 'Saturday' ? 4 : day === fullDayFor(teacherId) ? 8 : 5;
@@ -129,10 +130,11 @@ export async function POST(request: Request) {
           const [grade, section] = classKey.split('|'); const choices = matrixAllotments.filter((item) => item.grade === grade && item.section === section);
           for (const day of days) for (let period = 1; period <= (day === 'Saturday' ? 4 : 8); period++) {
             let selected: MatrixAllotment | undefined;
-            for (let offset = 0; offset < choices.length; offset++) { const candidate = choices[(period - 1 + days.indexOf(day) + offset) % choices.length]; const teacher = teachers.find((item) => item.name.toLowerCase() === candidate.teacherName.toLowerCase()); if (teacher && !occupied.has(`${teacher.id}|${day}|${period}`) && (teacherDayLoad.get(`${teacher.id}|${day}`) || 0) < dailyLimit(teacher.id, day)) { selected = candidate; break; } }
+            for (let offset = 0; offset < choices.length; offset++) { const candidate = choices[(period - 1 + days.indexOf(day) + offset) % choices.length]; const teacher = teachers.find((item) => item.name.toLowerCase() === candidate.teacherName.toLowerCase()); const subjectDayKey = `${grade}|${section}|${day}|${candidate.subject.toLowerCase()}`; if (teacher && !usedClassSubjectDay.has(subjectDayKey) && !occupied.has(`${teacher.id}|${day}|${period}`) && (teacherDayLoad.get(`${teacher.id}|${day}`) || 0) < dailyLimit(teacher.id, day)) { selected = candidate; break; } }
             const teacher = selected ? teachers.find((item) => item.name.toLowerCase() === selected!.teacherName.toLowerCase()) : undefined;
-            scheduleData.push({ schoolId, grade, section, day, period, subject: selected?.subject || 'Unallocated', teacherId: teacher?.id || null, roomId: `Room-${grade.replace(/\D/g, '')}-${section}`, startTime: times[period - 1][0], endTime: times[period - 1][1], topic: selected ? `${selected.subject} - Scheduled` : 'Teacher required' });
-            if (teacher) { occupied.add(`${teacher.id}|${day}|${period}`); const loadKey = `${teacher.id}|${day}`; teacherDayLoad.set(loadKey, (teacherDayLoad.get(loadKey) || 0) + 1); } selected ? generated++ : unallocated++;
+            if (!teacher || !selected) { unallocated++; continue; }
+            scheduleData.push({ schoolId, grade, section, day, period, subject: selected.subject, teacherId: teacher.id, roomId: `Room-${grade.replace(/\D/g, '')}-${section}`, startTime: times[period - 1][0], endTime: times[period - 1][1], topic: `${selected.subject} - Scheduled` });
+            occupied.add(`${teacher.id}|${day}|${period}`); usedClassSubjectDay.add(`${grade}|${section}|${day}|${selected.subject.toLowerCase()}`); const loadKey = `${teacher.id}|${day}`; teacherDayLoad.set(loadKey, (teacherDayLoad.get(loadKey) || 0) + 1); generated++;
           }
         }
         const inserted = await tx.schedule.createMany({ data: scheduleData, skipDuplicates: true });

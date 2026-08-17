@@ -15,12 +15,14 @@ export async function PATCH(request: Request) {
     const formatTime = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
     const start = parseTime(setup.startTime, 570);
     const end = parseTime(setup.endTime, setup.schoolLevel === 'primary' ? 900 : 1020);
-    const periodMinutes = Math.floor((end - start - breakMinutes - lunchMinutes) / periods);
+    const teachingMinutes = end - start - breakMinutes - lunchMinutes;
+    const periodMinutes = Math.floor(teachingMinutes / periods);
+    const extraPeriodMinutes = teachingMinutes % periods;
     if (periodMinutes < 25) return NextResponse.json({ error: 'The selected time range is too short for these periods and breaks.' }, { status: 400 });
 
     let cursor = start;
     const slots = Array.from({ length: periods }, (_, index) => {
-      const period = index + 1; const startTime = formatTime(cursor); cursor += periodMinutes; const endTime = formatTime(cursor);
+      const period = index + 1; const startTime = formatTime(cursor); cursor += periodMinutes + (index < extraPeriodMinutes ? 1 : 0); const endTime = formatTime(cursor);
       if (period === breakAfter) cursor += breakMinutes;
       if (period === lunchAfter) cursor += lunchMinutes;
       return { period, startTime, endTime };

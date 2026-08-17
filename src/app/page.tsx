@@ -1767,7 +1767,7 @@ function AcademicCalendarSection({
       const res = await fetch('/api/schedules/ai-generate-timetable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grade, section, dryRun: false, setup }),
+        body: JSON.stringify({ grade, section, schoolId, dryRun: false, setup }),
       });
       if (res.ok) {
         const data = await res.json();
