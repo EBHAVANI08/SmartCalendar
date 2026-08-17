@@ -20,26 +20,26 @@ model School {
 }
 
 model Teacher {
-  id                    String         @id @default(cuid())
-  name                  String
-  email                 String         @unique
-  password              String         @default("teacher123")
-  phone                 String?
-  subject               String
-  grades                String         @default("[]") // JSON array of grades like ["Grade 1","Grade 2"]
-  availability          String         @default("[]") // JSON array of available periods
-  role                  String         @default("teacher")
-  schoolId              String?
-  school                School?        @relation(fields: [schoolId], references: [id])
-  createdAt             DateTime       @default(now())
-  updatedAt             DateTime       @updatedAt
-  schedules             Schedule[]
-  absentSubstitutions   Substitution[] @relation("AbsentTeacher")
-  substituteSubstitutions Substitution[] @relation("SubstituteTeacher")
-  lessonPlans           LessonPlan[]
-  notifications         TeacherNotification[]
-  biometricAttendance   BiometricAttendance[]
-  leaveApplications     LeaveApplication[]
+  id                      String                @id @default(cuid())
+  name                    String
+  email                   String                @unique
+  password                String                @default("teacher123")
+  phone                   String?
+  subject                 String
+  grades                  String                @default("[]") // JSON array of grades like ["Grade 1","Grade 2"]
+  availability            String                @default("[]") // JSON array of available periods
+  role                    String                @default("teacher")
+  schoolId                String?
+  school                  School?               @relation(fields: [schoolId], references: [id])
+  createdAt               DateTime              @default(now())
+  updatedAt               DateTime              @updatedAt
+  schedules               Schedule[]
+  absentSubstitutions     Substitution[]        @relation("AbsentTeacher")
+  substituteSubstitutions Substitution[]        @relation("SubstituteTeacher")
+  lessonPlans             LessonPlan[]
+  notifications           TeacherNotification[]
+  biometricAttendance     BiometricAttendance[]
+  leaveApplications       LeaveApplication[]
 }
 
 model Student {
@@ -56,15 +56,15 @@ model Schedule {
   id        String   @id @default(cuid())
   grade     String
   section   String
-  day       String   // Monday, Tuesday, etc.
-  period    Int      // 1-8
+  day       String // Monday, Tuesday, etc.
+  period    Int // 1-8
   subject   String
   teacherId String?
   schoolId  String?
   topic     String?
   roomId    String?
-  startTime String   // e.g., "08:00"
-  endTime   String   // e.g., "08:45"
+  startTime String // e.g., "08:00"
+  endTime   String // e.g., "08:45"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
@@ -83,10 +83,10 @@ model Substitution {
   section         String
   subject         String
   reason          String?
-  lessonDNA       String?  // JSON string with lesson DNA data
-  yesterdayTopic  String?  // What the absent teacher taught yesterday in this period
-  todayTopic      String?  // What should be taught today in this period
-  subContext      String?  // Full JSON context for substitute teacher
+  lessonDNA       String? // JSON string with lesson DNA data
+  yesterdayTopic  String? // What the absent teacher taught yesterday in this period
+  todayTopic      String? // What should be taught today in this period
+  subContext      String? // Full JSON context for substitute teacher
   source          String   @default("manual") // manual, biometric, ai-agent
   status          String   @default("pending") // pending, assigned, completed
   createdAt       DateTime @default(now())
@@ -96,18 +96,18 @@ model Substitution {
 }
 
 model BiometricAttendance {
-  id            String   @id @default(cuid())
-  date          String   // YYYY-MM-DD
-  teacherId     String
-  checkInTime   String?  // HH:MM timestamp
-  checkOutTime  String?  // HH:MM timestamp
-  status        String   @default("absent") // present, absent, late, half-day
-  deviceId      String?  // Biometric device identifier
-  syncSource    String   @default("biometric") // biometric, manual, api
-  syncedAt      DateTime @default(now())
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  teacher       Teacher  @relation(fields: [teacherId], references: [id])
+  id           String   @id @default(cuid())
+  date         String // YYYY-MM-DD
+  teacherId    String
+  checkInTime  String? // HH:MM timestamp
+  checkOutTime String? // HH:MM timestamp
+  status       String   @default("absent") // present, absent, late, half-day
+  deviceId     String? // Biometric device identifier
+  syncSource   String   @default("biometric") // biometric, manual, api
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  teacher      Teacher  @relation(fields: [teacherId], references: [id])
 
   @@unique([date, teacherId])
 }
@@ -124,7 +124,7 @@ model Admin {
 
 model Curriculum {
   id          String   @id @default(cuid())
-  name        String   // IB, Cambridge, American, British, French, Australian, CBSE
+  name        String // IB, Cambridge, American, British, French, Australian, CBSE
   board       String
   grades      String   @default("[]") // JSON array
   subjects    String   @default("[]") // JSON array
@@ -134,21 +134,21 @@ model Curriculum {
 }
 
 model CurriculumTopic {
-  id                String   @id @default(cuid())
-  board             String   // CBSE, ICSE, IB, etc.
-  grade             String
-  subject           String
-  unit              String
-  chapter           String
-  topic             String
-  subtopics         String   @default("[]") // JSON array
-  estimatedPeriods  Int      @default(1)
-  sequenceOrder     Int      @default(0)
-  learningOutcomes  String   @default("[]") // JSON array
-  bloomLevel        String   @default("Remember") // Bloom's taxonomy
-  prerequisiteIds   String   @default("[]") // JSON array of topic IDs
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id               String   @id @default(cuid())
+  board            String // CBSE, ICSE, IB, etc.
+  grade            String
+  subject          String
+  unit             String
+  chapter          String
+  topic            String
+  subtopics        String   @default("[]") // JSON array
+  estimatedPeriods Int      @default(1)
+  sequenceOrder    Int      @default(0)
+  learningOutcomes String   @default("[]") // JSON array
+  bloomLevel       String   @default("Remember") // Bloom's taxonomy
+  prerequisiteIds  String   @default("[]") // JSON array of topic IDs
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model LessonPlan {
@@ -161,12 +161,12 @@ model LessonPlan {
   board           String   @default("CBSE")
   duration        Int      @default(40) // minutes
   aiGenerated     Boolean  @default(true)
-  planContent     String   // Full JSON string of the lesson plan
+  planContent     String // Full JSON string of the lesson plan
   objectives      String   @default("[]") // JSON array
   warmUp          String?
-  mainContent     String?  // JSON string
-  differentiation String?  // JSON string
-  assessment      String?  // JSON string
+  mainContent     String? // JSON string
+  differentiation String? // JSON string
+  assessment      String? // JSON string
   resources       String   @default("[]") // JSON array
   homework        String?
   keyVocabulary   String   @default("[]") // JSON array
@@ -176,57 +176,534 @@ model LessonPlan {
 }
 
 model CurriculumDocument {
-  id                String   @id @default(cuid())
-  board             String
-  grade             String
-  subject           String
-  academicYear      String   @default("2025-2026")
-  totalWeeks        Int      @default(40)
-  periodsPerWeek    Int      @default(5)
-  periodDuration    Int      @default(40)
-  termStructure     String   @default("2-semester")
-  medium            String   @default("English")
-  specialRequirements String  @default("")
+  id                  String   @id @default(cuid())
+  board               String
+  grade               String
+  subject             String
+  academicYear        String   @default("2025-2026")
+  totalWeeks          Int      @default(40)
+  periodsPerWeek      Int      @default(5)
+  periodDuration      Int      @default(40)
+  termStructure       String   @default("2-semester")
+  medium              String   @default("English")
+  specialRequirements String   @default("")
   // Full 7-section JSON output from CurriculumArchitect AI
-  sectionA          String   @default("{}") // Curriculum Overview
-  sectionB          String   @default("{}") // Annual Scope & Sequence
-  sectionC          String   @default("[]") // Unit-wise Detailed Breakdown
-  sectionD          String   @default("{}") // Assessment Framework
-  sectionE          String   @default("{}") // Resource & Material List
-  sectionF          String   @default("{}") // Pacing Calendar
-  sectionG          String   @default("{}") // Integration Layers
-  fullDocument      String   @default("{}") // Complete raw JSON
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  sectionA            String   @default("{}") // Curriculum Overview
+  sectionB            String   @default("{}") // Annual Scope & Sequence
+  sectionC            String   @default("[]") // Unit-wise Detailed Breakdown
+  sectionD            String   @default("{}") // Assessment Framework
+  sectionE            String   @default("{}") // Resource & Material List
+  sectionF            String   @default("{}") // Pacing Calendar
+  sectionG            String   @default("{}") // Integration Layers
+  fullDocument        String   @default("{}") // Complete raw JSON
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 model LeaveApplication {
-  id              String   @id @default(cuid())
-  teacherId       String
-  leaveType       String   // "sick", "personal", "casual", "maternity", "official_duty", "training", "family_emergency", "medical_appointment"
-  reason          String   // Detailed reason provided by teacher
-  startDate       String   // YYYY-MM-DD
-  endDate         String   // YYYY-MM-DD
-  status          String   @default("approved") // "pending", "approved", "rejected"
-  appliedAt       DateTime @default(now())
-  approvedBy      String?  // Admin who approved
-  teacherNotes    String?  // Additional notes from teacher
-  coveringInfo    String?  // JSON: info about what classes need coverage
-  isEmergency     Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  teacher         Teacher  @relation(fields: [teacherId], references: [id])
+  id           String   @id @default(cuid())
+  teacherId    String
+  leaveType    String // "sick", "personal", "casual", "maternity", "official_duty", "training", "family_emergency", "medical_appointment"
+  reason       String // Detailed reason provided by teacher
+  startDate    String // YYYY-MM-DD
+  endDate      String // YYYY-MM-DD
+  status       String   @default("approved") // "pending", "approved", "rejected"
+  appliedAt    DateTime @default(now())
+  approvedBy   String? // Admin who approved
+  teacherNotes String? // Additional notes from teacher
+  coveringInfo String? // JSON: info about what classes need coverage
+  isEmergency  Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  teacher      Teacher  @relation(fields: [teacherId], references: [id])
 }
 
 model TeacherNotification {
+  id          String   @id @default(cuid())
+  type        String // "curriculum" or "lesson_plan"
+  referenceId String // ID of the curriculum topic or lesson plan
+  teacherId   String
+  sentBy      String   @default("manual") // "manual" or "ai"
+  title       String // Display title
+  description String? // Optional description
+  isRead      Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  teacher     Teacher  @relation(fields: [teacherId], references: [id])
+}
+
+// Production Smart Calendar domain. These models intentionally coexist with the
+// legacy Schedule table so existing screens keep working while schools migrate
+// to versioned, reviewable and publishable timetable configurations.
+
+model AcademicYear {
+  id        String   @id @default(cuid())
+  schoolId  String
+  name      String
+  startDate DateTime
+  endDate   DateTime
+  status    String   @default("draft")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, name])
+  @@index([schoolId, status])
+}
+
+model AcademicTerm {
+  id             String   @id @default(cuid())
+  schoolId       String
+  academicYearId String
+  name           String
+  startDate      DateTime
+  endDate        DateTime
+  status         String   @default("draft")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([academicYearId, name])
+  @@index([schoolId, academicYearId])
+}
+
+model Campus {
+  id        String   @id @default(cuid())
+  schoolId  String
+  code      String
+  name      String
+  timezone  String   @default("Asia/Kolkata")
+  address   String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([schoolId, code])
+}
+
+model ClassSection {
   id              String   @id @default(cuid())
-  type            String   // "curriculum" or "lesson_plan"
-  referenceId     String   // ID of the curriculum topic or lesson plan
-  teacherId       String
-  sentBy          String   @default("manual") // "manual" or "ai"
-  title           String   // Display title
-  description     String?  // Optional description
-  isRead          Boolean  @default(false)
+  schoolId        String
+  academicYearId  String
+  campusId        String?
+  code            String
+  grade           String
+  section         String
+  studentStrength Int      @default(0)
+  classTeacherId  String?
+  homeRoomId      String?
+  active          Boolean  @default(true)
   createdAt       DateTime @default(now())
-  teacher         Teacher  @relation(fields: [teacherId], references: [id])
+  updatedAt       DateTime @updatedAt
+
+  @@unique([schoolId, academicYearId, code])
+  @@index([schoolId, grade, section])
+}
+
+model SubjectMaster {
+  id         String   @id @default(cuid())
+  schoolId   String
+  code       String
+  name       String
+  category   String   @default("academic")
+  difficulty Int      @default(1)
+  active     Boolean  @default(true)
+  aliases    Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([schoolId, code])
+  @@unique([schoolId, name])
+}
+
+model SubjectRequirement {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  timetableVersionId String
+  classSectionId     String
+  subjectId          String
+  weeklyPeriods      Int
+  minPerDay          Int      @default(0)
+  maxPerDay          Int      @default(2)
+  doublePeriods      Int      @default(0)
+  preferredTime      String   @default("any")
+  spreadAcrossDays   Boolean  @default(true)
+  requiredRoomType   String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([timetableVersionId, classSectionId, subjectId])
+  @@index([schoolId, timetableVersionId])
+}
+
+model TeacherQualification {
+  id             String    @id @default(cuid())
+  schoolId       String
+  teacherId      String
+  subjectId      String
+  eligibleGrades Json
+  priority       Int       @default(1)
+  primary        Boolean   @default(false)
+  validFrom      DateTime?
+  validTo        DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([teacherId, subjectId])
+  @@index([schoolId, subjectId])
+}
+
+model TeacherWorkloadRule {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  timetableVersionId String
+  teacherId          String
+  employmentType     String   @default("full_time")
+  homeCampusId       String?
+  maxWeekly          Int      @default(30)
+  maxDaily           Int      @default(6)
+  maxConsecutive     Int      @default(3)
+  minPlanning        Int      @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([timetableVersionId, teacherId])
+}
+
+model TeacherAvailabilitySlot {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  timetableVersionId String
+  teacherId          String
+  dayOfWeek          Int
+  period             Int
+  status             String
+  reason             String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([timetableVersionId, teacherId, dayOfWeek, period])
+  @@index([schoolId, teacherId])
+}
+
+model Room {
+  id                String   @id @default(cuid())
+  schoolId          String
+  campusId          String?
+  code              String
+  name              String
+  type              String
+  capacity          Int
+  supportedSubjects Json?
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([schoolId, code])
+  @@index([schoolId, campusId, type])
+}
+
+model RoomAvailabilitySlot {
+  id        String   @id @default(cuid())
+  schoolId  String
+  roomId    String
+  dayOfWeek Int
+  period    Int
+  status    String   @default("available")
+  reason    String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([roomId, dayOfWeek, period])
+}
+
+model BellScheduleSlot {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  timetableVersionId String
+  campusId           String?
+  gradeGroup         String   @default("all")
+  dayOfWeek          Int
+  period             Int
+  label              String
+  startTime          String
+  endTime            String
+  slotType           String   @default("teaching")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([timetableVersionId, campusId, gradeGroup, dayOfWeek, period])
+}
+
+model TimetableVersion {
+  id               String    @id @default(cuid())
+  schoolId         String
+  academicYearId   String
+  academicTermId   String?
+  campusId         String?
+  name             String
+  timetableType    String    @default("regular")
+  version          Int       @default(1)
+  status           String    @default("draft")
+  effectiveFrom    DateTime?
+  effectiveTo      DateTime?
+  basedOnId        String?
+  generationConfig Json?
+  createdBy        String
+  approvedBy       String?
+  approvedAt       DateTime?
+  publishedBy      String?
+  publishedAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([schoolId, academicYearId, name, version])
+  @@index([schoolId, status, effectiveFrom])
+}
+
+model TimetableSlot {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  timetableVersionId String
+  classSectionId     String
+  subjectId          String?
+  teacherId          String?
+  roomId             String?
+  dayOfWeek          Int
+  period             Int
+  lessonType         String   @default("teaching")
+  topic              String?
+  locked             Boolean  @default(false)
+  fixedReason        String?
+  warnings           Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([timetableVersionId, classSectionId, dayOfWeek, period])
+  @@unique([timetableVersionId, teacherId, dayOfWeek, period])
+  @@unique([timetableVersionId, roomId, dayOfWeek, period])
+  @@index([schoolId, timetableVersionId])
+}
+
+model SchedulingRule {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  timetableVersionId String
+  code               String
+  name               String
+  ruleType           String
+  weight             Int      @default(50)
+  enabled            Boolean  @default(true)
+  configuration      Json?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([timetableVersionId, code])
+}
+
+model TimetableCandidate {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  timetableVersionId String
+  generationJobId    String
+  name               String
+  hardConflicts      Int      @default(0)
+  preferenceScore    Float    @default(0)
+  teacherGaps        Int      @default(0)
+  unallocatedPeriods Int      @default(0)
+  recommended        Boolean  @default(false)
+  result             Json
+  createdAt          DateTime @default(now())
+
+  @@index([timetableVersionId, preferenceScore])
+}
+
+model GenerationJob {
+  id                  String    @id @default(cuid())
+  schoolId            String
+  timetableVersionId  String
+  status              String    @default("queued")
+  stage               String    @default("queued")
+  progress            Int       @default(0)
+  solveTimeSeconds    Int       @default(60)
+  alternatives        Int       @default(1)
+  allowPartial        Boolean   @default(false)
+  cancelRequested     Boolean   @default(false)
+  bestScore           Float?
+  remainingViolations Int?
+  error               String?
+  startedAt           DateTime?
+  completedAt         DateTime?
+  createdBy           String
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([schoolId, status, createdAt])
+}
+
+model CalendarEvent {
+  id             String    @id @default(cuid())
+  schoolId       String
+  academicYearId String?
+  academicTermId String?
+  campusId       String?
+  title          String
+  description    String?
+  category       String
+  source         String    @default("school")
+  status         String    @default("draft")
+  startAt        DateTime
+  endAt          DateTime
+  allDay         Boolean   @default(false)
+  timezone       String    @default("Asia/Kolkata")
+  recurrenceRule String?
+  applicableTo   Json?
+  roomId         String?
+  parentEventId  String?
+  createdBy      String
+  approvedBy     String?
+  publishedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([schoolId, startAt, endAt])
+  @@index([schoolId, category, status])
+}
+
+model EventAttendee {
+  id          String    @id @default(cuid())
+  eventId     String
+  userType    String
+  userId      String
+  response    String    @default("pending")
+  respondedAt DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([eventId, userType, userId])
+}
+
+model CalendarSubscription {
+  id                  String    @id @default(cuid())
+  schoolId            String
+  userType            String
+  userId              String
+  provider            String
+  externalCalendarId  String?
+  encryptedCredential String?
+  syncToken           String?
+  status              String    @default("active")
+  lastSyncedAt        DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([schoolId, userType, userId, provider])
+}
+
+model ImportBatch {
+  id                 String    @id @default(cuid())
+  schoolId           String
+  timetableVersionId String?
+  fileName           String
+  fileHash           String
+  scope              String
+  mode               String
+  status             String    @default("uploaded")
+  sheetMappings      Json?
+  columnMappings     Json?
+  summary            Json?
+  errorReport        Json?
+  createdBy          String
+  committedAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([schoolId, status, createdAt])
+}
+
+model ValidationIssue {
+  id                 String   @id @default(cuid())
+  schoolId           String
+  timetableVersionId String?
+  importBatchId      String?
+  severity           String
+  code               String
+  dataset            String?
+  rowNumber          Int?
+  field              String?
+  message            String
+  suggestedValue     String?
+  acknowledged       Boolean  @default(false)
+  createdAt          DateTime @default(now())
+
+  @@index([schoolId, timetableVersionId, severity])
+  @@index([importBatchId, severity])
+}
+
+model ApprovalRequest {
+  id          String    @id @default(cuid())
+  schoolId    String
+  entityType  String
+  entityId    String
+  status      String    @default("pending")
+  requestedBy String
+  reviewedBy  String?
+  reviewNote  String?
+  reviewedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([schoolId, entityType, entityId])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  schoolId   String
+  actorId    String
+  actorRole  String
+  action     String
+  entityType String
+  entityId   String
+  before     Json?
+  after      Json?
+  reason     String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([schoolId, entityType, entityId, createdAt])
+}
+
+model NotificationDelivery {
+  id                String    @id @default(cuid())
+  schoolId          String
+  notificationId    String?
+  channel           String
+  recipient         String
+  status            String    @default("queued")
+  attemptCount      Int       @default(0)
+  providerMessageId String?
+  lastError         String?
+  nextAttemptAt     DateTime?
+  deliveredAt       DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([schoolId, status, nextAttemptAt])
+}
+
+model SubstituteReservation {
+  id             String    @id @default(cuid())
+  schoolId       String
+  substitutionId String    @unique
+  teacherId      String
+  date           String
+  period         Int
+  status         String    @default("offered")
+  version        Int       @default(1)
+  idempotencyKey String    @unique
+  responseDueAt  DateTime?
+  respondedAt    DateTime?
+  acceptedAt     DateTime?
+  cancelledAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([schoolId, teacherId, date, period])
+  @@index([schoolId, status, responseDueAt])
 }

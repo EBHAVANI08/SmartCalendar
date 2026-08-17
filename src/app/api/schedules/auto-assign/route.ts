@@ -27,7 +27,7 @@ const RELATED_SUBJECTS: Record<string, string[]> = {
 
 export async function POST(request: Request) {
   try {
-    const { grade, section, day, period } = await request.json();
+    const { grade, section, day, period, schoolId } = await request.json();
 
     if (!grade || !section || !day || !period) {
       return NextResponse.json({ error: 'grade, section, day, and period are required' }, { status: 400 });
@@ -36,7 +36,7 @@ export async function POST(request: Request) {
     // 1. Find the schedule entry for this grade/section/day/period
     const schedule = await db.schedule.findUnique({
       where: {
-        grade_section_day_period: { grade, section, day, period },
+        schoolId_grade_section_day_period: { schoolId: schoolId || null, grade, section, day, period },
       },
       include: { teacher: true },
     });
@@ -179,7 +179,7 @@ export async function POST(request: Request) {
 
       const updated = await db.schedule.update({
         where: {
-          grade_section_day_period: { grade, section, day, period },
+          schoolId_grade_section_day_period: { schoolId: schoolId || null, grade, section, day, period },
         },
         data: { teacherId: best.teacher.id },
         include: { teacher: true },

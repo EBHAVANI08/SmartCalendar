@@ -1,0 +1,21 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false,
+    "noEmit": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "src/lib/db.ts",
+    "src/lib/timetable-import.ts",
+    "src/app/api/timetable/**/*.ts",
+    "src/app/api/calendar/events/**/*.ts",
+    "src/app/api/substitutions/reserve/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "fv-extract",
+    "fvtar-extract",
+    "examples"
+  ]
+}

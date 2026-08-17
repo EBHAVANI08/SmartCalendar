@@ -80,7 +80,7 @@ interface GeneratedSchedule {
  */
 export async function POST(request: Request) {
   try {
-    const { grade, section, dryRun = false } = await request.json();
+    const { grade, section, dryRun = false, setup = {} } = await request.json();
 
     // Validate required parameters
     if (!grade || !section) {
@@ -92,6 +92,31 @@ export async function POST(request: Request) {
 
     const targetGrade = grade as string;
     const targetSection = section as string;
+    const periodsPerDay = Math.min(10, Math.max(4, Number(setup.periodsPerDay) || 8));
+    const workingDays = Number(setup.workingDays) === 5 ? 5 : 6;
+    const saturdayPeriods = Math.min(periodsPerDay, Math.max(1, Number(setup.saturdayPeriods) || 4));
+    const breakAfter = Math.min(periodsPerDay - 1, Math.max(1, Number(setup.breakAfter) || 2));
+    const lunchAfter = Math.min(periodsPerDay - 1, Math.max(breakAfter + 1, Number(setup.lunchAfter) || 4));
+    const breakMinutes = Math.min(30, Math.max(5, Number(setup.breakMinutes) || 15));
+    const lunchMinutes = Math.min(90, Math.max(15, Number(setup.lunchMinutes) || 45));
+    const parseMinutes = (value: string, fallback: number) => { const match = /^(\d{1,2}):(\d{2})$/.exec(value || ''); return match ? Number(match[1]) * 60 + Number(match[2]) : fallback; };
+    const formatMinutes = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+    const startMinutes = parseMinutes(setup.startTime, 9 * 60 + 30);
+    const endMinutes = parseMinutes(setup.endTime, setup.schoolLevel === 'primary' ? 15 * 60 : 17 * 60);
+    if (endMinutes <= startMinutes + 180) return NextResponse.json({ error: 'End time must be at least three hours after start time.' }, { status: 400 });
+    const teachingMinutes = endMinutes - startMinutes - breakMinutes - lunchMinutes;
+    const periodMinutes = Math.floor(teachingMinutes / periodsPerDay);
+    if (periodMinutes < 25) return NextResponse.json({ error: 'The selected day is too short for the periods and breaks. Increase the end time or reduce periods/break durations.' }, { status: 400 });
+    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].slice(0, workingDays);
+    let cursor = startMinutes;
+    const TIME_SLOTS = Array.from({ length: periodsPerDay }, (_, index) => {
+      const period = index + 1; const start = cursor; cursor += periodMinutes; const end = cursor;
+      if (period === breakAfter) cursor += breakMinutes;
+      if (period === lunchAfter) cursor += lunchMinutes;
+      return { period, start: formatMinutes(start), end: formatMinutes(end) };
+    });
+    const MORNING_PERIODS = TIME_SLOTS.filter((slot) => parseMinutes(slot.start, 0) < 12 * 60).map((slot) => slot.period);
+    const AFTERNOON_PERIODS = TIME_SLOTS.filter((slot) => !MORNING_PERIODS.includes(slot.period)).map((slot) => slot.period);
 
     // ─── Step 1: Load teachers who teach THIS grade ───
     const allTeachers = await db.teacher.findMany({
@@ -146,6 +171,9 @@ export async function POST(request: Request) {
     const getTeacherDayCount = (teacherId: string, day: string): number => {
       return teacherDayCountMap.get(teacherId)?.get(day) || 0;
     };
+
+    const teacherFullDay = (teacherId: string) => DAYS[Math.abs([...teacherId].reduce((sum, char) => sum + char.charCodeAt(0), 0)) % Math.min(5, DAYS.length)];
+    const getTeacherDayLimit = (teacherId: string, day: string) => day === 'Saturday' ? Math.min(4, saturdayPeriods) : day === teacherFullDay(teacherId) ? periodsPerDay : MAX_PERIODS_PER_DAY;
 
     const getTeacherTotalLoad = (teacherId: string): number => {
       return teacherTotalLoadMap.get(teacherId) || 0;
@@ -227,7 +255,7 @@ export async function POST(request: Request) {
       if (totalWorkload < 15) score += 30;
 
       // Hard constraint: can't exceed max periods per day
-      if (dayWorkload >= MAX_PERIODS_PER_DAY) {
+      if (dayWorkload >= getTeacherDayLimit(teacher.id, day)) {
         return { score: -Infinity, matchLabel: 'Overloaded' };
       }
 
@@ -395,7 +423,7 @@ export async function POST(request: Request) {
 
     // ─── Step 5: Generate timetable for this specific grade+section ───
     for (const day of DAYS) {
-      const dayPlan = buildSubjectOrderForDay(day);
+      const dayPlan = buildSubjectOrderForDay(day).filter((slot) => day !== 'Saturday' || slot.period <= saturdayPeriods);
 
       for (const slotAssignment of dayPlan) {
         const subject = slotAssignment.subject;
@@ -413,7 +441,7 @@ export async function POST(request: Request) {
           const candidates = pool
             .filter((t) => {
               if (isTeacherBusy(t.id, day, period)) return false;
-              if (getTeacherDayCount(t.id, day) >= MAX_PERIODS_PER_DAY) return false;
+              if (getTeacherDayCount(t.id, day) >= getTeacherDayLimit(t.id, day)) return false;
               return true;
             })
             .map((t) => ({
@@ -711,6 +739,10 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
         teacherContinuity: [...subjectTeacherHistory.entries()].filter(([, days]) => days.size >= 3).length,
         notificationsSent: notificationDataList.length,
         teachersAssigned: affectedTeacherIds.size,
+        startTime: setup.startTime || '09:30',
+        endTime: setup.endTime || (setup.schoolLevel === 'primary' ? '15:00' : '17:00'),
+        workingDays,
+        saturdayPeriods: workingDays === 6 ? saturdayPeriods : 0,
       },
       unassignedSlots: unassignedSlots.slice(0, 10),
       aiSuggestions,

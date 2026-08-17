@@ -9,7 +9,7 @@ import {
   LogOut, FileText, Eye, Target, ListChecks, Lightbulb, BookMarked, CalendarDays,
   Lock, ShieldCheck, Coffee, BarChart3, BookTemplate, Library,
   Download, Copy, Check, Filter, Grid3X3, TrendingUp, TrendingDown,
-  ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle, UserPlus
+  ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle, UserPlus, Upload, FileSpreadsheet
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -110,7 +110,7 @@ interface LessonPlan {
   keyVocabulary: string[];
 }
 
-type TabType = 'dashboard' | 'calendar' | 'substitutions' | 'teachers' | 'teacher-portal' | 'curriculum' | 'analytics' | 'lesson-plans';
+type TabType = 'dashboard' | 'calendar' | 'bulk-import' | 'substitutions' | 'teachers' | 'teacher-portal' | 'curriculum' | 'analytics' | 'lesson-plans';
 type UserRole = 'admin' | 'teacher' | null;
 
 interface LoginUser {
@@ -125,7 +125,7 @@ interface LoginUser {
   schoolCode?: string;
 }
 
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const PERIOD_TIMES: Record<number, { start: string; end: string }> = {
   1: { start: '08:00', end: '08:40' },
@@ -201,10 +201,12 @@ interface AIAssignment {
 function BiometricAgentCards({
   teachers,
   schedules,
+  sharedSchedules,
   onNavigate,
 }: {
   teachers: Teacher[];
   schedules: Schedule[];
+  sharedSchedules: Schedule[];
   onNavigate: (tab: TabType) => void;
 }) {
   const { toast } = useToast();
@@ -700,11 +702,11 @@ function BiometricAgentCards({
                         {/* Period tags with substitution status */}
                         {at.scheduleDetails.length > 0 && (
                           <div className="mt-1 flex flex-wrap gap-1">
-                            {at.scheduleDetails.slice(0, 5).map(sd => {
+                            {at.scheduleDetails.slice(0, 5).map((sd, scheduleIndex) => {
                               const assignment = teacherAssignments.find(a => a.period === sd.period && a.grade === sd.grade && a.section === sd.section);
                               const isCovered = !!assignment?.assignedTeacher;
                               return (
-                                <span key={sd.period} className={`text-[8px] px-1.5 py-0.5 rounded border ${
+                                <span key={`${at.teacherId}-${sd.grade}-${sd.section}-${sd.period}-${scheduleIndex}`} className={`text-[8px] px-1.5 py-0.5 rounded border ${
                                   isCovered ? 'bg-teal-50 text-teal-700 border-teal-200' :
                                   'bg-amber-50 text-amber-700 border-amber-200'
                                 }`}>
@@ -983,8 +985,8 @@ function BiometricAgentCards({
                         </p>
                       </div>
                       <div className="p-3 space-y-2.5">
-                        {selectedAbsentTeacher.scheduleDetails.map(sd => (
-                          <div key={sd.period} className="p-2.5 bg-white rounded-lg border border-gray-100">
+                        {selectedAbsentTeacher.scheduleDetails.map((sd, scheduleIndex) => (
+                          <div key={`${selectedAbsentTeacher.teacherId}-${sd.grade}-${sd.section}-${sd.period}-${scheduleIndex}`} className="p-2.5 bg-white rounded-lg border border-gray-100">
                             <div className="flex items-center gap-2 mb-2">
                               <Badge variant="outline" className="text-[10px] font-bold">P{sd.period}</Badge>
                               <span className="text-xs font-medium text-gray-700">{sd.grade} {sd.section}</span>
@@ -1627,8 +1629,75 @@ function DashboardSection({
 }
 
 // ─── Academic Calendar Section ───
+function BulkTeacherImportSection({ schoolId, onCompleted }: { schoolId?: string; onCompleted: () => Promise<void> }) {
+  const { toast } = useToast();
+  const [importKind, setImportKind] = useState<'teacher' | 'complete'>('teacher');
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<{ layout?: string; classesDetected?: number; allotmentsDetected?: number; rows: { employeeId: string; name: string; email: string; subject: string; grades: string[] }[]; issues: { row: number; field: string; message: string }[]; summary: { detected: number; valid: number; errors: number }; blocking: boolean } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [completePreview, setCompletePreview] = useState<{ summary: Record<string, { total: number; valid: number; warnings: number; errors: number }>; issues: { severity: string; dataset: string; rowNumber?: number; message: string }[]; blocking: boolean } | null>(null);
+  const [result, setResult] = useState<{ imported: number; allotted: number; unallotted: number; classesCreated?: number } | null>(null);
+  const [generatedSchedules, setGeneratedSchedules] = useState<Schedule[]>([]);
+  const [resultClass, setResultClass] = useState('all');
+  const upload = async (commit: boolean) => {
+    if (!file || !schoolId) return;
+    setBusy(true);
+    try {
+      const body = new FormData(); body.append('file', file); body.append('schoolId', schoolId); body.append('commit', String(commit));
+      const response = await fetch(importKind === 'complete' ? '/api/timetable/import/validate' : '/api/timetable/teacher-allotment', { method: 'POST', body }); const responseText = await response.text(); let data: any = {}; try { data = responseText ? JSON.parse(responseText) : {}; } catch { throw new Error(`Import server returned an invalid response (${response.status}).`); }
+      if (!response.ok) throw new Error(data.error || 'Import failed');
+      if (importKind === 'complete') { setCompletePreview(data); return; }
+      if (commit) {
+        const scheduleResponse = await fetch(`/api/schedules?schoolId=${encodeURIComponent(schoolId)}`); const schedulesData = scheduleResponse.ok ? await scheduleResponse.json() : [];
+        setResult(data); setGeneratedSchedules(Array.isArray(schedulesData) ? schedulesData : []);
+        toast({ title: 'Import and allotment complete', description: `${data.imported} teachers imported, ${data.allotted} timetable periods allotted.` }); await onCompleted();
+      }
+      else setPreview(data);
+    } catch (error) { toast({ title: 'Import failed', description: error instanceof Error ? error.message : 'Could not process file', variant: 'destructive' }); }
+    finally { setBusy(false); }
+  };
+  return <div className="space-y-4 min-w-0">
+    <div><h2 className="text-2xl font-bold text-emerald-800 flex items-center gap-2"><FileSpreadsheet className="w-6 h-6" />Timetable Bulk Import Studio</h2><p className="text-sm text-muted-foreground">Import flexible teacher allotments or a complete linked timetable workbook.</p></div>
+    <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1"><Button type="button" onClick={() => { setImportKind('teacher'); setPreview(null); setCompletePreview(null); setFile(null); }} className={importKind === 'teacher' ? 'bg-white text-emerald-700 shadow-sm hover:bg-white' : 'bg-transparent text-slate-600 shadow-none hover:bg-white/60'}><Users className="mr-2 h-4 w-4"/>Flexible Teacher Import</Button><Button type="button" onClick={() => { setImportKind('complete'); setPreview(null); setCompletePreview(null); setFile(null); }} className={importKind === 'complete' ? 'bg-white text-purple-700 shadow-sm hover:bg-white' : 'bg-transparent text-slate-600 shadow-none hover:bg-white/60'}><Layers className="mr-2 h-4 w-4"/>Complete Timetable Setup</Button></div>
+    <div className="grid grid-cols-3 gap-2 md:grid-cols-6">{['Import','Validate','Draft','Review','Approve','Publish'].map((step, index) => <div key={step} className={`rounded-lg border p-2 text-center text-xs font-medium ${index < 2 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}`}><span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-current/10">{index + 1}</span>{step}</div>)}</div>
+    <Card><CardHeader><CardTitle className="text-lg">1. {importKind === 'complete' ? 'Upload complete timetable configuration' : 'Upload teacher allotment'}</CardTitle><CardDescription>{importKind === 'complete' ? 'Linked sheets: Teachers, Classes, SubjectRequirements, TeacherAssignments, Availability, Rooms, FixedPeriods and BellSchedule.' : 'Required information: Teacher Name, Subject and Eligible Grades. Employee ID and Email are recommended.'}</CardDescription></CardHeader><CardContent className="space-y-4">
+      <div className="border-2 border-dashed border-emerald-200 rounded-xl p-5 md:p-8 text-center bg-emerald-50/30"><Upload className="w-10 h-10 mx-auto text-emerald-600 mb-3"/><Input type="file" accept={importKind === 'complete' ? '.xlsx' : '.xlsx,.xls,.pdf'} onChange={(event) => { setFile(event.target.files?.[0] || null); setPreview(null); setCompletePreview(null); }} className="w-full max-w-xl mx-auto bg-white"/><p className="text-xs text-muted-foreground mt-2">{importKind === 'complete' ? 'Upload the multi-sheet workbook containing Teachers, Classes, Requirements and Assignments.' : 'Any common Excel layout or searchable PDF; headings are detected automatically.'}</p></div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap"><Button asChild variant="outline"><a href="/api/timetable/import/template"><Download className="w-4 h-4 mr-2"/>Download Excel Template</a></Button><Button disabled={!file || busy || !schoolId} onClick={() => upload(false)} className="bg-emerald-600 hover:bg-emerald-700">{busy ? <RefreshCw className="w-4 h-4 mr-2 animate-spin"/> : <Eye className="w-4 h-4 mr-2"/>}Validate & Preview</Button></div>
+    </CardContent></Card>
+    {preview && <Card><CardHeader><CardTitle className="flex items-center justify-between">2. Review <Badge variant={preview.blocking ? 'destructive' : 'default'}>{preview.summary.valid}/{preview.summary.detected} valid</Badge></CardTitle>{preview.layout === 'grade-section-matrix' && <CardDescription>Detected grade-section matrix: {preview.classesDetected} classes and {preview.allotmentsDetected} teacher-subject allotments. Import will create a Monday-Friday timetable for every detected grade and section.</CardDescription>}</CardHeader><CardContent className="space-y-4">
+      {preview.issues.length > 0 && <ScrollArea className="h-28 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{preview.issues.map((issue, index) => <p key={index}>Row {issue.row} - {issue.field}: {issue.message}</p>)}</ScrollArea>}
+      <div className="max-h-[38dvh] overflow-auto rounded-lg border"><table className="w-full min-w-[760px] text-sm"><thead className="sticky top-0 bg-white shadow-sm"><tr className="border-b text-left"><th className="p-2">Employee ID</th><th className="p-2">Teacher</th><th className="p-2">Subject</th><th className="p-2">Eligible Grades</th><th className="p-2">Email</th></tr></thead><tbody>{preview.rows.map((row, index) => <tr key={index} className="border-b"><td className="p-2">{row.employeeId}</td><td className="p-2 font-medium">{row.name}</td><td className="p-2">{row.subject}</td><td className="p-2">{row.grades.join(', ')}</td><td className="p-2 text-xs">{row.email}</td></tr>)}</tbody></table></div>
+      <Button disabled={preview.blocking || busy} onClick={() => upload(true)} className="bg-purple-600 hover:bg-purple-700"><Sparkles className="w-4 h-4 mr-2"/>Import Teachers & Auto-Allot Timetable</Button>
+    </CardContent></Card>}
+    {completePreview && <Card><CardHeader><CardTitle className="flex items-center justify-between">Complete Setup Validation <Badge variant={completePreview.blocking ? 'destructive' : 'default'}>{completePreview.blocking ? 'Blocking errors' : 'Ready for draft'}</Badge></CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-2 gap-3 md:grid-cols-4">{Object.entries(completePreview.summary).map(([dataset, result]) => <div key={dataset} className="rounded-lg border bg-white p-3"><p className="truncate text-xs font-semibold">{dataset}</p><p className="mt-1 text-lg font-bold text-emerald-700">{result.valid}/{result.total}</p><p className="text-[10px] text-muted-foreground">{result.errors} errors - {result.warnings} warnings</p></div>)}</div>{completePreview.issues.length > 0 && <ScrollArea className="h-40 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{completePreview.issues.map((issue, index) => <p key={index}>{issue.dataset}{issue.rowNumber ? ` row ${issue.rowNumber}` : ''}: {issue.message}</p>)}</ScrollArea>}<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><strong>Safe lifecycle:</strong> successful validation prepares timetable input for a database draft. It is not published until independent validation, review and approval are complete.</div></CardContent></Card>}
+    {result && <Card className="border-2 border-emerald-300"><CardHeader><CardTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2 text-emerald-800"><CheckCircle2 className="h-5 w-5"/>3. Teacher Allotment & Timetable Preview</span><Button asChild className="bg-blue-600 hover:bg-blue-700"><a href={`/api/timetable/export?schoolId=${encodeURIComponent(schoolId || '')}`}><Download className="mr-2 h-4 w-4"/>Download Timetable Excel</a></Button></CardTitle><CardDescription>Review teachers allotted to every subject for each grade and section before leaving this page.</CardDescription></CardHeader><CardContent className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4"><div className="rounded-xl bg-blue-50 p-3"><p className="text-2xl font-bold text-blue-700">{result.classesCreated || new Set(generatedSchedules.map((item) => `${item.grade}|${item.section}`)).size}</p><p className="text-xs text-blue-700">Grades/Sections</p></div><div className="rounded-xl bg-purple-50 p-3"><p className="text-2xl font-bold text-purple-700">{result.imported}</p><p className="text-xs text-purple-700">Teachers Imported</p></div><div className="rounded-xl bg-emerald-50 p-3"><p className="text-2xl font-bold text-emerald-700">{result.allotted}</p><p className="text-xs text-emerald-700">Periods Allotted</p></div><div className="rounded-xl bg-amber-50 p-3"><p className="text-2xl font-bold text-amber-700">{result.unallotted}</p><p className="text-xs text-amber-700">Need Teacher</p></div></div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center"><Label className="shrink-0">Preview grade & section</Label><Select value={resultClass} onValueChange={setResultClass}><SelectTrigger className="w-full sm:w-[260px]"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All grades and sections</SelectItem>{[...new Set(generatedSchedules.map((item) => `${item.grade}|${item.section}`))].sort().map((key) => { const [grade, section] = key.split('|'); return <SelectItem key={key} value={key}>{grade} - Section {section}</SelectItem>; })}</SelectContent></Select></div>
+      <div className="max-h-[48dvh] overflow-auto rounded-xl border"><table className="w-full min-w-[900px] text-sm"><thead className="sticky top-0 z-10 bg-slate-100"><tr className="text-left"><th className="p-3">Grade</th><th className="p-3">Section</th><th className="p-3">Day</th><th className="p-3">Period</th><th className="p-3">Subject</th><th className="p-3">Allotted Teacher</th><th className="p-3">Room</th><th className="p-3">Status</th></tr></thead><tbody>{generatedSchedules.filter((item) => resultClass === 'all' || `${item.grade}|${item.section}` === resultClass).map((item) => <tr key={item.id} className="border-t hover:bg-slate-50"><td className="p-3 font-medium">{item.grade}</td><td className="p-3">{item.section}</td><td className="p-3">{item.day}</td><td className="p-3">P{item.period}</td><td className="p-3 font-medium text-blue-700">{item.subject}</td><td className="p-3">{item.teacher?.name || <span className="text-amber-700">Not allotted</span>}</td><td className="p-3">{item.roomId || '-'}</td><td className="p-3"><Badge className={item.teacherId ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>{item.teacherId ? 'Allotted' : 'Needs teacher'}</Badge></td></tr>)}</tbody></table></div>
+    </CardContent></Card>}
+  </div>;
+}
+
+function TimetableGovernancePanel({ schoolId, onChanged }: { schoolId?: string; onChanged?: () => Promise<void> }) {
+  const { toast } = useToast();
+  const [context, setContext] = useState<any>(null); const [versionId, setVersionId] = useState(''); const [issues, setIssues] = useState<any[]>([]); const [candidates, setCandidates] = useState<any[]>([]); const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const readApiResponse = async (response: Response) => { const text = await response.text(); let data: any = {}; if (text) { try { data = JSON.parse(text); } catch { throw new Error(`The server returned an invalid response (${response.status}).`); } } if (!response.ok) throw new Error(data.error || `Request failed with status ${response.status}.`); return data; };
+  const load = useCallback(async () => { if (!schoolId) { setLoadError('School workspace is not available.'); return; } setLoadError(''); try { let response = await fetch(`/api/timetable/context?schoolId=${encodeURIComponent(schoolId)}`); let data = await readApiResponse(response); if (!data.active) { response = await fetch('/api/timetable/bootstrap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, actorId: schoolId }) }); await readApiResponse(response); response = await fetch(`/api/timetable/context?schoolId=${encodeURIComponent(schoolId)}`); data = await readApiResponse(response); } setContext(data); setVersionId((current) => current || data.active?.id || data.versions?.[0]?.id || ''); } catch (error) { setContext(null); setLoadError(error instanceof Error ? error.message : 'Unable to load timetable governance.'); } }, [schoolId]);
+  useEffect(() => { void load(); }, [load]);
+  const version = context?.versions?.find((item: any) => item.id === versionId);
+  const validate = async () => { setBusy(true); try { const response = await fetch(`/api/timetable/versions/${versionId}/validate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId }) }); const data = await response.json(); setIssues(data.issues || []); toast({ title: data.blocking ? 'Validation found blocking issues' : 'Validation passed', description: `${data.summary?.errors || 0} errors and ${data.summary?.warnings || 0} warnings.` }); } finally { setBusy(false); } };
+  const generate = async () => { setBusy(true); try { const response = await fetch('/api/timetable/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, timetableVersionId: versionId, createdBy: schoolId, role: 'school', alternatives: 3 }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setCandidates(data.candidates || []); toast({ title: 'Candidates ready', description: `${data.candidates?.length || 0} alternatives generated.` }); } catch (error) { toast({ title: 'Generation failed', description: error instanceof Error ? error.message : 'Unable to generate', variant: 'destructive' }); } finally { setBusy(false); } };
+  const choose = async (id: string) => { const response = await fetch(`/api/timetable/candidates/${id}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, actorId: schoolId }) }); if (response.ok) { toast({ title: 'Candidate selected', description: 'Candidate slots are now the working draft.' }); if (onChanged) await onChanged(); } };
+  const workflow = async (action: string) => { setBusy(true); try { const response = await fetch(`/api/timetable/versions/${versionId}/workflow`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, actorId: schoolId, actorRole: 'school', action }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); await load(); toast({ title: `Timetable ${action} successful` }); } catch (error) { toast({ title: `${action} failed`, description: error instanceof Error ? error.message : 'Request failed', variant: 'destructive' }); } finally { setBusy(false); } };
+  if (loadError) return <Card className="border-amber-200 bg-amber-50"><CardContent className="flex flex-col items-start gap-3 p-6"><div className="flex items-center gap-2 font-semibold text-amber-900"><AlertTriangle className="h-5 w-5"/>Timetable governance is temporarily unavailable</div><p className="text-sm text-amber-800">{loadError}</p><Button variant="outline" size="sm" onClick={() => void load()}><RefreshCw className="mr-2 h-4 w-4"/>Retry</Button></CardContent></Card>;
+  if (!context) return <Card><CardContent className="p-6"><RefreshCw className="h-5 w-5 animate-spin text-emerald-600"/></CardContent></Card>;
+  return <div className="grid gap-4 xl:grid-cols-[320px_1fr]"><Card><CardHeader><CardTitle className="text-base">Timetable Context</CardTitle></CardHeader><CardContent className="space-y-3"><Label>Version</Label><Select value={versionId} onValueChange={setVersionId}><SelectTrigger className="w-full"><SelectValue placeholder="Select version"/></SelectTrigger><SelectContent>{context.versions?.map((item: any) => <SelectItem key={item.id} value={item.id}>{item.name} v{item.version} · {item.status}</SelectItem>)}</SelectContent></Select><div className="grid grid-cols-2 gap-2 text-xs"><div className="rounded-lg bg-slate-50 p-2"><p className="text-muted-foreground">Campus</p><p className="font-semibold">{context.campuses?.[0]?.name || 'Main Campus'}</p></div><div className="rounded-lg bg-slate-50 p-2"><p className="text-muted-foreground">Academic year</p><p className="font-semibold">{context.academicYears?.[0]?.name || '2026-27'}</p></div></div><Badge className="capitalize">{version?.status || 'draft'}</Badge></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Draft Controls & Governance</CardTitle><CardDescription>Generate candidates, validate independently, then review, approve and publish.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap gap-2"><Button disabled={busy || !versionId || version?.status !== 'draft'} onClick={generate}><Sparkles className="mr-2 h-4 w-4"/>Generate 3 Candidates</Button><Button disabled={busy || !versionId} variant="outline" onClick={validate}><ShieldCheck className="mr-2 h-4 w-4"/>Validate Draft</Button>{version?.status === 'draft' && <Button disabled={busy} variant="outline" onClick={() => workflow('submit')}>Submit Review</Button>}{version?.status === 'review' && <><Button disabled={busy} onClick={() => workflow('approve')}>Approve</Button><Button disabled={busy} variant="destructive" onClick={() => workflow('reject')}>Request Changes</Button></>}{version?.status === 'approved' && <Button disabled={busy} className="bg-blue-700" onClick={() => workflow('publish')}>Publish Atomically</Button>}</div>{issues.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{issues.slice(0, 6).map((issue, index) => <p key={index}>{issue.code}: {issue.message}</p>)}</div>}{candidates.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">Candidate</th><th>Hard conflicts</th><th>Unallocated</th><th>Teacher gaps</th><th>Quality</th><th></th></tr></thead><tbody>{candidates.map((candidate) => <tr key={candidate.id} className="border-b"><td className="p-2 font-semibold">{candidate.name}{candidate.recommended ? ' · Recommended' : ''}</td><td>{candidate.hardConflicts}</td><td>{candidate.unallocatedPeriods}</td><td>{candidate.teacherGaps}</td><td>{Math.round(candidate.preferenceScore)}%</td><td><Button size="sm" variant="outline" onClick={() => choose(candidate.id)}>Use Draft</Button></td></tr>)}</tbody></table></div>}</CardContent></Card></div>;
+}
+
 function AcademicCalendarSection({
   schedules,
+  sharedSchedules,
   teachers,
   selectedDay,
   onDayChange,
@@ -1637,8 +1706,12 @@ function AcademicCalendarSection({
   assigningTeacher,
   autoAssigning,
   onRefreshAll,
+  schoolId,
+  schoolName,
+  onRefreshTeachers,
 }: {
   schedules: Schedule[];
+  sharedSchedules: Schedule[];
   teachers: Teacher[];
   selectedDay: string;
   onDayChange: (day: string) => void;
@@ -1647,12 +1720,17 @@ function AcademicCalendarSection({
   assigningTeacher: boolean;
   autoAssigning: boolean;
   onRefreshAll?: () => Promise<void>;
+  schoolId?: string;
+  schoolName?: string;
+  onRefreshTeachers: () => Promise<void>;
 }) {
   const [gradePopupOpen, setGradePopupOpen] = useState(false);
   const [selectedGrade, setSelectedGrade] = useState<{ grade: string; section: string } | null>(null);
   const [periodDetailOpen, setPeriodDetailOpen] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<Schedule | null>(null);
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
+  const [periodEdit, setPeriodEdit] = useState({ subject: '', teacherId: '', roomId: '', startTime: '', endTime: '', topic: '' });
+  const [savingPeriod, setSavingPeriod] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [calendarYear, setCalendarYear] = useState(new Date().getFullYear());
   const [calendarMonth, setCalendarMonth] = useState(new Date().getMonth());
@@ -1661,8 +1739,23 @@ function AcademicCalendarSection({
   const [aiGenerateResult, setAiGenerateResult] = useState<{ success: boolean; message: string; stats: Record<string, number>; aiSuggestions: string[]; verificationPassed: boolean } | null>(null);
   const [aiGradeSection, setAiGradeSection] = useState<{grade: string; section: string} | null>(null);
   const [aiGradeSelectOpen, setAiGradeSelectOpen] = useState(false);
+  const [timetableSetupAction, setTimetableSetupAction] = useState<'generate' | 'timings'>('generate');
+  const [timetableSetup, setTimetableSetup] = useState({ schoolLevel: 'high', startTime: '09:30', endTime: '17:00', periodsPerDay: 8, workingDays: 6, saturdayPeriods: 4, breakAfter: 2, breakMinutes: 15, lunchAfter: 4, lunchMinutes: 45, sportsPeriods: 2 });
+  const [bulkImportOpen, setBulkImportOpen] = useState(false);
+  const [workspaceTab, setWorkspaceTab] = useState<'studio' | 'classes' | 'calendar' | 'workload' | 'teachers' | 'import'>(() => {
+    if (typeof window === 'undefined') return 'studio';
+    const value = new URLSearchParams(window.location.search).get('timetable');
+    return ['studio', 'classes', 'calendar', 'workload', 'teachers', 'import'].includes(value || '') ? value as 'studio' | 'classes' | 'calendar' | 'workload' | 'teachers' | 'import' : 'studio';
+  });
+  const selectWorkspace = (tab: typeof workspaceTab) => {
+    setWorkspaceTab(tab); const url = new URL(window.location.href); url.searchParams.set('timetable', tab); window.history.pushState({}, '', url);
+  };
+  useEffect(() => {
+    const sync = () => { const value = new URLSearchParams(window.location.search).get('timetable'); if (['studio', 'classes', 'calendar', 'workload', 'teachers', 'import'].includes(value || '')) setWorkspaceTab(value as typeof workspaceTab); };
+    window.addEventListener('popstate', sync); return () => window.removeEventListener('popstate', sync);
+  }, []);
 
-  const handleAiGenerateTimetable = async (grade?: string, section?: string) => {
+  const handleAiGenerateTimetable = async (grade?: string, section?: string, setup = timetableSetup) => {
     if (!grade || !section) {
       setAiGradeSelectOpen(true);
       return;
@@ -1674,7 +1767,7 @@ function AcademicCalendarSection({
       const res = await fetch('/api/schedules/ai-generate-timetable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grade, section, dryRun: false }),
+        body: JSON.stringify({ grade, section, dryRun: false, setup }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -1691,13 +1784,46 @@ function AcademicCalendarSection({
     }
   };
 
+  const handleApplyTimings = async () => {
+    if (!aiGradeSection) return;
+    setAiGenerating(true);
+    try {
+      const response = await fetch('/api/schedules/timings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...aiGradeSection, schoolId, setup: timetableSetup }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to update timings');
+      setAiGenerateResult({ success: true, message: data.message, stats: { updated: data.updated }, aiSuggestions: [], verificationPassed: true });
+      setAiGradeSelectOpen(false);
+      if (onRefreshAll) await onRefreshAll();
+    } catch (error) {
+      setAiGenerateResult({ success: false, message: error instanceof Error ? error.message : 'Unable to update timings', stats: {}, aiSuggestions: [], verificationPassed: false });
+    } finally { setAiGenerating(false); }
+  };
+
+  useEffect(() => {
+    if (selectedPeriod) setPeriodEdit({ subject: selectedPeriod.subject, teacherId: selectedPeriod.teacherId || '', roomId: selectedPeriod.roomId || '', startTime: selectedPeriod.startTime, endTime: selectedPeriod.endTime, topic: selectedPeriod.topic || '' });
+  }, [selectedPeriod]);
+
+  const savePeriodChanges = async () => {
+    if (!selectedPeriod) return;
+    setSavingPeriod(true);
+    try {
+      const response = await fetch(`/api/schedules/${selectedPeriod.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(periodEdit) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Unable to update period');
+      setSelectedPeriod(data); setPeriodDetailOpen(false);
+      if (onRefreshAll) await onRefreshAll();
+    } catch (error) {
+      setAiGenerateResult({ success: false, message: error instanceof Error ? error.message : 'Unable to update period', stats: {}, aiSuggestions: [], verificationPassed: false });
+    } finally { setSavingPeriod(false); }
+  };
+
   // Day name from date
   const getDayFromDate = (date: Date): string => {
     const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return dayNames[date.getDay()];
   };
 
-  const isWeekend = (date: Date) => date.getDay() === 0 || date.getDay() === 6;
+  const isWeekend = (date: Date) => date.getDay() === 0;
 
   // Calendar helpers
   const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -1707,7 +1833,7 @@ function AcademicCalendarSection({
 
   const getGradeGroups = () => {
     const groups: Record<string, string[]> = {};
-    for (const s of schedules) {
+    for (const s of (sharedSchedules.length ? sharedSchedules : schedules)) {
       if (!groups[s.grade]) groups[s.grade] = [];
       if (!groups[s.grade].includes(s.section)) groups[s.grade].push(s.section);
     }
@@ -1848,24 +1974,138 @@ function AcademicCalendarSection({
 
   const getSectionColor = (section: string) => sectionColors[section] || sectionColors['A'];
 
+  const timetableTabs: { id: typeof workspaceTab; label: string; icon: React.ReactNode }[] = [
+    { id: 'studio', label: 'Timetable Studio', icon: <Sparkles className="h-4 w-4"/> }, { id: 'classes', label: 'Class View', icon: <Grid3X3 className="h-4 w-4"/> },
+    { id: 'calendar', label: 'Weekly / Monthly', icon: <CalendarDays className="h-4 w-4"/> }, { id: 'workload', label: 'Teacher Workload', icon: <BarChart3 className="h-4 w-4"/> },
+    { id: 'teachers', label: 'Teacher Directory', icon: <Users className="h-4 w-4"/> }, { id: 'import', label: 'Bulk Upload & AI Allot', icon: <FileSpreadsheet className="h-4 w-4"/> },
+  ];
+  const sharedData = sharedSchedules.length ? sharedSchedules : schedules;
+  const classSections = new Set(sharedData.map((item) => `${item.grade}|${item.section}`)).size;
+  const unallocated = sharedData.filter((item) => !item.teacherId).length;
+  const moduleHeader = <div className="space-y-4">
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-950 via-emerald-950 to-teal-900 p-5 text-white shadow-lg md:p-6"><div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between"><div><div className="flex items-center gap-3"><div className="rounded-xl bg-white/10 p-2.5"><CalendarDays className="h-6 w-6 text-emerald-300"/></div><div><h1 className="text-xl font-bold md:text-2xl">AI Academic Calendar & Timetable</h1><p className="text-sm text-emerald-100">{schoolName || 'School workspace'} · Shared timetable dataset</p></div></div><div className="mt-4 flex flex-wrap gap-2"><Badge className="bg-amber-400/20 text-amber-100">Status: Draft</Badge><Badge className="bg-white/10 text-white">Academic Year 2026-27</Badge><Badge className="bg-white/10 text-white">Version v1</Badge></div></div><div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="rounded-xl bg-white/10 p-3"><p className="text-2xl font-bold">{classSections}</p><p className="text-[11px] text-emerald-100">Class sections</p></div><div className="rounded-xl bg-white/10 p-3"><p className="text-2xl font-bold">{sharedData.length}</p><p className="text-[11px] text-emerald-100">Periods placed</p></div><div className="rounded-xl bg-white/10 p-3"><p className="text-2xl font-bold">0</p><p className="text-[11px] text-emerald-100">Hard clashes</p></div><div className="rounded-xl bg-white/10 p-3"><p className="text-2xl font-bold">{unallocated}</p><p className="text-[11px] text-emerald-100">Unallocated</p></div></div></div></div>
+    <div className="overflow-x-auto rounded-xl border bg-white p-1 shadow-sm"><div className="flex min-w-max gap-1">{timetableTabs.map((tab) => <button key={tab.id} onClick={() => selectWorkspace(tab.id)} className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${workspaceTab === tab.id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-800'}`}>{tab.icon}{tab.label}</button>)}</div></div>
+  </div>;
+
+  if (workspaceTab === 'import') return <div className="space-y-6">{moduleHeader}<BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} /></div>;
+  if (workspaceTab === 'workload') return <div className="space-y-6">{moduleHeader}<WorkloadAnalyticsSection teachers={teachers} schedules={sharedData} onRefresh={() => { if (onRefreshAll) void onRefreshAll(); }} /></div>;
+  if (workspaceTab === 'teachers') return <div className="space-y-6">{moduleHeader}<TeachersSection teachers={teachers} schedules={sharedData} selectedDay={selectedDay} onRefresh={onRefreshTeachers} schoolId={schoolId} /></div>;
+  if (workspaceTab === 'classes') {
+    const classOptions = Object.entries(gradeGroups)
+      .flatMap(([grade, sections]) => sections.map((section) => ({ grade, section })))
+      .sort((a, b) => a.grade.localeCompare(b.grade, undefined, { numeric: true }) || a.section.localeCompare(b.section, undefined, { numeric: true }));
+    const activeClass = selectedGrade && classOptions.some((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section)
+      ? selectedGrade
+      : classOptions[0] || null;
+    const classSchedule = activeClass ? sharedData.filter((item) => item.grade === activeClass.grade && item.section === activeClass.section) : [];
+    const teacherFrequency = classSchedule.reduce<Record<string, number>>((counts, item) => {
+      if (item.teacherId) counts[item.teacherId] = (counts[item.teacherId] || 0) + 1;
+      return counts;
+    }, {});
+    const classTeacherId = Object.entries(teacherFrequency).sort((a, b) => b[1] - a[1])[0]?.[0];
+    const classTeacher = teachers.find((teacher) => teacher.id === classTeacherId);
+    const timetableDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const fallbackTimes = [
+      ['08:30', '09:15'], ['09:15', '10:00'], ['10:15', '11:00'], ['11:00', '11:45'],
+      ['12:30', '13:15'], ['13:15', '14:00'], ['14:00', '14:45'], ['14:45', '15:30'],
+    ];
+    const periodTime = (period: number) => {
+      const found = classSchedule.find((item) => item.period === period && item.startTime && item.endTime);
+      return found ? `${found.startTime}–${found.endTime}` : fallbackTimes[period - 1].join('–');
+    };
+    const gapTime = (afterPeriod: number, fallback: string) => {
+      const before = classSchedule.find((item) => item.period === afterPeriod);
+      const after = classSchedule.find((item) => item.period === afterPeriod + 1);
+      return before?.endTime && after?.startTime ? `${before.endTime}–${after.startTime}` : fallback;
+    };
+    const saturdayTeachingPeriods = Math.max(4, ...classSchedule.filter((item) => item.day === 'Saturday').map((item) => item.period));
+
+    return <div className="space-y-6">
+      {moduleHeader}
+      <div className="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
+        <div><h2 className="text-xl font-bold text-slate-900">Class Timetable</h2><p className="text-sm text-muted-foreground">Six working days: eight periods Monday–Friday and four periods on Saturday.</p></div>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Select value={activeClass ? `${activeClass.grade}|${activeClass.section}` : undefined} onValueChange={(value) => { const [grade, section] = value.split('|'); setSelectedGrade({ grade, section }); }}>
+            <SelectTrigger className="h-11 min-w-[230px] rounded-xl"><SelectValue placeholder="Choose grade and section"/></SelectTrigger>
+            <SelectContent>{classOptions.map((item) => <SelectItem key={`${item.grade}|${item.section}`} value={`${item.grade}|${item.section}`}>{item.grade} · Section {item.section}</SelectItem>)}</SelectContent>
+          </Select>
+          <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { if (!activeClass) return; setAiGradeSection(activeClass); setTimetableSetupAction('timings'); const first = classSchedule.find((item) => item.period === 1); const last = [...classSchedule].sort((a, b) => b.period - a.period)[0]; setTimetableSetup((current) => ({ ...current, startTime: first?.startTime || current.startTime, endTime: last?.endTime || current.endTime })); setAiGradeSelectOpen(true); }}><Clock className="mr-2 h-4 w-4"/>Edit Timings</Button>
+          <Button asChild variant="outline" className="h-11 rounded-xl border-blue-200 text-blue-700"><a href={`/api/timetable/export?schoolId=${encodeURIComponent(schoolId || '')}`}><Download className="mr-2 h-4 w-4"/>Download Timetable</a></Button>
+        </div>
+      </div>
+      {!activeClass ? <Card><CardContent className="p-10 text-center text-muted-foreground">Import or generate timetable data to create a class timetable.</CardContent></Card> :
+      <Card className="overflow-hidden border-slate-200 shadow-md">
+        <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-700 px-5 py-5 text-white">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">Grade & Section</p><h2 className="mt-1 text-3xl font-black">{activeClass.grade} — {activeClass.section}</h2></div><div className="rounded-xl bg-white/10 px-4 py-2 backdrop-blur"><p className="text-[11px] uppercase tracking-wider text-emerald-100">Class Teacher</p><p className="font-bold">{classTeacher?.name || 'Not assigned'}</p></div></div>
+        </div>
+        <CardContent className="p-0">
+          <div className="max-h-[70vh] overflow-auto overscroll-contain">
+            <table className="w-full min-w-[1540px] border-collapse text-xs">
+              <thead className="sticky top-0 z-20 bg-slate-950 text-white"><tr>
+                <th className="sticky left-0 z-30 min-w-[110px] border border-slate-700 bg-slate-950 p-3 text-left">Day</th>
+                {Array.from({ length: 8 }, (_, index) => index + 1).flatMap((period) => {
+                  const cells = [<th key={`p-${period}`} className="min-w-[155px] border border-slate-700 p-2"><span className="block text-sm font-bold">Period {period}</span><span className="font-normal text-slate-300">{periodTime(period)}</span></th>];
+                  if (period === 2) cells.push(<th key="break-head" className="min-w-[82px] border border-amber-300 bg-amber-500 p-2 text-amber-950"><span className="font-bold">BREAK</span><span className="block text-[10px]">{gapTime(2, 'Short break')}</span></th>);
+                  if (period === 4) cells.push(<th key="lunch-head" className="min-w-[90px] border border-orange-300 bg-orange-500 p-2 text-orange-950"><span className="font-bold">LUNCH</span><span className="block text-[10px]">{gapTime(4, 'Lunch break')}</span></th>);
+                  return cells;
+                })}
+              </tr></thead>
+              <tbody>{timetableDays.map((day) => <tr key={day} className="odd:bg-white even:bg-slate-50/70">
+                <th className="sticky left-0 z-10 border bg-emerald-50 p-3 text-left text-sm font-bold text-emerald-900">{day}</th>
+                {Array.from({ length: 8 }, (_, index) => index + 1).flatMap((period) => {
+                  const schedule = classSchedule.find((item) => item.day === day && item.period === period);
+                  const sports = !!schedule && /sport|physical|games|p\.e\.?/i.test(schedule.subject);
+                  const saturdayClosed = day === 'Saturday' && period > saturdayTeachingPeriods;
+                  const cells = [<td key={`${day}-${period}`} className={`h-[92px] border p-2 align-top ${saturdayClosed ? 'bg-slate-100' : sports ? 'bg-blue-50' : ''}`}>
+                    {saturdayClosed ? <div className="flex h-full flex-col items-center justify-center font-semibold text-slate-400"><span>Half day</span><span className="text-[10px] font-normal">School closed</span></div> : schedule ? <button className="h-full w-full rounded-lg p-1 text-left transition hover:bg-emerald-50" onClick={() => { setSelectedPeriod(schedule); setSelectedTeacherId(''); setPeriodDetailOpen(true); }}>
+                      <span className={`block font-bold ${sports ? 'text-blue-700' : 'text-slate-900'}`}>{sports ? '⚽ ' : ''}{schedule.subject}</span>
+                      <span className="mt-1 block text-[11px] font-medium text-emerald-700">{schedule.teacher?.name || 'Teacher not assigned'}</span>
+                      <span className="mt-1 block text-[10px] text-slate-500">{schedule.startTime}–{schedule.endTime}</span>
+                    </button> : <div className="flex h-full items-center justify-center text-[11px] text-slate-400">Free / unassigned</div>}
+                  </td>];
+                  if (period === 2) cells.push(<td key={`${day}-break`} className="border border-amber-200 bg-amber-50 text-center font-semibold text-amber-700"><span className="[writing-mode:vertical-rl] rotate-180">Short Break</span></td>);
+                  if (period === 4) cells.push(day === 'Saturday'
+                    ? <td key={`${day}-lunch`} className="border border-slate-300 bg-slate-200 text-center font-semibold text-slate-600"><span className="[writing-mode:vertical-rl] rotate-180">Half Day Ends</span></td>
+                    : <td key={`${day}-lunch`} className="border border-orange-200 bg-orange-50 text-center font-semibold text-orange-700"><span className="[writing-mode:vertical-rl] rotate-180">Lunch Break</span></td>);
+                  return cells;
+                })}
+              </tr>)}</tbody>
+            </table>
+          </div>
+          <div className="flex flex-wrap gap-4 border-t bg-slate-50 px-4 py-3 text-[11px] text-slate-600"><span><b>6</b> working days</span><span><b>8</b> periods Monday–Friday</span><span><b>4</b> periods Saturday</span><span className="text-amber-700">■ Short break</span><span className="text-orange-700">■ Lunch break</span><span className="text-blue-700">■ Sports / Physical Education</span></div>
+        </CardContent>
+      </Card>}
+    </div>;
+  }
+
   return (
     <div className="space-y-6">
+      {moduleHeader}
+      {workspaceTab === 'studio' && <TimetableGovernancePanel schoolId={schoolId} onChanged={onRefreshAll} />}
       {/* Header with calendar picker and day selector */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold text-emerald-800">Academic Calendar</h2>
-            <p className="text-sm text-muted-foreground">View and manage class schedules by grade and day</p>
+            <h2 className="text-2xl font-bold text-emerald-800">{workspaceTab === 'studio' ? 'Timetable Studio' : workspaceTab === 'classes' ? 'Class View' : 'Weekly / Monthly'}</h2>
+            <p className="text-sm text-muted-foreground">{workspaceTab === 'studio' ? 'Configure, generate and review timetable drafts' : workspaceTab === 'classes' ? 'Inspect subjects and allotted teachers for one grade and section' : 'Review the shared timetable by teaching day and calendar date'}</p>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
+            <Button onClick={() => selectWorkspace('import')} className="h-11 justify-center rounded-xl border border-emerald-200 bg-white px-4 text-emerald-700 shadow-sm hover:bg-emerald-50 hover:text-emerald-800">
+              <FileSpreadsheet className="w-4 h-4 mr-2" /><span className="whitespace-nowrap">Bulk Import & Allot</span>
+            </Button>
+            <Button asChild variant="outline" className="h-11 justify-center rounded-xl border-blue-200 bg-white px-4 text-blue-700 shadow-sm hover:bg-blue-50"><a href={`/api/timetable/export?schoolId=${encodeURIComponent(schoolId || '')}`}><Download className="mr-2 h-4 w-4"/><span className="whitespace-nowrap">Download Timetable</span></a></Button>
+            <div className="min-w-0 sm:w-[230px]">
               <Select onValueChange={(val) => {
                 const [g, s] = val.split('|');
-                handleAiGenerateTimetable(g, s);
+                setAiGradeSection({ grade: g, section: s });
+                setTimetableSetupAction('generate');
+                const gradeNumber = Number(g.replace(/\D/g, ''));
+                const primary = gradeNumber > 0 && gradeNumber <= 5;
+                setTimetableSetup((current) => ({ ...current, schoolLevel: primary ? 'primary' : 'high', endTime: primary ? '15:00' : '17:00' }));
+                setAiGradeSelectOpen(true);
               }}>
-                <SelectTrigger className="w-[220px] h-9 bg-gradient-to-r from-purple-500 to-indigo-500 text-white border-0 hover:from-purple-600 hover:to-indigo-600 shadow-lg">
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  <SelectValue placeholder="AI Generate Timetable" />
+                <SelectTrigger className="h-11 w-full rounded-xl border-0 bg-gradient-to-r from-blue-700 via-indigo-700 to-cyan-600 font-semibold !text-white shadow-lg shadow-blue-200 hover:from-blue-800 hover:via-indigo-800 hover:to-cyan-700 data-[placeholder]:!text-white [&_[data-slot=select-value]]:!text-white [&_svg]:!text-white">
+                  <div className="flex items-center gap-2 !text-white"><span className="rounded-lg bg-white/20 p-1.5"><Sparkles className="w-4 h-4 !text-white" /></span><SelectValue placeholder="Create Timetable" /></div>
                 </SelectTrigger>
                 <SelectContent>
                   {Object.entries(gradeGroups).sort(([a], [b]) => {
@@ -1885,7 +2125,7 @@ function AcademicCalendarSection({
           <Button
             variant="outline"
             onClick={() => setCalendarOpen(!calendarOpen)}
-            className="gap-2 border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
+            className="h-11 gap-2 rounded-xl border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
           >
             <CalendarDays className="w-4 h-4" />
             {selectedDate
@@ -1895,6 +2135,35 @@ function AcademicCalendarSection({
           </Button>
           </div>
         </div>
+
+      {bulkImportOpen && <div className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-50">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-white px-4 py-3 shadow-sm md:px-8">
+          <div className="min-w-0"><h1 className="truncate text-lg font-bold text-slate-900 md:text-2xl">Timetable Bulk Import & Draft Studio</h1><p className="hidden text-sm text-muted-foreground sm:block">Import linked scheduling data, validate it, generate a draft, review, approve and publish.</p></div>
+          <Button type="button" variant="outline" onClick={() => setBulkImportOpen(false)} className="shrink-0 rounded-xl"><X className="mr-0 h-4 w-4 sm:mr-2"/><span className="hidden sm:inline">Back to Academic Calendar</span></Button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 md:p-8"><BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} /></div></div>
+      </div>}
+
+      <Dialog open={aiGradeSelectOpen} onOpenChange={setAiGradeSelectOpen}>
+        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+          <DialogHeader><DialogTitle>{timetableSetupAction === 'timings' ? 'Edit existing timetable timings' : 'Set timetable timings'}</DialogTitle><DialogDescription>{timetableSetupAction === 'timings' ? 'Update saved period times without changing subjects or assigned teachers' : 'Confirm or edit these settings before creating the timetable'} for {aiGradeSection ? `${aiGradeSection.grade} Section ${aiGradeSection.section}` : 'the selected class'}.</DialogDescription></DialogHeader>
+          <div className="grid gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="space-y-2"><Label>School level</Label><Select value={timetableSetup.schoolLevel} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, schoolLevel: value, endTime: value === 'primary' ? '15:00' : value === 'middle' ? '16:00' : '17:00' }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="primary">Primary school</SelectItem><SelectItem value="middle">Middle school</SelectItem><SelectItem value="high">High school</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Class starts</Label><Input type="time" value={timetableSetup.startTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, startTime: e.target.value }))}/></div>
+            <div className="space-y-2"><Label>Class ends</Label><Input type="time" value={timetableSetup.endTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, endTime: e.target.value }))}/></div>
+            <div className="space-y-2"><Label>Periods per full day</Label><Input type="number" min={4} max={10} value={timetableSetup.periodsPerDay} onChange={(e) => setTimetableSetup((current) => ({ ...current, periodsPerDay: Number(e.target.value) }))}/></div>
+            <div className="space-y-2"><Label>Working days</Label><Select value={String(timetableSetup.workingDays)} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, workingDays: Number(value) }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="5">Monday–Friday</SelectItem><SelectItem value="6">Monday–Saturday</SelectItem></SelectContent></Select></div>
+            <div className="space-y-2"><Label>Saturday periods</Label><Input type="number" min={1} max={8} disabled={timetableSetup.workingDays === 5} value={timetableSetup.saturdayPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, saturdayPeriods: Number(e.target.value) }))}/></div>
+            <div className="space-y-2"><Label>Short break after period</Label><Input type="number" min={1} max={7} value={timetableSetup.breakAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakAfter: Number(e.target.value) }))}/></div>
+            <div className="space-y-2"><Label>Short break minutes</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakMinutes: Number(e.target.value) }))}/></div>
+            <div className="space-y-2"><Label>Lunch after period</Label><Input type="number" min={2} max={7} value={timetableSetup.lunchAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchAfter: Number(e.target.value) }))}/></div>
+            <div className="space-y-2"><Label>Lunch minutes</Label><Input type="number" min={15} max={90} value={timetableSetup.lunchMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchMinutes: Number(e.target.value) }))}/></div>
+            <div className="space-y-2"><Label>Sports periods per week</Label><Input type="number" min={1} max={6} value={timetableSetup.sportsPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, sportsPeriods: Number(e.target.value) }))}/></div>
+          </div>
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">Suggested: Primary 9:30 AM–3:00 PM, Middle 9:30 AM–4:00 PM, High school 9:30 AM–5:00 PM. You can edit every value.</div>
+          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setAiGradeSelectOpen(false)}>Cancel</Button><Button disabled={!aiGradeSection || aiGenerating} className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { if (timetableSetupAction === 'timings') void handleApplyTimings(); else { setAiGradeSelectOpen(false); if (aiGradeSection) void handleAiGenerateTimetable(aiGradeSection.grade, aiGradeSection.section, timetableSetup); } }}><Sparkles className="mr-2 h-4 w-4"/>{timetableSetupAction === 'timings' ? 'Apply New Timings' : 'Create Timetable'}</Button></div>
+        </DialogContent>
+      </Dialog>
 
       {/* AI Timetable Generator Progress */}
       {aiGenerating && (
@@ -2114,29 +2383,29 @@ function AcademicCalendarSection({
               >
                 Jump to Today
               </button>
-              <span className="text-[10px] text-gray-500">Weekends are disabled</span>
+              <span className="text-[10px] text-gray-500">Sunday is disabled; Saturday is a half day</span>
             </div>
           </div>
         )}
 
         {/* Week day quick selector */}
-        <div className="flex items-center bg-white border rounded-xl p-1 shadow-sm">
+        <div className="grid grid-cols-3 gap-1.5 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm sm:grid-cols-6">
           {DAYS.map((day) => (
             <Button
               key={day}
               variant="ghost"
               size="sm"
-              className={`rounded-lg text-xs font-medium transition-all flex-1 ${
+              className={`h-auto min-h-12 rounded-xl px-2 py-2 text-xs font-medium transition-all ${
                 selectedDay === day
-                  ? 'bg-emerald-600 text-white hover:bg-emerald-700 hover:text-white shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
+                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md hover:from-emerald-700 hover:to-teal-700 hover:text-white'
+                  : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-800'
               }`}
               onClick={() => {
                 onDayChange(day);
                 setSelectedDate(null);
               }}
             >
-              {day.slice(0, 3)}
+              <span className="flex flex-col items-center leading-tight"><span className="font-bold">{day.slice(0, 3)}</span><span className={`mt-1 text-[9px] ${selectedDay === day ? 'text-emerald-100' : 'text-slate-400'}`}>{day === 'Saturday' ? 'Half day' : `${sharedData.filter((item) => item.day === day).length} periods`}</span></span>
             </Button>
           ))}
         </div>
@@ -2151,7 +2420,9 @@ function AcademicCalendarSection({
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-4">
+          <div className="flex flex-col gap-3 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 via-white to-cyan-50 p-4 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-600">Weekly timetable overview</p><h3 className="mt-1 text-xl font-bold text-slate-900">{selectedDay}</h3><p className="text-xs text-slate-500">Select a class section to see and edit every period.</p></div><div className="flex gap-2"><div className="rounded-xl bg-white px-4 py-2 text-center shadow-sm"><p className="text-lg font-bold text-emerald-700">{Object.keys(gradeGroups).length}</p><p className="text-[10px] text-slate-500">Grades</p></div><div className="rounded-xl bg-white px-4 py-2 text-center shadow-sm"><p className="text-lg font-bold text-blue-700">{Object.values(gradeGroups).reduce((sum, items) => sum + items.length, 0)}</p><p className="text-[10px] text-slate-500">Sections</p></div></div></div>
+          <div className="grid gap-4 xl:grid-cols-2">
           {Object.entries(gradeGroups)
             .sort(([a], [b]) => {
               const numA = parseInt(a.replace('Grade ', ''));
@@ -2159,42 +2430,31 @@ function AcademicCalendarSection({
               return numA - numB;
             })
             .map(([grade, sections]) => {
-              const gradeNum = grade.replace('Grade ', '');
               return (
-                <div key={grade} className="bg-white rounded-xl border shadow-sm overflow-hidden">
-                  {/* Grade header bar */}
-                  <div className="bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 flex items-center gap-2">
-                    <GraduationCap className="w-4 h-4 text-white/90" />
-                    <h3 className="text-sm font-semibold text-white">{grade}</h3>
-                    <span className="text-emerald-100 text-xs ml-1">
-                      {sections.length} section{sections.length > 1 ? 's' : ''}
-                    </span>
+                <div key={grade} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:border-emerald-200 hover:shadow-md">
+                  <div className="flex items-center justify-between border-b bg-slate-50/80 px-4 py-3">
+                    <div className="flex items-center gap-3"><span className="rounded-xl bg-emerald-600 p-2 text-white"><GraduationCap className="h-4 w-4" /></span><div><h3 className="text-sm font-bold text-slate-900">{grade}</h3><p className="text-[10px] text-slate-500">{sections.length} section{sections.length > 1 ? 's' : ''} · {selectedDay}</p></div></div>
+                    <Badge variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">{sections.reduce((sum, section) => sum + getSchedulesForGrade(grade, section).length, 0)} periods</Badge>
                   </div>
-                  {/* Section cards */}
-                  <div className="p-3 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8 gap-2">
+                  <div className="grid grid-cols-1 gap-2 p-3 sm:grid-cols-2">
                     {sections.sort().map((section) => {
                       const gradeSchedules = getSchedulesForGrade(grade, section);
                       const emptyCount = gradeSchedules.filter((s) => !s.teacherId).length;
+                      const assignedCount = gradeSchedules.length - emptyCount;
                       const colors = getSectionColor(section);
 
                       return (
                         <button
                           key={`${grade}-${section}`}
-                          className={`flex flex-col items-center justify-center p-3 rounded-lg border-2 cursor-pointer transition-all duration-200 ${colors.bg} ${colors.border} ${colors.hoverBg} hover:shadow-md hover:scale-105 active:scale-95`}
+                          className={`group rounded-xl border p-3 text-left transition-all ${colors.bg} ${colors.border} ${colors.hoverBg} hover:-translate-y-0.5 hover:shadow-md`}
                           onClick={() => {
                             setSelectedGrade({ grade, section });
                             setGradePopupOpen(true);
                           }}
                         >
-                          <span className={`text-xl font-bold ${colors.text}`}>{section}</span>
-                          <span className="text-[10px] text-muted-foreground mt-0.5">
-                            {gradeSchedules.length}P
-                          </span>
-                          {emptyCount > 0 && (
-                            <span className="text-[9px] text-red-500 font-medium mt-0.5">
-                              {emptyCount} empty
-                            </span>
-                          )}
+                          <span className="flex items-start justify-between gap-2"><span><span className={`block text-sm font-bold ${colors.text}`}>Section {section}</span><span className="mt-0.5 block text-[10px] text-slate-500">{assignedCount}/{gradeSchedules.length} teachers allotted</span></span><span className={`flex h-9 w-9 items-center justify-center rounded-lg text-lg font-black ${colors.badge}`}>{section.slice(0, 2)}</span></span>
+                          <span className="mt-3 block h-1.5 overflow-hidden rounded-full bg-white/80"><span className={`block h-full rounded-full ${emptyCount ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${gradeSchedules.length ? (assignedCount / gradeSchedules.length) * 100 : 0}%` }}/></span>
+                          <span className="mt-2 flex items-center justify-between text-[10px]"><span className="font-medium text-slate-600">{gradeSchedules.length} periods</span><span className={emptyCount ? 'font-semibold text-amber-700' : 'font-semibold text-emerald-700'}>{emptyCount ? `${emptyCount} need teacher` : 'Fully allotted ✓'}</span></span>
                         </button>
                       );
                     })}
@@ -2202,72 +2462,27 @@ function AcademicCalendarSection({
                 </div>
               );
             })}
+          </div>
         </div>
       )}
 
       {/* Grade Popup - Scrollable with all periods */}
       <Dialog open={gradePopupOpen} onOpenChange={setGradePopupOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] p-0">
-          <DialogHeader className="p-6 pb-0">
+        <DialogContent className="!w-[calc(100vw-1.5rem)] !max-w-[1600px] sm:!w-[calc(100vw-3rem)] sm:!max-w-[1600px] max-h-[92vh] overflow-hidden p-0">
+          <DialogHeader className="border-b bg-gradient-to-r from-emerald-50 to-cyan-50 p-5">
             <DialogTitle className="flex items-center gap-2 text-emerald-800">
               <GraduationCap className="w-5 h-5" />
-              {selectedGrade ? `${selectedGrade.grade} ${selectedGrade.section} - ${selectedDay}` : ''}
+              {selectedGrade ? `${selectedGrade.grade} · Section ${selectedGrade.section} — Weekly Timetable` : ''}
             </DialogTitle>
-            <DialogDescription>Click on a period to view details or assign a teacher</DialogDescription>
+            <DialogDescription>Monday–Friday: 8 periods · Saturday: 4 periods. Click any populated cell to edit it.</DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-[65vh] px-6">
-            <div className="space-y-2 pb-6">
-              {selectedGrade &&
-                getSchedulesForGrade(selectedGrade.grade, selectedGrade.section).map((schedule) => (
-                  <div
-                    key={schedule.id}
-                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all hover:shadow-md ${
-                      schedule.teacherId ? 'border-emerald-200 bg-emerald-50/50 hover:bg-emerald-50' : 'border-red-200 bg-red-50/50 hover:bg-red-50'
-                    }`}
-                    onClick={() => {
-                      setSelectedPeriod(schedule);
-                      setSelectedTeacherId('');
-                      setPeriodDetailOpen(true);
-                    }}
-                  >
-                    <div className="flex items-center gap-4">
-                      <div
-                        className={`flex items-center justify-center w-10 h-10 rounded-lg font-bold text-sm ${
-                          schedule.teacherId ? 'bg-emerald-200 text-emerald-800' : 'bg-red-200 text-red-800'
-                        }`}
-                      >
-                        P{schedule.period}
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm">{schedule.subject}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {schedule.startTime} - {schedule.endTime}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {schedule.teacherId ? (
-                        <div className="flex items-center gap-1.5">
-                          <User className="w-3.5 h-3.5 text-emerald-600" />
-                          <span className="text-xs font-medium text-emerald-700">{schedule.teacher?.name || 'Assigned'}</span>
-                        </div>
-                      ) : (
-                        <Badge variant="destructive" className="text-[10px] gap-1">
-                          <AlertCircle className="w-3 h-3" />
-                          Assign Teacher
-                        </Badge>
-                      )}
-                      {schedule.topic && (
-                        <Badge variant="outline" className="text-[10px] max-w-[120px] truncate">
-                          {schedule.topic}
-                        </Badge>
-                      )}
-                      <ChevronRight className="w-4 h-4 text-muted-foreground" />
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </ScrollArea>
+          <div className="max-h-[72vh] overflow-auto overscroll-contain p-4">
+            {selectedGrade && <table className="w-full min-w-[1180px] border-separate border-spacing-0 overflow-hidden rounded-xl border text-xs">
+              <thead className="sticky top-0 z-20"><tr className="bg-slate-900 text-white"><th className="sticky left-0 z-30 min-w-[105px] border-b border-r border-slate-700 bg-slate-900 p-3 text-left">Day</th>{Array.from({ length: 8 }, (_, index) => index + 1).map((period) => { const sample = sharedData.find((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section && item.period === period); return <th key={period} className="min-w-[132px] border-b border-r border-slate-700 p-2"><span className="block font-bold">P{period}</span><span className="block text-[9px] font-normal text-slate-300">{sample ? `${sample.startTime}–${sample.endTime}` : 'Time not set'}</span>{period === 2 && <span className="mt-1 block rounded bg-amber-400 px-1 text-[8px] text-amber-950">Break after P2</span>}{period === 4 && <span className="mt-1 block rounded bg-orange-400 px-1 text-[8px] text-orange-950">Lunch after P4</span>}</th>; })}</tr></thead>
+              <tbody>{DAYS.map((day) => <tr key={day}><th className="sticky left-0 z-10 border-b border-r bg-emerald-50 p-3 text-left font-bold text-emerald-900">{day}{day === 'Saturday' && <span className="mt-1 block text-[9px] font-normal text-emerald-600">Half day</span>}</th>{Array.from({ length: 8 }, (_, index) => index + 1).map((period) => { const schedule = sharedData.find((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section && item.day === day && item.period === period); const closed = day === 'Saturday' && period > 4; return <td key={`${day}-${period}`} className={`h-[106px] border-b border-r p-1.5 align-top ${closed ? 'bg-slate-100' : 'bg-white'}`}>{closed ? <div className="flex h-full items-center justify-center text-[10px] font-medium text-slate-400">Half-day closed</div> : schedule ? <button className={`flex h-full w-full flex-col rounded-lg border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md ${schedule.teacherId ? 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100' : 'border-amber-200 bg-amber-50 hover:bg-amber-100'}`} onClick={() => { setSelectedPeriod(schedule); setSelectedTeacherId(''); setPeriodDetailOpen(true); }}><span className="font-bold text-slate-900">{schedule.subject}</span><span className={`mt-1 text-[10px] font-medium ${schedule.teacherId ? 'text-emerald-700' : 'text-amber-700'}`}>{schedule.teacher?.name || 'Assign teacher'}</span><span className="mt-auto truncate text-[9px] text-slate-500">{schedule.topic || schedule.roomId || 'Click to edit'}</span></button> : <div className="flex h-full items-center justify-center rounded-lg border border-dashed text-[10px] text-slate-400">No period</div>}</td>; })}</tr>)}</tbody>
+            </table>}
+          </div>
+          <div className="flex flex-wrap gap-4 border-t bg-slate-50 px-5 py-3 text-[10px] text-slate-600"><span className="font-semibold text-emerald-700">■ Assigned</span><span className="font-semibold text-amber-700">■ Teacher required</span><span>Click a timetable cell to edit subject, teacher, room, topic or timing.</span></div>
         </DialogContent>
       </Dialog>
 
@@ -2320,6 +2535,19 @@ function AcademicCalendarSection({
                     </p>
                   </div>
                 </div>
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4">
+                <div><p className="text-sm font-semibold text-blue-900">Edit this timetable period</p><p className="text-[11px] text-blue-700">Change the subject, teacher, room, topic or timing directly on the generated timetable.</p></div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1"><Label className="text-xs">Subject</Label><Input value={periodEdit.subject} onChange={(event) => setPeriodEdit((current) => ({ ...current, subject: event.target.value }))}/></div>
+                  <div className="space-y-1"><Label className="text-xs">Assigned teacher</Label><Select value={periodEdit.teacherId || 'unassigned'} onValueChange={(value) => setPeriodEdit((current) => ({ ...current, teacherId: value === 'unassigned' ? '' : value }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="unassigned">Unassigned</SelectItem>{teachers.map((teacher) => <SelectItem key={teacher.id} value={teacher.id}>{teacher.name} · {teacher.subject}</SelectItem>)}</SelectContent></Select></div>
+                  <div className="space-y-1"><Label className="text-xs">Start time</Label><Input type="time" value={periodEdit.startTime} onChange={(event) => setPeriodEdit((current) => ({ ...current, startTime: event.target.value }))}/></div>
+                  <div className="space-y-1"><Label className="text-xs">End time</Label><Input type="time" value={periodEdit.endTime} onChange={(event) => setPeriodEdit((current) => ({ ...current, endTime: event.target.value }))}/></div>
+                  <div className="space-y-1"><Label className="text-xs">Room</Label><Input value={periodEdit.roomId} onChange={(event) => setPeriodEdit((current) => ({ ...current, roomId: event.target.value }))} placeholder="Room number"/></div>
+                  <div className="space-y-1"><Label className="text-xs">Topic</Label><Input value={periodEdit.topic} onChange={(event) => setPeriodEdit((current) => ({ ...current, topic: event.target.value }))} placeholder="Optional topic"/></div>
+                </div>
+                <Button onClick={savePeriodChanges} disabled={savingPeriod || !periodEdit.subject || !periodEdit.startTime || !periodEdit.endTime} className="w-full bg-blue-700 hover:bg-blue-800">{savingPeriod ? <RefreshCw className="mr-2 h-4 w-4 animate-spin"/> : <Check className="mr-2 h-4 w-4"/>}Save Period Changes</Button>
               </div>
 
               {/* Teacher Info */}
@@ -3638,11 +3866,13 @@ function TeachersSection({
   schedules,
   selectedDay,
   onRefresh,
+  schoolId,
 }: {
   teachers: Teacher[];
   schedules: Schedule[];
   selectedDay: string;
   onRefresh: () => void;
+  schoolId?: string;
 }) {
   const [teacherPopupOpen, setTeacherPopupOpen] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
@@ -3829,65 +4059,29 @@ function TeachersSection({
 
       {/* Teacher Schedule Popup */}
       <Dialog open={teacherPopupOpen} onOpenChange={setTeacherPopupOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] p-0">
-          <DialogHeader className="p-6 pb-0">
-            <DialogTitle className="flex items-center gap-2 text-emerald-800">
-              <User className="w-5 h-5" />
-              {selectedTeacher?.name}
-            </DialogTitle>
+        <DialogContent className="!w-[calc(100vw-1.5rem)] !max-w-[1600px] sm:!w-[calc(100vw-3rem)] sm:!max-w-[1600px] max-h-[92vh] overflow-hidden p-0">
+          <DialogHeader className="border-b bg-gradient-to-r from-emerald-50 to-cyan-50 p-5">
+            <DialogTitle className="flex flex-col gap-3 text-emerald-800 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><User className="w-5 h-5" />{selectedTeacher?.name}</span>{selectedTeacher && schoolId && <Button asChild size="sm" className="bg-blue-700 hover:bg-blue-800"><a href={`/api/timetable/export?schoolId=${encodeURIComponent(schoolId)}&teacherId=${encodeURIComponent(selectedTeacher.id)}`}><Download className="mr-2 h-4 w-4"/>Download My Timetable</a></Button>}</DialogTitle>
             <DialogDescription>
               {selectedTeacher?.subject} Specialist • {selectedTeacher?.email}
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="max-h-[65vh] px-6">
+          <div className="max-h-[76vh] overflow-auto overscroll-contain px-5 pt-4">
             {selectedTeacher && (
               <div className="space-y-4 pb-6">
-                {DAYS.map((day) => {
-                  const daySchedules = getTeacherWeeklySchedule(selectedTeacher)
-                    .filter((s) => s.day === day)
-                    .sort((a, b) => a.period - b.period);
-                  const totalPeriods = daySchedules.length;
-
-                  return (
-                    <div key={day}>
-                      <div className="flex items-center justify-between mb-2">
-                        <h4 className="text-sm font-semibold text-emerald-800">{day}</h4>
-                        <Badge variant="outline" className="text-[10px]">
-                          {totalPeriods} period{totalPeriods !== 1 ? 's' : ''}
-                        </Badge>
-                      </div>
-                      {daySchedules.length > 0 ? (
-                        <div className="space-y-1.5">
-                          {daySchedules.map((sched) => (
-                            <div key={sched.id} className="flex items-center justify-between p-2.5 bg-emerald-50 rounded-lg border border-emerald-200">
-                              <div className="flex items-center gap-3">
-                                <div className="bg-emerald-200 text-emerald-800 w-8 h-8 rounded-md flex items-center justify-center text-xs font-bold">
-                                  P{sched.period}
-                                </div>
-                                <div>
-                                  <p className="text-sm font-medium">
-                                    {sched.grade} {sched.section}
-                                  </p>
-                                  <p className="text-[10px] text-muted-foreground">
-                                    {sched.startTime} - {sched.endTime}
-                                  </p>
-                                </div>
-                              </div>
-                              <div className="text-right">
-                                <p className="text-xs font-medium text-emerald-700">{sched.subject}</p>
-                                {sched.topic && <p className="text-[10px] text-muted-foreground max-w-[120px] truncate">{sched.topic}</p>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200 text-center">
-                          <p className="text-xs text-muted-foreground">No classes scheduled</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                <div className="grid gap-3 rounded-xl border bg-slate-50 p-4 sm:grid-cols-2">
+                  <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Full name</p><p className="text-sm font-semibold">{selectedTeacher.name}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Primary subject</p><p className="text-sm font-semibold">{selectedTeacher.subject}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Email</p><p className="break-all text-sm">{selectedTeacher.email}</p></div>
+                  <div><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Phone</p><p className="text-sm">{selectedTeacher.phone || 'Not provided'}</p></div>
+                  <div className="sm:col-span-2"><p className="text-[10px] uppercase tracking-wider text-muted-foreground">Eligible grades</p><div className="mt-1 flex flex-wrap gap-1">{(JSON.parse(selectedTeacher.grades || '[]') as string[]).map((grade) => <Badge key={grade} variant="outline">{grade}</Badge>)}</div></div>
+                </div>
+                <div className="flex items-center justify-between"><div><h3 className="font-bold text-slate-900">Teacher Weekly Timetable</h3><p className="text-xs text-muted-foreground">All assigned classes, timings and subjects</p></div><Badge className="bg-emerald-100 text-emerald-700">{getTeacherWeeklySchedule(selectedTeacher).length} weekly periods</Badge></div>
+                <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900"><p className="font-semibold">Period guide</p><p className="mt-1">P1 means Period 1, P2 means Period 2, and so on. Monday–Friday can contain P1–P8. Saturday is a half day and contains only P1–P4. The exact start and end time is displayed below every period.</p></div>
+                <table className="w-full min-w-[1180px] border-separate border-spacing-0 overflow-hidden rounded-xl border text-xs">
+                  <thead className="sticky top-0 z-20"><tr className="bg-slate-900 text-white"><th className="sticky left-0 z-30 min-w-[105px] border-b border-r border-slate-700 bg-slate-900 p-3 text-left">Day</th>{Array.from({ length: 8 }, (_, index) => index + 1).map((period) => { const sample = getTeacherWeeklySchedule(selectedTeacher).find((item) => item.period === period); return <th key={period} className="min-w-[132px] border-b border-r border-slate-700 p-2"><span className="block font-bold">P{period}</span><span className="text-[9px] font-normal text-slate-300">{sample ? `${sample.startTime}–${sample.endTime}` : 'Time not set'}</span>{period === 2 && <span className="mt-1 block rounded bg-amber-400 text-[8px] text-amber-950">Break after P2</span>}{period === 4 && <span className="mt-1 block rounded bg-orange-400 text-[8px] text-orange-950">Lunch after P4</span>}</th>; })}</tr></thead>
+                  <tbody>{DAYS.map((day) => <tr key={day}><th className="sticky left-0 z-10 border-b border-r bg-emerald-50 p-3 text-left font-bold text-emerald-900">{day}{day === 'Saturday' && <span className="mt-1 block text-[9px] font-normal text-emerald-600">Half day</span>}</th>{Array.from({ length: 8 }, (_, index) => index + 1).map((period) => { const schedule = getTeacherWeeklySchedule(selectedTeacher).find((item) => item.day === day && item.period === period); const closed = day === 'Saturday' && period > 4; return <td key={`${day}-${period}`} className={`h-[102px] border-b border-r p-1.5 align-top ${closed ? 'bg-slate-100' : 'bg-white'}`}>{closed ? <div className="flex h-full items-center justify-center text-[10px] text-slate-400">Half-day closed</div> : schedule ? <div className="flex h-full flex-col rounded-lg border border-emerald-200 bg-emerald-50 p-2"><span className="font-bold text-emerald-900">{schedule.grade} {schedule.section}</span><span className="mt-1 font-medium text-slate-700">{schedule.subject}</span><span className="mt-auto text-[9px] text-slate-500">{schedule.startTime}–{schedule.endTime}</span></div> : <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-[10px] text-slate-400">Free period</div>}</td>; })}</tr>)}</tbody>
+                </table>
 
                 <Separator />
                 <div className="p-4 bg-emerald-50 rounded-xl">
@@ -3899,7 +4093,7 @@ function TeachersSection({
                 </div>
               </div>
             )}
-          </ScrollArea>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -7020,6 +7214,10 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
   const [password, setPassword] = useState('ClientPilot2026');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [schoolName, setSchoolName] = useState('');
+  const [schoolCode, setSchoolCode] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -7027,16 +7225,17 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/login', {
+      if (registering && password !== confirmPassword) { setError('Passwords do not match.'); setLoading(false); return; }
+      const res = await fetch(registering ? '/api/auth/register-school' : '/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, role: loginRole }),
+        body: JSON.stringify(registering ? { name: schoolName, code: schoolCode, email, password } : { email, password, role: loginRole }),
       });
 
       const data = await res.json();
 
       if (res.ok && data.success) {
-        onLogin(data.user, loginRole === 'teacher' ? 'teacher' : 'admin');
+        onLogin(data.user, !registering && loginRole === 'teacher' ? 'teacher' : 'admin');
       } else {
         setError(data.error || 'Invalid credentials');
       }
@@ -7047,10 +7246,18 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
     }
   };
 
-  const handleQuickSchool = (schoolEmail: string) => {
+  const handleQuickSchool = async (schoolEmail: string) => {
     setLoginRole('school');
     setEmail(schoolEmail);
     setPassword('school123');
+    setRegistering(false); setError(''); setLoading(true);
+    try {
+      const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: schoolEmail, password: 'school123', role: 'school' }) });
+      const data = await response.json();
+      if (!response.ok || !data.success) throw new Error(data.error || 'Demo login failed');
+      onLogin(data.user, 'admin');
+    } catch (quickError) { setError(quickError instanceof Error ? quickError.message : 'Demo login failed'); }
+    finally { setLoading(false); }
   };
 
   return (
@@ -7069,7 +7276,7 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
         <Card className="bg-gray-900/80 border-gray-700/50 backdrop-blur-xl shadow-2xl">
           <CardContent className="p-6">
             {/* Role Tabs */}
-            <Tabs value={loginRole} onValueChange={(v) => { setLoginRole(v as 'admin' | 'school' | 'teacher'); setError(''); }} className="mb-6">
+            {!registering && <Tabs value={loginRole} onValueChange={(v) => { setLoginRole(v as 'admin' | 'school' | 'teacher'); setError(''); }} className="mb-6">
               <TabsList className="w-full bg-gray-800 border border-gray-700 h-11">
                 <TabsTrigger value="school" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
                   <GraduationCap className="w-3.5 h-3.5 mr-1" />
@@ -7084,9 +7291,15 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                   Teacher
                 </TabsTrigger>
               </TabsList>
-            </Tabs>
+            </Tabs>}
+
+            {registering && <div className="mb-5 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3"><p className="font-semibold text-emerald-300">Create School Account</p><p className="text-xs text-gray-400">Set up a separate Smart Calendar workspace for your school.</p></div>}
 
             <form onSubmit={handleSubmit} className="space-y-4">
+              {registering && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-2 sm:col-span-2"><Label className="text-gray-300 text-xs font-medium">School Name</Label><Input value={schoolName} onChange={(e) => setSchoolName(e.target.value)} placeholder="Sunrise Public School" className="bg-gray-800/50 border-gray-600/50 text-white h-11" required /></div>
+                <div className="space-y-2 sm:col-span-2"><Label className="text-gray-300 text-xs font-medium">School Code</Label><Input value={schoolCode} onChange={(e) => setSchoolCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))} placeholder="SUNRISE01" className="bg-gray-800/50 border-gray-600/50 text-white h-11" required /></div>
+              </div>}
               <div className="space-y-2">
                 <Label className="text-gray-300 text-xs font-medium">Email Address</Label>
                 <div className="relative">
@@ -7117,6 +7330,8 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                 </div>
               </div>
 
+              {registering && <div className="space-y-2"><Label className="text-gray-300 text-xs font-medium">Confirm Password</Label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"/><Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repeat your password" minLength={8} className="pl-10 bg-gray-800/50 border-gray-600/50 text-white h-11" required /></div></div>}
+
               {error && (
                 <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
                   <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
@@ -7132,12 +7347,16 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                 {loading ? (
                   <><RefreshCw className="w-4 h-4 mr-2 animate-spin" />Signing in...</>
                 ) : (
-                  <><LogOut className="w-4 h-4 mr-2 rotate-180" />Sign In as {loginRole === 'school' ? 'School Admin' : loginRole === 'admin' ? 'Global Admin' : 'Teacher'}</>
+                  <>{registering ? <UserPlus className="w-4 h-4 mr-2"/> : <LogOut className="w-4 h-4 mr-2 rotate-180" />}{registering ? 'Create School Account' : `Sign In as ${loginRole === 'school' ? 'School Admin' : loginRole === 'admin' ? 'Global Admin' : 'Teacher'}`}</>
                 )}
               </Button>
             </form>
 
-            <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700/50 space-y-2">
+            <Button type="button" variant="ghost" onClick={() => { setRegistering(!registering); setLoginRole('school'); setError(''); setEmail(''); setPassword(''); setConfirmPassword(''); }} className="mt-3 w-full text-emerald-300 hover:bg-emerald-500/10 hover:text-emerald-200">
+              {registering ? 'Already have an account? Sign in' : 'New school? Create an account'}
+            </Button>
+
+            {!registering && <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700/50 space-y-2">
               <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Select School Demo Login</p>
               <div className="grid grid-cols-1 gap-2">
                 <Button
@@ -7163,7 +7382,7 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                 </Button>
                 <Button
                   type="button"
-                  onClick={() => handleQuickSchool('admin@dps.edu')}
+                  onClick={() => handleQuickSchool('info@dpsdelhi.edu')}
                   variant="outline"
                   className="w-full justify-start text-xs border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 h-9"
                 >
@@ -7171,7 +7390,7 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                   Delhi Public School (Real Allotment Data)
                 </Button>
               </div>
-            </div>
+            </div>}
           </CardContent>
         </Card>
 
@@ -7416,6 +7635,7 @@ export default function AISmartCalendar() {
       setActiveTab(tab);
       if (tab === 'calendar') {
         fetchSchedules(selectedDay);
+        fetchAllSchedules();
       } else if (tab === 'substitutions') {
         fetchSubstitutions();
       } else if (tab === 'teachers') {
@@ -7511,12 +7731,12 @@ export default function AISmartCalendar() {
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r shadow-lg transform transition-transform duration-200 ease-in-out lg:relative lg:translate-x-0 lg:shadow-none lg:z-auto ${
+      <aside className={`fixed inset-y-0 left-0 z-50 h-dvh w-64 bg-white border-r shadow-lg transform transition-transform duration-200 ease-in-out lg:sticky lg:top-0 lg:translate-x-0 lg:shadow-none lg:z-auto ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex flex-col h-full">
           {/* Sidebar Header */}
-          <div className="flex items-center justify-between p-4 border-b">
+          <div className="flex shrink-0 items-center justify-between p-4 border-b">
             <div className="flex items-center gap-3">
               <div className="bg-emerald-600 p-2 rounded-xl">
                 <Brain className="w-5 h-5 text-white" />
@@ -7536,7 +7756,7 @@ export default function AISmartCalendar() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 p-3 space-y-1">
+          <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 space-y-1">
             {(userMode === 'admin' ? tabs : teacherTabs).map((tab) => (
               <button
                 key={tab.id}
@@ -7557,7 +7777,7 @@ export default function AISmartCalendar() {
           </nav>
 
           {/* Sidebar Footer */}
-          <div className="p-3 border-t space-y-2">
+          <div className="shrink-0 bg-white p-3 border-t space-y-2 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
             {/* Logged-in user info */}
             {loginUser && (
               <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg mb-2">
@@ -7633,6 +7853,7 @@ export default function AISmartCalendar() {
             {activeTab === 'calendar' && (
               <AcademicCalendarSection
                 schedules={schedules}
+                sharedSchedules={allSchedules}
                 teachers={teachers}
                 selectedDay={selectedDay}
                 onDayChange={setSelectedDay}
@@ -7640,7 +7861,10 @@ export default function AISmartCalendar() {
                 onAutoAssign={handleAutoAssign}
                 assigningTeacher={assigningTeacher}
                 autoAssigning={autoAssigning}
-                onRefreshAll={async () => { await Promise.all([fetchSchedules(selectedDay), fetchAllSchedules(), fetchStats()]); }}
+                schoolId={loginUser?.schoolId}
+                schoolName={loginUser?.name}
+                onRefreshTeachers={fetchTeachers}
+                onRefreshAll={async () => { await Promise.all([fetchTeachers(), fetchSchedules(selectedDay), fetchAllSchedules(), fetchStats()]); }}
               />
             )}
             {activeTab === 'substitutions' && (
@@ -7659,6 +7883,7 @@ export default function AISmartCalendar() {
                 schedules={schedules}
                 selectedDay={selectedDay}
                 onRefresh={fetchTeachers}
+                schoolId={loginUser?.schoolId}
               />
             )}
             {activeTab === 'teacher-portal' && selectedTeacher && (

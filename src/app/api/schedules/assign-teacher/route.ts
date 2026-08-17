@@ -56,11 +56,18 @@ export async function POST(request: Request) {
       },
     });
 
-    if (dayScheduleCount >= MAX_PERIODS_PER_DAY) {
+    const dayLimit = schedule.day === 'Saturday' ? 4 : MAX_PERIODS_PER_DAY;
+    if (dayScheduleCount >= dayLimit) {
       return NextResponse.json({
-        error: `WORKLOAD LIMIT: ${teacher.name} already has ${dayScheduleCount} periods on ${schedule.day}. Maximum is ${MAX_PERIODS_PER_DAY} periods per day.`,
+        error: `WORKLOAD LIMIT: ${teacher.name} already has ${dayScheduleCount} periods on ${schedule.day}. Maximum is ${dayLimit} periods on this day.`,
         dayWorkload: dayScheduleCount,
       }, { status: 409 });
+    }
+
+    const loadByDay = teacher.schedules.filter((item) => item.id !== scheduleId).reduce<Record<string, number>>((counts, item) => { counts[item.day] = (counts[item.day] || 0) + 1; return counts; }, {});
+    const anotherFullLoadDay = Object.entries(loadByDay).find(([day, count]) => day !== schedule.day && day !== 'Saturday' && count > 5);
+    if (schedule.day !== 'Saturday' && dayScheduleCount + 1 > 5 && anotherFullLoadDay) {
+      return NextResponse.json({ error: `WEEKLY BALANCE: ${teacher.name} already has a full-load day on ${anotherFullLoadDay[0]}. Only one day per week may exceed 5 periods. Choose another teacher or a different day.` }, { status: 409 });
     }
 
     const updated = await db.schedule.update({
