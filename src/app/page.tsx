@@ -7985,7 +7985,7 @@ function LessonPlanLibrarySection({ teachers }: { teachers: Teacher[] }) {
 
 // ─── Login Page Component ───
 function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => void }) {
-  const [loginRole, setLoginRole] = useState<'admin' | 'school' | 'teacher'>('school');
+  const [loginRole, setLoginRole] = useState<'admin' | 'school' | 'teacher' | 'superadmin'>('school');
   const [email, setEmail] = useState('pilot@client.school');
   const [password, setPassword] = useState('ClientPilot2026');
   const [error, setError] = useState('');
@@ -8011,7 +8011,7 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
       const data = await res.json();
 
       if (res.ok && data.success) {
-        onLogin(data.user, !registering && loginRole === 'teacher' ? 'teacher' : 'admin');
+        onLogin(data.user, !registering && loginRole === 'superadmin' ? 'superadmin' : !registering && loginRole === 'teacher' ? 'teacher' : 'admin');
       } else {
         setError(data.error || 'Invalid credentials');
       }
@@ -8052,19 +8052,29 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
         <Card className="bg-gray-900/80 border-gray-700/50 backdrop-blur-xl shadow-2xl">
           <CardContent className="p-6">
             {/* Role Tabs */}
-            {!registering && <Tabs value={loginRole} onValueChange={(v) => { setLoginRole(v as 'admin' | 'school' | 'teacher'); setError(''); }} className="mb-6">
+            {!registering && <Tabs value={loginRole} onValueChange={(v) => {
+              setLoginRole(v as 'admin' | 'school' | 'teacher' | 'superadmin');
+              setError('');
+              if (v === 'superadmin') { setEmail('superadmin@smartcalendar.app'); setPassword(''); }
+              else if (v === 'school') { setEmail('pilot@client.school'); setPassword('ClientPilot2026'); }
+              else { setEmail(''); setPassword(''); }
+            }} className="mb-6">
               <TabsList className="w-full bg-gray-800 border border-gray-700 h-11">
                 <TabsTrigger value="school" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
                   <GraduationCap className="w-3.5 h-3.5 mr-1" />
-                  School Admin
+                  School
                 </TabsTrigger>
                 <TabsTrigger value="admin" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
                   <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                  Global Admin
+                  Admin
                 </TabsTrigger>
                 <TabsTrigger value="teacher" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
                   <User className="w-3.5 h-3.5 mr-1" />
                   Teacher
+                </TabsTrigger>
+                <TabsTrigger value="superadmin" className="flex-1 data-[state=active]:bg-purple-700 data-[state=active]:text-white text-gray-400 h-9 text-xs">
+                  <Settings className="w-3.5 h-3.5 mr-1" />
+                  Super Admin
                 </TabsTrigger>
               </TabsList>
             </Tabs>}
@@ -8181,12 +8191,13 @@ export default function AISmartCalendar() {
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [generatingDna, setGeneratingDna] = useState(false);
   const [generatingLessonPlan, setGeneratingLessonPlan] = useState(false);
-  const [userMode, setUserMode] = useState<'admin' | 'teacher'>('admin');
+  const [userMode, setUserMode] = useState<'admin' | 'teacher' | 'superadmin'>('admin');
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginUser, setLoginUser] = useState<LoginUser | null>(null);
   const [teacherLoginOpen, setTeacherLoginOpen] = useState(false);
   const [loginTeacherId, setLoginTeacherId] = useState('');
+  const [featureFlags, setFeatureFlags] = useState<SchoolFeatureFlags | null>(null);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -8427,9 +8438,22 @@ export default function AISmartCalendar() {
     setIsLoggedIn(true);
     setLoginUser(user);
 
+    if (role === 'superadmin') {
+      setUserMode('superadmin');
+      setActiveTab('dashboard');
+      return;
+    }
+
     if (role === 'admin') {
       setUserMode('admin');
       setActiveTab('dashboard');
+      // Fetch feature flags for this school
+      if (user.schoolId) {
+        try {
+          const res = await fetch(`/api/school/feature-flags?schoolId=${user.schoolId}`);
+          if (res.ok) { const data = await res.json(); setFeatureFlags(data.flags); }
+        } catch {}
+      }
     } else if (role === 'teacher') {
       // Find the teacher from our loaded teachers list
       const teacher = teachers.find((t) => t.id === user.id);
@@ -8481,6 +8505,11 @@ export default function AISmartCalendar() {
   // Show login page if not logged in
   if (!isLoggedIn) {
     return <LoginPage onLogin={handleLogin} />;
+  }
+
+  // Super-admin portal — completely separate UI
+  if (userMode === 'superadmin') {
+    return <SuperAdminPortal user={loginUser!} onLogout={handleLogout} />;
   }
 
   return (
