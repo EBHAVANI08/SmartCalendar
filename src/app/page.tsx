@@ -1891,10 +1891,11 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
       const response = await fetch(`/api/schedules/${selectedPeriod.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(periodEdit) });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to update period');
+      toast({ title: 'Period Updated', description: `Updated ${periodEdit.subject} (${periodEdit.startTime}–${periodEdit.endTime})` });
       setSelectedPeriod(data); setPeriodDetailOpen(false);
       if (onRefreshAll) await onRefreshAll();
     } catch (error) {
-      setAiGenerateResult({ success: false, message: error instanceof Error ? error.message : 'Unable to update period', stats: {}, aiSuggestions: [], verificationPassed: false });
+      toast({ title: 'Error Updating Period', description: error instanceof Error ? error.message : 'Unable to update period', variant: 'destructive' });
     } finally { setSavingPeriod(false); }
   };
 
