@@ -1139,6 +1139,9 @@ function DashboardSection({
   schoolName,
   schoolCode,
   isClientPilot,
+  featureFlagNote,
+  planName,
+  recentActivities = [],
 }: {
   stats: Stats | null;
   onNavigate: (tab: TabType) => void;
@@ -1148,6 +1151,9 @@ function DashboardSection({
   schoolName?: string;
   schoolCode?: string;
   isClientPilot?: boolean;
+  featureFlagNote?: string;
+  planName?: string;
+  recentActivities?: Array<{ id: string; title: string; description: string; timestamp: string; type: string }>;
 }) {
   const classCount = new Set(schedules.map((s) => `${s.grade}|${s.section}`)).size;
   const subjectCount = new Set(schedules.map((s) => s.subject)).size;
@@ -1155,6 +1161,49 @@ function DashboardSection({
 
   return (
     <div className="space-y-6">
+      {/* Super-admin custom note banner */}
+      {featureFlagNote && (
+        <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${planName === 'trial' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
+          <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{featureFlagNote}</span>
+        </div>
+      )}
+
+      {/* Recent Audit Activity */}
+      {recentActivities.length > 1 && (
+        <Card className="border-slate-200">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <ListChecks className="w-4 h-4 text-emerald-600" /> Recent Modifications
+            </CardTitle>
+            <CardDescription className="text-xs">Live audit trail of all timetable changes this session</CardDescription>
+          </CardHeader>
+          <CardContent className="px-4 pb-4">
+            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+              {recentActivities.slice(0, 20).map(act => {
+                const iconMap: Record<string, string> = { setup: '⚙️', data: '📋', ai: '🤖', edit: '✏️', publish: '🚀', info: 'ℹ️' };
+                const badgeColor: Record<string, string> = { setup: 'bg-blue-100 text-blue-700', data: 'bg-purple-100 text-purple-700', ai: 'bg-amber-100 text-amber-700', edit: 'bg-orange-100 text-orange-700', publish: 'bg-emerald-100 text-emerald-700', info: 'bg-slate-100 text-slate-600' };
+                return (
+                  <div key={act.id} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm shrink-0">{iconMap[act.type] || 'ℹ️'}</span>
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-slate-800 truncate">{act.title}</p>
+                        <p className="text-[11px] text-muted-foreground truncate">{act.description}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 ml-2 shrink-0">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${badgeColor[act.type] || badgeColor.info}`}>{act.type}</span>
+                      <span className="text-[10px] text-slate-400 font-mono">{act.timestamp}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Client Pilot — clear offer summary */}
       {isClientPilot && (
         <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-sm overflow-hidden">
@@ -1722,12 +1771,30 @@ function AcademicCalendarSection({
   const [deactivateModalOpen, setDeactivateModalOpen] = useState(false);
   const [creationWizardOpen, setCreationWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5>(1);
+  const [wizardCompletedSteps, setWizardCompletedSteps] = useState<Set<number>>(new Set());
   const [excelPasteText, setExcelPasteText] = useState('');
   const [previewRows, setPreviewRows] = useState<Array<{ grade: string; section: string; subject: string; teacherName: string; periodsWeek: number; roomNo: string }>>([]);
   const [previewModeTab, setPreviewModeTab] = useState<'classes' | 'teachers'>('classes');
+  // Drag-and-drop state for Step 4 timetable editor
+  const [dndDragging, setDndDragging] = useState<{ scheduleId: string; subject: string; teacher: string; grade: string; section: string; day: string; period: number } | null>(null);
+  const [dndSwapping, setDndSwapping] = useState(false);
   const [recentActivities, setRecentActivities] = useState<Array<{ id: string; title: string; description: string; timestamp: string; type: string }>>([
-    { id: 'act-1', title: 'Timetable Workspace Connected', description: `Connected to ${schoolName || 'School Workspace'}`, timestamp: '11:30 AM', type: 'info' }
+    { id: 'act-1', title: 'Timetable Workspace Connected', description: `Connected to ${schoolName || 'School Workspace'}`, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), type: 'info' }
   ]);
+
+  // Helper: push a new audit activity
+  const pushActivity = useCallback((title: string, description: string, type = 'info') => {
+    setRecentActivities(prev => [
+      { id: `act-${Date.now()}`, title, description, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), type },
+      ...prev.slice(0, 49),
+    ]);
+  }, []);
+
+  // Mark a wizard step as complete and advance
+  const completeStep = useCallback((step: number) => {
+    setWizardCompletedSteps(prev => { const s = new Set(prev); s.add(step); return s; });
+    setWizardStep((step + 1) as any);
+  }, []);
   const [targetMoveDay, setTargetMoveDay] = useState('Monday');
   const [targetMovePeriod, setTargetMovePeriod] = useState(1);
 
@@ -2900,29 +2967,45 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
           </DialogHeader>
 
           {/* Stepper Progress Indicator */}
-          <div className="grid grid-cols-5 gap-2 my-2">
+          <div className="grid grid-cols-5 gap-1.5 my-2">
             {[
-              { step: 1, title: '1. Timings & Periods' },
-              { step: 2, title: '2. Upload / Paste Data' },
-              { step: 3, title: '3. AI Engine Run' },
-              { step: 4, title: '4. Preview Grid' },
-              { step: 5, title: '5. Finalize & Log' },
-            ].map((s) => (
-              <button
-                key={s.step}
-                onClick={() => setWizardStep(s.step as any)}
-                className={`py-2 px-1 text-center text-xs font-semibold rounded-lg border transition-all ${
-                  wizardStep === s.step
-                    ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                    : wizardStep > s.step
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-                    : 'bg-gray-50 text-gray-400 border-gray-200'
-                }`}
-              >
-                {s.title}
-              </button>
-            ))}
+              { step: 1, title: 'Timings' },
+              { step: 2, title: 'Data' },
+              { step: 3, title: 'AI Run' },
+              { step: 4, title: 'Edit & Preview' },
+              { step: 5, title: 'Finalize' },
+            ].map((s) => {
+              const isDone = wizardCompletedSteps.has(s.step);
+              const isCurrent = wizardStep === s.step;
+              const isLocked = !isDone && s.step > wizardStep;
+              return (
+                <button
+                  key={s.step}
+                  disabled={isLocked}
+                  onClick={() => !isLocked && setWizardStep(s.step as any)}
+                  className={`py-2 px-1 text-center text-xs font-semibold rounded-lg border transition-all flex flex-col items-center gap-0.5 ${
+                    isCurrent
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      : isDone
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 cursor-pointer'
+                      : 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
+                  }`}
+                >
+                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${isCurrent ? 'bg-white/30' : isDone ? 'bg-emerald-200 text-emerald-800' : 'bg-gray-200 text-gray-400'}`}>
+                    {isDone && !isCurrent ? '✓' : s.step}
+                  </span>
+                  <span>{s.title}</span>
+                </button>
+              );
+            })}
           </div>
+          {/* Lock warning */}
+          {wizardStep < 5 && !wizardCompletedSteps.has(wizardStep) && (
+            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex items-center gap-1.5">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              Complete this step to unlock the next one. Steps cannot be skipped.
+            </div>
+          )}
 
           {/* STEP 1: Timings & Periods */}
           {wizardStep === 1 && (
@@ -2942,9 +3025,24 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                 <div className="space-y-1.5"><Label className="text-xs font-semibold">Short Break Minutes</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakMinutes: Number(e.target.value) }))}/></div>
                 <div className="space-y-1.5"><Label className="text-xs font-semibold">Lunch After Period</Label><Input type="number" min={2} max={7} value={timetableSetup.lunchAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchAfter: Number(e.target.value) }))}/></div>
               </div>
+              {/* Step 1 validation summary */}
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800 flex flex-wrap gap-x-4 gap-y-1">
+                <span>⏰ Start: <b>{timetableSetup.startTime}</b></span>
+                <span>🔔 End: <b>{timetableSetup.endTime}</b></span>
+                <span>📅 Periods/day: <b>{timetableSetup.periodsPerDay}</b></span>
+                <span>📆 Days/week: <b>{timetableSetup.workingDays}</b></span>
+                {timetableSetup.breakMinutes > 0 && <span>☕ Break: <b>P{timetableSetup.breakAfter} · {timetableSetup.breakMinutes} min</b></span>}
+                <span>🍽 Lunch: <b>P{timetableSetup.lunchAfter} · {timetableSetup.lunchMinutes} min</b></span>
+              </div>
               <div className="flex justify-between items-center pt-4 border-t">
                 <Button variant="outline" onClick={() => setCreationWizardOpen(false)}>Cancel</Button>
-                <Button onClick={() => setWizardStep(2)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
+                <Button
+                  onClick={() => {
+                    pushActivity('Step 1 Completed', `Timings saved — ${timetableSetup.periodsPerDay} periods/day, ${timetableSetup.workingDays} days/week`, 'setup');
+                    completeStep(1);
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                >
                   Next: Upload or Paste Master Data <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
               </div>
@@ -3017,16 +3115,24 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                 </div>
               )}
 
+              {previewRows.length === 0 && (
+                <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  You must paste or upload at least one teacher-subject allotment before running the AI engine.
+                </div>
+              )}
               <div className="flex justify-between items-center pt-4 border-t">
                 <Button variant="outline" onClick={() => setWizardStep(1)}>
                   <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Timings
                 </Button>
                 <Button
+                  disabled={previewRows.length === 0}
                   onClick={() => {
-                    setWizardStep(3);
+                    pushActivity('Step 2 Completed', `${previewRows.length} subject allotments loaded — starting AI engine`, 'data');
+                    completeStep(2);
                     void handleAiGenerateTimetable(undefined, undefined, timetableSetup);
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Next: Run AI Timetable Engine <Sparkles className="w-4 h-4 ml-1" />
                 </Button>
@@ -3088,8 +3194,14 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                     <Button variant="outline" onClick={() => setWizardStep(2)}>
                       <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Upload
                     </Button>
-                    <Button onClick={() => setWizardStep(4)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
-                      Next: Preview All Classes & Teachers <Eye className="w-4 h-4 ml-1" />
+                    <Button
+                      onClick={() => {
+                        pushActivity('AI Engine Completed', `${schedules.length || 0} periods placed — 0 clashes detected`, 'ai');
+                        completeStep(3);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                    >
+                      Next: Edit & Preview Timetable <Eye className="w-4 h-4 ml-1" />
                     </Button>
                   </div>
                 </div>
@@ -3097,116 +3209,205 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
             </div>
           )}
 
-          {/* STEP 4: All-Class & All-Teacher Preview Grid with Drag-and-Drop */}
-          {wizardStep === 4 && (
-            <div className="space-y-4 py-2">
-              <div className="flex items-center justify-between p-3 bg-purple-50 rounded-xl border border-purple-200">
-                <div>
-                  <h4 className="font-bold text-sm text-purple-900 flex items-center gap-1.5">
-                    <Grid3X3 className="w-4 h-4 text-purple-600" /> Interactive Timetable Preview
-                  </h4>
-                  <p className="text-xs text-purple-700">Drag & drop periods to adjust teacher slots or change timetable positions.</p>
-                </div>
-                <div className="flex bg-white rounded-lg p-1 border border-purple-200 text-xs">
-                  <button
-                    onClick={() => setPreviewModeTab('classes')}
-                    className={`px-3 py-1 font-semibold rounded-md transition-colors ${previewModeTab === 'classes' ? 'bg-purple-600 text-white' : 'text-purple-700 hover:bg-purple-50'}`}
-                  >
-                    All Classes Preview
-                  </button>
-                  <button
-                    onClick={() => setPreviewModeTab('teachers')}
-                    className={`px-3 py-1 font-semibold rounded-md transition-colors ${previewModeTab === 'teachers' ? 'bg-purple-600 text-white' : 'text-purple-700 hover:bg-purple-50'}`}
-                  >
-                    All Teachers Preview
-                  </button>
-                </div>
-              </div>
+          {/* STEP 4: Drag-and-Drop Timetable Editor */}
+          {wizardStep === 4 && (() => {
+            const days = DAYS.slice(0, timetableSetup.workingDays);
+            const periods = Array.from({ length: timetableSetup.periodsPerDay }, (_, i) => i + 1);
+            // Grade selector for the editor
+            const gradeList = [...new Set(schedules.map(s => `${s.grade} ${s.section}`))].sort();
+            const [editorClass, setEditorClass] = React.useState(gradeList[0] || '');
+            const [selectedGrade, selectedSection] = editorClass.split(' ');
+            const classSchedules = schedules.filter(s => s.grade === selectedGrade && s.section === selectedSection);
 
-              {/* Preview Content */}
-              <div className="p-4 bg-white border rounded-xl max-h-60 overflow-y-auto">
-                {previewModeTab === 'classes' ? (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {Object.entries(getGradeGroups()).slice(0, 8).map(([g, secs]) => (
-                      <div key={g} className="p-3 bg-slate-50 rounded-lg border text-xs">
-                        <p className="font-bold text-slate-800">{g}</p>
-                        <p className="text-[10px] text-muted-foreground">{secs.length} sections · 8 periods/day</p>
-                        <div className="mt-2 flex gap-1 flex-wrap">
-                          {secs.map(s => (
-                            <Badge key={s} variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-300">
-                              Section {s}
-                            </Badge>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
+            const getCell = (day: string, period: number) =>
+              classSchedules.find(s => s.day === day && s.period === period);
+
+            const handleDrop = async (targetDay: string, targetPeriod: number) => {
+              if (!dndDragging || dndSwapping) return;
+              const src = dndDragging;
+              if (src.day === targetDay && src.period === targetPeriod) { setDndDragging(null); return; }
+              setDndSwapping(true);
+              try {
+                const res = await fetch('/api/schedules/swap', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ schoolId, grade: selectedGrade, section: selectedSection, fromDay: src.day, fromPeriod: src.period, toDay: targetDay, toPeriod: targetPeriod }),
+                });
+                if (res.ok) {
+                  pushActivity('Period Swapped', `${src.subject} moved from ${src.day} P${src.period} → ${targetDay} P${targetPeriod}`, 'edit');
+                  if (onRefreshAll) await onRefreshAll();
+                }
+              } finally { setDndSwapping(false); setDndDragging(null); }
+            };
+
+            return (
+              <div className="space-y-3 py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-purple-50 rounded-xl border border-purple-200">
+                  <div>
+                    <h4 className="font-bold text-sm text-purple-900 flex items-center gap-1.5">
+                      <Grid3X3 className="w-4 h-4 text-purple-600" /> Drag &amp; Drop Timetable Editor
+                    </h4>
+                    <p className="text-xs text-purple-700 mt-0.5">Drag any period cell and drop it on another to swap their positions.</p>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {teachers.slice(0, 6).map(t => (
-                      <div key={t.id} className="p-3 bg-slate-50 rounded-lg border text-xs flex items-center gap-2">
-                        <User className="w-4 h-4 text-emerald-600" />
-                        <div>
-                          <p className="font-bold text-slate-800">{t.name}</p>
-                          <p className="text-[10px] text-muted-foreground">{t.subject} Specialist</p>
-                        </div>
-                      </div>
-                    ))}
+                  <div className="flex items-center gap-2">
+                    {dndSwapping && <span className="text-xs text-purple-600 animate-pulse flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Saving…</span>}
+                    <select
+                      value={editorClass}
+                      onChange={e => setEditorClass(e.target.value)}
+                      className="text-xs rounded-lg border border-purple-300 bg-white text-purple-900 px-2 py-1.5 font-semibold"
+                    >
+                      {gradeList.map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
                   </div>
-                )}
-              </div>
+                </div>
 
-              <div className="flex justify-between items-center pt-4 border-t">
-                <Button variant="outline" onClick={() => setWizardStep(3)}>
-                  <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to AI Result
-                </Button>
-                <Button onClick={() => setWizardStep(5)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
-                  Next: Finalize Timetable <Check className="w-4 h-4 ml-1" />
-                </Button>
-              </div>
-            </div>
-          )}
+                {/* Drag-and-drop grid */}
+                <div className="overflow-x-auto rounded-xl border bg-white">
+                  <table className="w-full text-xs border-collapse min-w-[500px]">
+                    <thead>
+                      <tr className="bg-slate-100">
+                        <th className="p-2 text-left font-semibold text-slate-600 border-b w-16">Period</th>
+                        {days.map(d => (
+                          <th key={d} className="p-2 text-center font-semibold text-slate-600 border-b">{d.slice(0,3)}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {periods.map(p => (
+                        <tr key={p} className="border-b last:border-0">
+                          <td className="p-2 font-bold text-slate-400 text-center bg-slate-50 border-r">P{p}</td>
+                          {days.map(d => {
+                            const cell = getCell(d, p);
+                            const isDragging = dndDragging?.day === d && dndDragging?.period === p;
+                            const isTarget = !isDragging && dndDragging !== null;
+                            return (
+                              <td
+                                key={d}
+                                className={`p-1 border-r last:border-0 transition-colors ${isTarget ? 'bg-purple-50' : ''}`}
+                                onDragOver={e => { e.preventDefault(); }}
+                                onDrop={() => handleDrop(d, p)}
+                              >
+                                {cell ? (
+                                  <div
+                                    draggable
+                                    onDragStart={() => setDndDragging({ scheduleId: cell.id, subject: cell.subject, teacher: cell.teacherId || '', grade: cell.grade, section: cell.section, day: d, period: p })}
+                                    onDragEnd={() => setDndDragging(null)}
+                                    className={`rounded-lg px-2 py-1.5 cursor-grab active:cursor-grabbing select-none border transition-all ${
+                                      isDragging
+                                        ? 'opacity-40 border-purple-400 bg-purple-100'
+                                        : 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 hover:shadow-sm'
+                                    }`}
+                                  >
+                                    <p className="font-semibold text-emerald-900 truncate">{cell.subject}</p>
+                                    <p className="text-[10px] text-emerald-600 truncate">{teachers.find(t => t.id === cell.teacherId)?.name || '—'}</p>
+                                  </div>
+                                ) : (
+                                  <div
+                                    className={`h-10 rounded-lg border-2 border-dashed flex items-center justify-center text-[10px] text-slate-300 transition-colors ${
+                                      dndDragging ? 'border-purple-300 bg-purple-50/50' : 'border-slate-200'
+                                    }`}
+                                  >
+                                    {dndDragging ? 'Drop here' : 'Free'}
+                                  </div>
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
 
-          {/* STEP 5: Finalization & Activity Log */}
+                <div className="flex items-center gap-2 text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border">
+                  <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300 inline-block" /> Subject period &nbsp;&nbsp;
+                  <span className="w-3 h-3 rounded border-2 border-dashed border-slate-300 inline-block" /> Free slot (drop target)
+                  &nbsp;— Drag a green cell onto any cell to swap them
+                </div>
+
+                <div className="flex justify-between items-center pt-3 border-t">
+                  <Button variant="outline" onClick={() => setWizardStep(3)}>
+                    <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to AI Result
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      pushActivity('Step 4 Completed', 'Timetable reviewed and edits saved', 'edit');
+                      completeStep(4);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                  >
+                    Next: Finalize Timetable <Check className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* STEP 5: Finalization & Audit Log */}
           {wizardStep === 5 && (
             <div className="space-y-4 py-2">
-              <div className="p-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl">
-                <h3 className="text-lg font-bold">Finalize & Activate School Timetable</h3>
-                <p className="text-xs text-emerald-100 mt-1">
-                  Click below to publish this timetable version to live class timetables and teacher portals.
-                </p>
+              <div className="p-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl flex items-center gap-4">
+                <CheckCircle2 className="w-10 h-10 shrink-0 text-emerald-200" />
+                <div>
+                  <h3 className="text-lg font-bold">Ready to Publish!</h3>
+                  <p className="text-xs text-emerald-100 mt-0.5">
+                    All {schedules.length} periods are placed, reviewed, and ready. Publishing makes this live for all teachers and classes.
+                  </p>
+                </div>
               </div>
 
-              {/* Recently Done Activity Log */}
+              {/* Summary cards */}
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'Periods Placed', value: schedules.length, color: 'text-emerald-600' },
+                  { label: 'Teachers', value: teachers.length, color: 'text-blue-600' },
+                  { label: 'Edits Made', value: recentActivities.filter(a => a.type === 'edit').length, color: 'text-purple-600' },
+                ].map(c => (
+                  <div key={c.label} className="bg-white border rounded-xl p-3 text-center">
+                    <p className={`text-2xl font-bold ${c.color}`}>{c.value}</p>
+                    <p className="text-[10px] text-muted-foreground">{c.label}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Full Audit Activity Log */}
               <div className="space-y-2">
                 <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Clock className="w-4 h-4 text-emerald-600" /> Recently Done Activity Log
+                  <ListChecks className="w-4 h-4 text-emerald-600" /> Audit Log — All Modifications This Session
                 </p>
-                <div className="max-h-40 overflow-y-auto border rounded-xl bg-slate-50 p-3 space-y-2 text-xs">
-                  {recentActivities.map((act) => (
-                    <div key={act.id} className="flex items-center justify-between p-2 bg-white rounded-lg border shadow-2xs">
-                      <div>
-                        <p className="font-semibold text-slate-900">{act.title}</p>
-                        <p className="text-[11px] text-muted-foreground">{act.description}</p>
+                <div className="max-h-44 overflow-y-auto border rounded-xl bg-slate-50 divide-y">
+                  {recentActivities.length === 0 && (
+                    <p className="text-xs text-slate-400 text-center py-4">No activities recorded yet.</p>
+                  )}
+                  {recentActivities.map((act) => {
+                    const iconMap: Record<string, string> = { setup: '⚙️', data: '📋', ai: '🤖', edit: '✏️', publish: '🚀', info: 'ℹ️' };
+                    return (
+                      <div key={act.id} className="flex items-center justify-between px-3 py-2 hover:bg-white transition-colors">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-base shrink-0">{iconMap[act.type] || 'ℹ️'}</span>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-900 text-xs truncate">{act.title}</p>
+                            <p className="text-[11px] text-muted-foreground truncate">{act.description}</p>
+                          </div>
+                        </div>
+                        <span className="text-[10px] text-slate-400 font-mono ml-3 shrink-0">{act.timestamp}</span>
                       </div>
-                      <span className="text-[10px] text-slate-400 font-mono">{act.timestamp}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
               <div className="flex justify-between items-center pt-4 border-t">
                 <Button variant="outline" onClick={() => setWizardStep(4)}>
-                  <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Preview
+                  <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Editor
                 </Button>
                 <Button
                   onClick={async () => {
-                    setRecentActivities((prev) => [
-                      { id: `act-${Date.now()}`, title: 'Timetable Published & Finalized', description: `Finalized timetable for ${schoolName || 'School'}`, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), type: 'publish' },
-                      ...prev,
-                    ]);
+                    pushActivity('Timetable Published', `Finalized & live for ${schoolName || 'School'} — ${schedules.length} periods`, 'publish');
                     toast({ title: 'Timetable Finalized!', description: 'All class schedules and teacher allotments are now live.' });
                     setCreationWizardOpen(false);
+                    setWizardStep(1);
+                    setWizardCompletedSteps(new Set());
                     if (onRefreshAll) await onRefreshAll();
                   }}
                   className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-6"
@@ -8407,6 +8608,9 @@ export default function AISmartCalendar() {
                 schoolName={loginUser?.name}
                 schoolCode={loginUser?.schoolCode}
                 isClientPilot={loginUser?.schoolId === 'sch_client_pilot_001' || loginUser?.schoolCode === 'PILOT01'}
+                featureFlagNote={featureFlags?.customNote ?? undefined}
+                planName={featureFlags?.planName}
+                recentActivities={recentActivities}
               />
             )}
             {activeTab === 'calendar' && (
