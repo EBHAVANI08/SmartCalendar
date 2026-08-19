@@ -1731,18 +1731,32 @@ function AcademicCalendarSection({
   const [targetMoveDay, setTargetMoveDay] = useState('Monday');
   const [targetMovePeriod, setTargetMovePeriod] = useState(1);
 
-  const handleDeactivateTimetable = async () => {
+  const handleDeactivateTimetable = async (clearTeachers = false) => {
     try {
       const res = await fetch('/api/schedules/reset', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schoolId: schoolId || 'all', reason: 'Deactivated to generate a new timetable' }),
+        body: JSON.stringify({
+          schoolId: schoolId || 'all',
+          clearTeachers,
+          reason: clearTeachers ? 'Deactivated timetable and cleared all teacher data' : 'Deactivated timetable schedule (kept teacher data intact)',
+        }),
       });
       if (res.ok) {
-        toast({ title: 'Timetable Deactivated', description: 'Existing timetable data reset successfully. You can now create a new one.' });
-        setRecentActivities(prev => [
-          { id: `act-${Date.now()}`, title: 'Timetable Deactivated', description: `Cleared schedule data for ${schoolName || 'School'}`, timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), type: 'deactivate' },
-          ...prev
+        const data = await res.json();
+        toast({
+          title: clearTeachers ? 'Full Reset Complete' : 'Timetable Deactivated (Teachers Kept)',
+          description: data.message,
+        });
+        setRecentActivities((prev) => [
+          {
+            id: `act-${Date.now()}`,
+            title: clearTeachers ? 'All Data Purged' : 'Timetable Schedules Cleared',
+            description: data.message,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            type: 'deactivate',
+          },
+          ...prev,
         ]);
         setDeactivateModalOpen(false);
         if (onRefreshAll) await onRefreshAll();
@@ -2046,8 +2060,6 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
 
     return ranked;
   };
-
-  const gradeGroups = getGradeGroups();
 
   const sectionColors: Record<string, { bg: string; border: string; text: string; badge: string; hoverBg: string }> = {
     A: { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-800', badge: 'bg-blue-100 text-blue-700', hoverBg: 'hover:bg-blue-100' },
@@ -2813,16 +2825,55 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
           <DialogHeader>
             <DialogTitle className="text-red-700 flex items-center gap-2">
               <AlertTriangle className="w-5 h-5 text-red-600" />
-              Deactivate & Reset Timetable Data
+              Deactivate & Reset Data Options
             </DialogTitle>
             <DialogDescription>
-              This will deactivate the current active timetable version and clear schedule slots for {schoolName || 'this school'}. You can immediately start creating a fresh timetable using the 5-step wizard.
+              Choose how you want to deactivate and clear data for {schoolName || 'this school'}:
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="gap-2 mt-4">
-            <Button variant="outline" onClick={() => setDeactivateModalOpen(false)}>Cancel</Button>
-            <Button variant="destructive" onClick={handleDeactivateTimetable}>
-              <Trash2 className="w-4 h-4 mr-2" /> Deactivate & Clear Data
+
+          <div className="space-y-3 py-2">
+            {/* Option A: Clear Timetables Only (Keep Teacher Data) */}
+            <div className="p-3.5 border border-emerald-300 bg-emerald-50/80 rounded-xl space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-emerald-900 text-sm">
+                <CalendarX className="w-4 h-4 text-emerald-600 shrink-0" />
+                Option A: Clear Timetables Only (Keep All Teachers)
+              </div>
+              <p className="text-xs text-emerald-800">
+                Deactivates current timetable slots and clears period assignments. <b>All teacher profiles, eligible grades, and teacher data remain intact!</b>
+              </p>
+              <Button
+                onClick={() => handleDeactivateTimetable(false)}
+                className="w-full bg-emerald-700 hover:bg-emerald-800 text-white text-xs h-9 gap-1.5 mt-1"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                Clear Timetables Only (Keep Teacher Roster)
+              </Button>
+            </div>
+
+            {/* Option B: Clear EVERYTHING (Schedules + Teachers) */}
+            <div className="p-3.5 border border-red-200 bg-red-50/80 rounded-xl space-y-2">
+              <div className="flex items-center gap-2 font-semibold text-red-900 text-sm">
+                <Trash2 className="w-4 h-4 text-red-600 shrink-0" />
+                Option B: Purge ALL Data (Schedules + Teacher Profiles)
+              </div>
+              <p className="text-xs text-red-800">
+                Purges both timetable period slots AND teacher profiles for a 100% clean slate when uploading fresh teacher files.
+              </p>
+              <Button
+                onClick={() => handleDeactivateTimetable(true)}
+                variant="destructive"
+                className="w-full text-xs h-9 gap-1.5 mt-1"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                Purge All Data (Schedules & Teachers)
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2">
+            <Button variant="ghost" onClick={() => setDeactivateModalOpen(false)}>
+              Cancel
             </Button>
           </DialogFooter>
         </DialogContent>

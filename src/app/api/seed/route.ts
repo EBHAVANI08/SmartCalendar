@@ -10,6 +10,9 @@ export async function POST() {
     await db.leaveApplication.deleteMany();
     await db.substitution.deleteMany();
     await db.schedule.deleteMany();
+    await db.timetableSlot.deleteMany();
+    await db.timetableVersion.deleteMany();
+    await db.auditLog.deleteMany();
     await db.student.deleteMany();
     await db.curriculumTopic.deleteMany();
     await db.curriculumDocument.deleteMany();
