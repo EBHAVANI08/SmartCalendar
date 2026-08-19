@@ -1856,18 +1856,28 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
   };
 
   const handleApplyTimings = async () => {
-    if (!aiGradeSection) return;
+    const targetClass = aiGradeSection || activeClass || classOptions[0];
+    if (!targetClass) {
+      toast({ title: 'No Class Selected', description: 'Please select a grade and section first.', variant: 'destructive' });
+      return;
+    }
     setAiGenerating(true);
     try {
-      const response = await fetch('/api/schedules/timings', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...aiGradeSection, schoolId, setup: timetableSetup }) });
+      const response = await fetch('/api/schedules/timings', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grade: targetClass.grade, section: targetClass.section, schoolId, setup: timetableSetup }),
+      });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Unable to update timings');
-      setAiGenerateResult({ success: true, message: data.message, stats: { updated: data.updated }, aiSuggestions: [], verificationPassed: true });
+      toast({ title: 'Timings Updated', description: data.message || `Updated timings for ${targetClass.grade} Section ${targetClass.section}` });
       setAiGradeSelectOpen(false);
       if (onRefreshAll) await onRefreshAll();
     } catch (error) {
-      setAiGenerateResult({ success: false, message: error instanceof Error ? error.message : 'Unable to update timings', stats: {}, aiSuggestions: [], verificationPassed: false });
-    } finally { setAiGenerating(false); }
+      toast({ title: 'Error Updating Timings', description: error instanceof Error ? error.message : 'Unable to update timings', variant: 'destructive' });
+    } finally {
+      setAiGenerating(false);
+    }
   };
 
   useEffect(() => {
@@ -2100,7 +2110,7 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
             <SelectTrigger className="h-11 min-w-[230px] rounded-xl"><SelectValue placeholder="Choose grade and section"/></SelectTrigger>
             <SelectContent>{classOptions.map((item) => <SelectItem key={`${item.grade}|${item.section}`} value={`${item.grade}|${item.section}`}>{item.grade} · Section {item.section}</SelectItem>)}</SelectContent>
           </Select>
-          <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { if (!activeClass) return; setAiGradeSection(activeClass); setTimetableSetupAction('timings'); const first = classSchedule.find((item) => item.period === 1); const last = [...classSchedule].sort((a, b) => b.period - a.period)[0]; setTimetableSetup((current) => ({ ...current, startTime: first?.startTime || current.startTime, endTime: last?.endTime || current.endTime })); setAiGradeSelectOpen(true); }}><Clock className="mr-2 h-4 w-4"/>Edit Timings</Button>
+          <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { const targetClass = activeClass || classOptions[0]; if (!targetClass) { toast({ title: 'No Class Selected', description: 'Please import or select a grade and section first.', variant: 'destructive' }); return; } setAiGradeSection(targetClass); setTimetableSetupAction('timings'); const first = classSchedule.find((item) => item.period === 1); const last = [...classSchedule].sort((a, b) => b.period - a.period)[0]; setTimetableSetup((current) => ({ ...current, startTime: first?.startTime || current.startTime || '09:30', endTime: last?.endTime || current.endTime || '17:00' })); setAiGradeSelectOpen(true); }}><Clock className="mr-2 h-4 w-4"/>Edit Timings</Button>
         </div>
       </div>
       {!activeClass ? <Card><CardContent className="p-10 text-center text-muted-foreground">Import or generate timetable data to create a class timetable.</CardContent></Card> :
