@@ -5383,6 +5383,24 @@ function CurriculumBuilderSection({ teachers }: { teachers: Teacher[] }) {
     }
   };
 
+  const handleDownloadCurriculum = (doc: CurriculumDocument) => {
+    try {
+      const jsonStr = JSON.stringify(doc, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `curriculum-${doc.board}-${doc.grade}-${doc.subject}.json`.replace(/\s+/g, '-').toLowerCase();
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      toast({ title: 'Downloaded', description: 'Curriculum document downloaded as JSON' });
+    } catch {
+      toast({ title: 'Error', description: 'Failed to download curriculum', variant: 'destructive' });
+    }
+  };
+
   const handleDeleteDoc = async (id: string) => {
     try {
       await fetch(`/api/curriculum/architect/${id}`, { method: 'DELETE' });
@@ -5660,6 +5678,10 @@ function CurriculumBuilderSection({ teachers }: { teachers: Teacher[] }) {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
+                    <Button onClick={() => handleDownloadCurriculum(activeDoc)} variant="ghost" size="sm" className="text-white/80 hover:text-white hover:bg-white/20 h-7 text-xs">
+                      <Download className="w-3.5 h-3.5 mr-1" />
+                      Download JSON
+                    </Button>
                     <Button onClick={() => handleCopyJSON(activeDoc)} variant="ghost" size="sm" className="text-white/80 hover:text-white hover:bg-white/20 h-7 text-xs">
                       {copied ? <Check className="w-3.5 h-3.5 mr-1" /> : <Copy className="w-3.5 h-3.5 mr-1" />}
                       {copied ? 'Copied!' : 'Copy JSON'}
