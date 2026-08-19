@@ -6,10 +6,11 @@ import {
   GraduationCap, AlertCircle, CheckCircle2, Sparkles, Brain,
   Search, Phone, Mail, MapPin, Timer, Zap, Activity,
   LayoutDashboard, ArrowRight, UserCheck, AlertTriangle, Menu, X,
-  LogOut, FileText, Eye, Target, ListChecks, Lightbulb, BookMarked, CalendarDays,
+  LogOut, FileText, Eye, EyeOff, Target, ListChecks, Lightbulb, BookMarked, CalendarDays,
   Lock, ShieldCheck, Coffee, BarChart3, BookTemplate, Library,
   Download, Copy, Check, Filter, Grid3X3, TrendingUp, TrendingDown,
-  ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle, UserPlus, Upload, FileSpreadsheet
+  ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle, UserPlus, Upload, FileSpreadsheet,
+  Plus, Save, Settings, CalendarX
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -1342,7 +1343,7 @@ function DashboardSection({
       </div>
 
       {/* AI Biometric Substitution Agent + Biometric Attendance */}
-      <BiometricAgentCards teachers={teachers} schedules={schedules} sharedSchedules={allSchedules} onNavigate={onNavigate} />
+      <BiometricAgentCards teachers={teachers} schedules={schedules} sharedSchedules={schedules} onNavigate={onNavigate} />
 
       {/* Behavioral Pattern Awareness + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1775,6 +1776,8 @@ function AcademicCalendarSection({
   const [excelPasteText, setExcelPasteText] = useState('');
   const [previewRows, setPreviewRows] = useState<Array<{ grade: string; section: string; subject: string; teacherName: string; periodsWeek: number; roomNo: string }>>([]);
   const [previewModeTab, setPreviewModeTab] = useState<'classes' | 'teachers'>('classes');
+  // Step 4 editor: hoisted so no hook is called inside IIFE/conditional
+  const [wizardEditorClass, setWizardEditorClass] = useState('');
   // Drag-and-drop state for Step 4 timetable editor
   const [dndDragging, setDndDragging] = useState<{ scheduleId: string; subject: string; teacher: string; grade: string; section: string; day: string; period: number } | null>(null);
   const [dndSwapping, setDndSwapping] = useState(false);
@@ -2948,110 +2951,286 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
 
       {/* 5-Step Timetable Creation Wizard Dialog */}
       <Dialog open={creationWizardOpen} onOpenChange={setCreationWizardOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center justify-between border-b pb-3">
+        <DialogContent className="w-[calc(100vw-1.5rem)] max-w-5xl max-h-[94dvh] overflow-y-auto rounded-2xl p-0">
+          {/* ── Wizard Header ── */}
+          <div className="flex items-center justify-between px-6 pt-5 pb-4 border-b bg-white sticky top-0 z-10 rounded-t-2xl">
+            <div className="flex items-center gap-3">
+              <div className="bg-emerald-600 rounded-xl p-2 shrink-0">
+                <Sparkles className="w-5 h-5 text-white" />
+              </div>
               <div>
-                <DialogTitle className="text-xl font-bold text-emerald-950 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-emerald-600" />
+                <DialogTitle className="text-lg font-bold text-slate-900 leading-tight">
                   5-Step AI Timetable Creation Wizard
                 </DialogTitle>
-                <DialogDescription>
-                  Configure school parameters, upload or paste data, run AI timetable engine, preview & finalize.
+                <DialogDescription className="text-xs text-slate-500 mt-0.5">
+                  Configure timings → upload data → AI generates → edit → finalize
                 </DialogDescription>
               </div>
-              <Badge className="bg-emerald-100 text-emerald-800 text-xs px-3 py-1 font-semibold">
-                Step {wizardStep} of 5
-              </Badge>
             </div>
-          </DialogHeader>
-
-          {/* Stepper Progress Indicator */}
-          <div className="grid grid-cols-5 gap-1.5 my-2">
-            {[
-              { step: 1, title: 'Timings' },
-              { step: 2, title: 'Data' },
-              { step: 3, title: 'AI Run' },
-              { step: 4, title: 'Edit & Preview' },
-              { step: 5, title: 'Finalize' },
-            ].map((s) => {
-              const isDone = wizardCompletedSteps.has(s.step);
-              const isCurrent = wizardStep === s.step;
-              const isLocked = !isDone && s.step > wizardStep;
-              return (
-                <button
-                  key={s.step}
-                  disabled={isLocked}
-                  onClick={() => !isLocked && setWizardStep(s.step as any)}
-                  className={`py-2 px-1 text-center text-xs font-semibold rounded-lg border transition-all flex flex-col items-center gap-0.5 ${
-                    isCurrent
-                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                      : isDone
-                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300 cursor-pointer'
-                      : 'bg-gray-50 text-gray-300 border-gray-200 cursor-not-allowed'
-                  }`}
-                >
-                  <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${isCurrent ? 'bg-white/30' : isDone ? 'bg-emerald-200 text-emerald-800' : 'bg-gray-200 text-gray-400'}`}>
-                    {isDone && !isCurrent ? '✓' : s.step}
-                  </span>
-                  <span>{s.title}</span>
-                </button>
-              );
-            })}
+            <Badge className="bg-emerald-100 text-emerald-800 text-xs px-3 py-1 font-semibold shrink-0">
+              Step {wizardStep} of 5
+            </Badge>
           </div>
-          {/* Lock warning */}
-          {wizardStep < 5 && !wizardCompletedSteps.has(wizardStep) && (
-            <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-1.5 flex items-center gap-1.5">
-              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-              Complete this step to unlock the next one. Steps cannot be skipped.
-            </div>
-          )}
 
-          {/* STEP 1: Timings & Periods */}
-          {wizardStep === 1 && (
-            <div className="space-y-4 py-2">
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Configure bell timings, period duration, working days, and break intervals for your school.</span>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">School Level</Label><Select value={timetableSetup.schoolLevel} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, schoolLevel: value, endTime: value === 'primary' ? '15:00' : value === 'middle' ? '16:00' : '17:00' }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="primary">Primary School (9:30–15:00)</SelectItem><SelectItem value="middle">Middle School (9:30–16:00)</SelectItem><SelectItem value="high">High School (9:30–17:00)</SelectItem></SelectContent></Select></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Class Starts</Label><Input type="time" value={timetableSetup.startTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, startTime: e.target.value }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Class Ends</Label><Input type="time" value={timetableSetup.endTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, endTime: e.target.value }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Periods per Day</Label><Input type="number" min={4} max={10} value={timetableSetup.periodsPerDay} onChange={(e) => setTimetableSetup((current) => ({ ...current, periodsPerDay: Number(e.target.value) }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Working Days</Label><Select value={String(timetableSetup.workingDays)} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, workingDays: Number(value) }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="5">5 Days (Mon–Fri)</SelectItem><SelectItem value="6">6 Days (Mon–Sat)</SelectItem></SelectContent></Select></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Saturday Periods</Label><Input type="number" min={1} max={8} disabled={timetableSetup.workingDays === 5} value={timetableSetup.saturdayPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, saturdayPeriods: Number(e.target.value) }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Short Break After Period</Label><Input type="number" min={1} max={7} value={timetableSetup.breakAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakAfter: Number(e.target.value) }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Short Break Minutes</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakMinutes: Number(e.target.value) }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Lunch After Period</Label><Input type="number" min={2} max={7} value={timetableSetup.lunchAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchAfter: Number(e.target.value) }))}/></div>
-              </div>
-              {/* Step 1 validation summary */}
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-800 flex flex-wrap gap-x-4 gap-y-1">
-                <span>⏰ Start: <b>{timetableSetup.startTime}</b></span>
-                <span>🔔 End: <b>{timetableSetup.endTime}</b></span>
-                <span>📅 Periods/day: <b>{timetableSetup.periodsPerDay}</b></span>
-                <span>📆 Days/week: <b>{timetableSetup.workingDays}</b></span>
-                {timetableSetup.breakMinutes > 0 && <span>☕ Break: <b>P{timetableSetup.breakAfter} · {timetableSetup.breakMinutes} min</b></span>}
-                <span>🍽 Lunch: <b>P{timetableSetup.lunchAfter} · {timetableSetup.lunchMinutes} min</b></span>
-              </div>
-              <div className="flex justify-between items-center pt-4 border-t">
-                <Button variant="outline" onClick={() => setCreationWizardOpen(false)}>Cancel</Button>
-                <Button
-                  onClick={() => {
-                    pushActivity('Step 1 Completed', `Timings saved — ${timetableSetup.periodsPerDay} periods/day, ${timetableSetup.workingDays} days/week`, 'setup');
-                    completeStep(1);
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-                >
-                  Next: Upload or Paste Master Data <ChevronRight className="w-4 h-4 ml-1" />
-                </Button>
-              </div>
+          {/* ── Stepper ── */}
+          <div className="px-6 pt-4 pb-2">
+            <div className="flex items-center gap-0">
+              {[
+                { step: 1, title: 'Timings & Periods', icon: <Clock className="w-3.5 h-3.5" /> },
+                { step: 2, title: 'Upload Data',       icon: <Upload className="w-3.5 h-3.5" /> },
+                { step: 3, title: 'AI Generate',       icon: <Sparkles className="w-3.5 h-3.5" /> },
+                { step: 4, title: 'Edit & Review',     icon: <Grid3X3 className="w-3.5 h-3.5" /> },
+                { step: 5, title: 'Finalize',          icon: <Check className="w-3.5 h-3.5" /> },
+              ].map((s, idx) => {
+                const isDone = wizardCompletedSteps.has(s.step);
+                const isCurrent = wizardStep === s.step;
+                const isLocked = !isDone && s.step > wizardStep;
+                return (
+                  <React.Fragment key={s.step}>
+                    <button
+                      disabled={isLocked}
+                      onClick={() => !isLocked && setWizardStep(s.step as any)}
+                      className={`flex flex-col items-center gap-1 px-2 py-1.5 rounded-xl transition-all min-w-0 flex-1 ${
+                        isCurrent ? 'bg-emerald-600 text-white shadow-sm' :
+                        isDone    ? 'bg-emerald-50 text-emerald-700 cursor-pointer hover:bg-emerald-100' :
+                                    'text-slate-300 cursor-not-allowed'
+                      }`}
+                    >
+                      <span className={`w-7 h-7 rounded-full flex items-center justify-center border-2 font-bold text-xs transition-all ${
+                        isCurrent ? 'bg-white/20 border-white text-white' :
+                        isDone    ? 'bg-emerald-600 border-emerald-600 text-white' :
+                                    'bg-slate-100 border-slate-200 text-slate-400'
+                      }`}>
+                        {isDone && !isCurrent ? <Check className="w-3.5 h-3.5" /> : s.step}
+                      </span>
+                      <span className="text-[10px] font-semibold text-center leading-tight hidden sm:block">{s.title}</span>
+                    </button>
+                    {idx < 4 && <div className={`h-0.5 flex-1 mx-1 rounded-full transition-colors ${wizardCompletedSteps.has(s.step) ? 'bg-emerald-400' : 'bg-slate-200'}`} />}
+                  </React.Fragment>
+                );
+              })}
             </div>
-          )}
+            {wizardStep < 5 && !wizardCompletedSteps.has(wizardStep) && (
+              <div className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                Complete this step to unlock the next one — steps cannot be skipped.
+              </div>
+            )}
+          </div>
+
+          {/* ── STEP 1: Timings & Periods ── */}
+          {wizardStep === 1 && (() => {
+            const LEVELS = [
+              { id: 'primary', label: 'Primary', sub: 'Grades 1–5', icon: <GraduationCap className="w-4 h-4" /> },
+              { id: 'middle',  label: 'Middle',  sub: 'Grades 6–8', icon: <BookOpen className="w-4 h-4" /> },
+              { id: 'high',    label: 'High',    sub: 'Grades 9–12', icon: <Layers className="w-4 h-4" /> },
+            ];
+            const selectedLevels: string[] = timetableSetup.schoolLevel
+              ? timetableSetup.schoolLevel.split(',').map(s => s.trim()).filter(Boolean)
+              : [];
+            const toggleLevel = (id: string) => {
+              const next = selectedLevels.includes(id)
+                ? selectedLevels.filter(l => l !== id)
+                : [...selectedLevels, id];
+              setTimetableSetup(c => ({ ...c, schoolLevel: next.join(',') }));
+            };
+            // different time slots state stored in timetableSetup as flag
+            const diffSlots = !!(timetableSetup as any).differentSlots;
+            const setDiffSlots = (v: boolean) => setTimetableSetup(c => ({ ...c, differentSlots: v } as any));
+
+            return (
+              <div className="px-6 pb-6 space-y-6">
+                {/* Section A: School Level */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <GraduationCap className="w-4 h-4 text-emerald-600" />
+                    <p className="text-sm font-semibold text-slate-800">Which school levels does your school have?</p>
+                    <span className="text-xs text-slate-400">(select all that apply)</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    {LEVELS.map(l => {
+                      const active = selectedLevels.includes(l.id);
+                      return (
+                        <button key={l.id} type="button" onClick={() => toggleLevel(l.id)}
+                          className={`flex flex-col items-center gap-1.5 rounded-xl border-2 py-3 px-2 transition-all font-medium text-sm ${
+                            active ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-sm' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                          }`}>
+                          <span className={`p-2 rounded-lg ${active ? 'bg-emerald-100 text-emerald-600' : 'bg-slate-100 text-slate-400'}`}>{l.icon}</span>
+                          <span className="font-semibold">{l.label}</span>
+                          <span className="text-[10px] text-slate-400">{l.sub}</span>
+                          {active && <CheckCircle2 className="w-4 h-4 text-emerald-500 mt-0.5" />}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Section B: Different time slots question */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-slate-500" />
+                    <p className="text-sm font-semibold text-slate-800">Does your school have different time slots for different grades?</p>
+                  </div>
+                  <div className="flex gap-3">
+                    <button type="button" onClick={() => setDiffSlots(false)}
+                      className={`flex-1 flex items-center justify-center gap-2 rounded-xl border-2 py-2.5 text-sm font-semibold transition-all ${
+                        !diffSlots ? 'border-emerald-500 bg-emerald-50 text-emerald-800' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                      }`}>
+                      <CheckCircle2 className="w-4 h-4" /> No — all grades share same timings
+                    </button>
+                    <button type="button" onClick={() => setDiffSlots(true)}
+                      className={`flex-1 flex items-center justify-center gap-2 rounded-xl border-2 py-2.5 text-sm font-semibold transition-all ${
+                        diffSlots ? 'border-blue-500 bg-blue-50 text-blue-800' : 'border-slate-200 bg-white text-slate-500 hover:border-slate-300'
+                      }`}>
+                      <Layers className="w-4 h-4" /> Yes — different time slots per level
+                    </button>
+                  </div>
+                </div>
+
+                {/* Section C: Timing fields */}
+                {!diffSlots ? (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Clock className="w-4 h-4 text-emerald-600" />
+                      <p className="text-sm font-semibold text-slate-800">School Timings — All Grades</p>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Class Starts</Label>
+                        <Input type="time" value={timetableSetup.startTime} onChange={e => setTimetableSetup(c => ({ ...c, startTime: e.target.value }))} className="h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Class Ends</Label>
+                        <Input type="time" value={timetableSetup.endTime} onChange={e => setTimetableSetup(c => ({ ...c, endTime: e.target.value }))} className="h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Periods per Day</Label>
+                        <Input type="number" min={4} max={12} value={timetableSetup.periodsPerDay} onChange={e => setTimetableSetup(c => ({ ...c, periodsPerDay: Number(e.target.value) }))} className="h-10" />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label className="text-xs font-semibold text-slate-600">Working Days</Label>
+                        <Select value={String(timetableSetup.workingDays)} onValueChange={v => setTimetableSetup(c => ({ ...c, workingDays: Number(v) }))}>
+                          <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="5">5 Days (Mon–Fri)</SelectItem>
+                            <SelectItem value="6">6 Days (Mon–Sat)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {timetableSetup.workingDays === 6 && (
+                        <div className="space-y-1.5">
+                          <Label className="text-xs font-semibold text-slate-600">Saturday Periods</Label>
+                          <Input type="number" min={1} max={8} value={timetableSetup.saturdayPeriods} onChange={e => setTimetableSetup(c => ({ ...c, saturdayPeriods: Number(e.target.value) }))} className="h-10" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div className="flex items-center gap-2 mb-3">
+                      <Layers className="w-4 h-4 text-blue-600" />
+                      <p className="text-sm font-semibold text-slate-800">Time Slots per Level</p>
+                      <span className="text-xs text-slate-400">Enter different start/end for each level</span>
+                    </div>
+                    <div className="space-y-3">
+                      {(selectedLevels.length ? selectedLevels : ['primary','middle','high']).map(lvl => {
+                        const key = `${lvl}Start`;
+                        const keyEnd = `${lvl}End`;
+                        const setup = timetableSetup as any;
+                        return (
+                          <div key={lvl} className="rounded-xl border border-slate-200 bg-white p-4">
+                            <p className="text-xs font-bold text-slate-700 capitalize mb-3 flex items-center gap-1.5">
+                              <GraduationCap className="w-3.5 h-3.5 text-slate-400" /> {lvl.charAt(0).toUpperCase() + lvl.slice(1)} School
+                            </p>
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                              <div className="space-y-1">
+                                <Label className="text-[10px] font-semibold text-slate-500">Starts</Label>
+                                <Input type="time" value={setup[key] || timetableSetup.startTime} onChange={e => setTimetableSetup(c => ({ ...c, [key]: e.target.value } as any))} className="h-9 text-sm" />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-[10px] font-semibold text-slate-500">Ends</Label>
+                                <Input type="time" value={setup[keyEnd] || timetableSetup.endTime} onChange={e => setTimetableSetup(c => ({ ...c, [keyEnd]: e.target.value } as any))} className="h-9 text-sm" />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-[10px] font-semibold text-slate-500">Periods/Day</Label>
+                                <Input type="number" min={4} max={12} value={timetableSetup.periodsPerDay} onChange={e => setTimetableSetup(c => ({ ...c, periodsPerDay: Number(e.target.value) }))} className="h-9 text-sm" />
+                              </div>
+                              <div className="space-y-1">
+                                <Label className="text-[10px] font-semibold text-slate-500">Working Days</Label>
+                                <Select value={String(timetableSetup.workingDays)} onValueChange={v => setTimetableSetup(c => ({ ...c, workingDays: Number(v) }))}>
+                                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                                  <SelectContent><SelectItem value="5">Mon–Fri</SelectItem><SelectItem value="6">Mon–Sat</SelectItem></SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Section D: Breaks */}
+                <div>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Coffee className="w-4 h-4 text-amber-500" />
+                    <p className="text-sm font-semibold text-slate-800">Breaks Configuration</p>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-600">Short Break After Period</Label>
+                      <Input type="number" min={1} max={7} value={timetableSetup.breakAfter} onChange={e => setTimetableSetup(c => ({ ...c, breakAfter: Number(e.target.value) }))} className="h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-600">Short Break Duration (min)</Label>
+                      <Input type="number" min={0} max={30} value={timetableSetup.breakMinutes} onChange={e => setTimetableSetup(c => ({ ...c, breakMinutes: Number(e.target.value) }))} className="h-10" />
+                      <p className="text-[10px] text-slate-400">Set 0 to skip short break</p>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-600">Lunch After Period</Label>
+                      <Input type="number" min={2} max={8} value={timetableSetup.lunchAfter} onChange={e => setTimetableSetup(c => ({ ...c, lunchAfter: Number(e.target.value) }))} className="h-10" />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs font-semibold text-slate-600">Lunch Duration (min)</Label>
+                      <Input type="number" min={15} max={90} value={timetableSetup.lunchMinutes} onChange={e => setTimetableSetup(c => ({ ...c, lunchMinutes: Number(e.target.value) }))} className="h-10" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Summary bar */}
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+                  <p className="text-xs font-semibold text-emerald-700 mb-2 flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Current Configuration Summary
+                  </p>
+                  <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-xs text-emerald-800">
+                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> <b>{timetableSetup.startTime}</b> — <b>{timetableSetup.endTime}</b></span>
+                    <span className="flex items-center gap-1"><Hash className="w-3 h-3" /> <b>{timetableSetup.periodsPerDay}</b> periods/day</span>
+                    <span className="flex items-center gap-1"><CalendarDays className="w-3 h-3" /> <b>{timetableSetup.workingDays}</b> days/week</span>
+                    {timetableSetup.breakMinutes > 0 && <span className="flex items-center gap-1"><Coffee className="w-3 h-3" /> Short break after P<b>{timetableSetup.breakAfter}</b> — <b>{timetableSetup.breakMinutes}</b> min</span>}
+                    <span className="flex items-center gap-1"><Timer className="w-3 h-3" /> Lunch after P<b>{timetableSetup.lunchAfter}</b> — <b>{timetableSetup.lunchMinutes}</b> min</span>
+                    {selectedLevels.length > 0 && <span className="flex items-center gap-1"><GraduationCap className="w-3 h-3" /> <b>{selectedLevels.map(l => l.charAt(0).toUpperCase() + l.slice(1)).join(', ')}</b></span>}
+                  </div>
+                </div>
+
+                <div className="flex justify-between items-center pt-2 border-t">
+                  <Button variant="outline" onClick={() => setCreationWizardOpen(false)}>Cancel</Button>
+                  <Button
+                    onClick={() => {
+                      pushActivity('Step 1 Completed', `Timings saved — ${timetableSetup.periodsPerDay} periods/day, ${timetableSetup.workingDays} days/week`, 'setup');
+                      completeStep(1);
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5"
+                  >
+                    Next: Upload or Paste Master Data <ChevronRight className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* STEP 2: Upload File or Excel Copy-Paste */}
           {wizardStep === 2 && (
-            <div className="space-y-4 py-2">
+            <div className="space-y-4 px-6 pb-6">
               <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <FileSpreadsheet className="w-4 h-4 text-blue-600 shrink-0" />
@@ -3142,7 +3321,7 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
 
           {/* STEP 3: AI Engine Generation */}
           {wizardStep === 3 && (
-            <div className="space-y-4 py-4 text-center">
+            <div className="space-y-4 px-6 pb-6 pt-2 text-center">
               {aiGenerating ? (
                 <div className="py-8 space-y-4">
                   <div className="relative inline-block">
@@ -3213,14 +3392,12 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
           {wizardStep === 4 && (() => {
             const days = DAYS.slice(0, timetableSetup.workingDays);
             const periods = Array.from({ length: timetableSetup.periodsPerDay }, (_, i) => i + 1);
-            // Grade selector for the editor
             const gradeList = [...new Set(schedules.map(s => `${s.grade} ${s.section}`))].sort();
-            const [editorClass, setEditorClass] = React.useState(gradeList[0] || '');
-            const [selectedGrade, selectedSection] = editorClass.split(' ');
-            const classSchedules = schedules.filter(s => s.grade === selectedGrade && s.section === selectedSection);
-
-            const getCell = (day: string, period: number) =>
-              classSchedules.find(s => s.day === day && s.period === period);
+            // Use hoisted state; sync default when gradeList changes
+            const activeClass = wizardEditorClass && gradeList.includes(wizardEditorClass) ? wizardEditorClass : (gradeList[0] || '');
+            const [activeGrade, activeSection] = activeClass.split(' ');
+            const classSchedules = schedules.filter(s => s.grade === activeGrade && s.section === activeSection);
+            const getCell = (day: string, period: number) => classSchedules.find(s => s.day === day && s.period === period);
 
             const handleDrop = async (targetDay: string, targetPeriod: number) => {
               if (!dndDragging || dndSwapping) return;
@@ -3228,115 +3405,159 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
               if (src.day === targetDay && src.period === targetPeriod) { setDndDragging(null); return; }
               setDndSwapping(true);
               try {
+                // Find target cell's schedule id (if occupied)
+                const targetCell = classSchedules.find(s => s.day === targetDay && s.period === targetPeriod);
+                const payload = targetCell
+                  ? { fromId: src.scheduleId, toId: targetCell.id }
+                  : { fromId: src.scheduleId, targetDay, targetPeriod, grade: activeGrade, section: activeSection, schoolId };
                 const res = await fetch('/api/schedules/swap', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ schoolId, grade: selectedGrade, section: selectedSection, fromDay: src.day, fromPeriod: src.period, toDay: targetDay, toPeriod: targetPeriod }),
+                  body: JSON.stringify(payload),
                 });
+                const data = await res.json().catch(() => ({}));
                 if (res.ok) {
-                  pushActivity('Period Swapped', `${src.subject} moved from ${src.day} P${src.period} → ${targetDay} P${targetPeriod}`, 'edit');
+                  pushActivity('Period Swapped', `${src.subject} → ${targetDay} P${targetPeriod}`, 'edit');
                   if (onRefreshAll) await onRefreshAll();
+                } else {
+                  toast({ title: 'Swap failed', description: data.error || 'Could not swap periods', variant: 'destructive' });
                 }
               } finally { setDndSwapping(false); setDndDragging(null); }
             };
 
+            const handleCellEdit = (cell: Schedule) => {
+              setSelectedPeriod(cell);
+              setPeriodDetailOpen(true);
+            };
+
             return (
-              <div className="space-y-3 py-2">
-                <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-purple-50 rounded-xl border border-purple-200">
+              <div className="space-y-4 px-6 pb-6 pt-1">
+                {/* Header bar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-purple-50 rounded-xl border border-purple-200">
                   <div>
                     <h4 className="font-bold text-sm text-purple-900 flex items-center gap-1.5">
-                      <Grid3X3 className="w-4 h-4 text-purple-600" /> Drag &amp; Drop Timetable Editor
+                      <Grid3X3 className="w-4 h-4 text-purple-600" /> Timetable Editor
                     </h4>
-                    <p className="text-xs text-purple-700 mt-0.5">Drag any period cell and drop it on another to swap their positions.</p>
+                    <p className="text-xs text-purple-600 mt-0.5">
+                      <span className="font-semibold">Drag</span> a cell onto another to swap periods.&nbsp;&nbsp;
+                      <span className="font-semibold">Click</span> a cell to edit subject / teacher.
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    {dndSwapping && <span className="text-xs text-purple-600 animate-pulse flex items-center gap-1"><RefreshCw className="w-3 h-3 animate-spin" /> Saving…</span>}
-                    <select
-                      value={editorClass}
-                      onChange={e => setEditorClass(e.target.value)}
-                      className="text-xs rounded-lg border border-purple-300 bg-white text-purple-900 px-2 py-1.5 font-semibold"
-                    >
-                      {gradeList.map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {dndSwapping && (
+                      <span className="text-xs text-purple-600 animate-pulse flex items-center gap-1">
+                        <RefreshCw className="w-3 h-3 animate-spin" /> Saving swap…
+                      </span>
+                    )}
+                    <Select value={activeClass} onValueChange={v => setWizardEditorClass(v)}>
+                      <SelectTrigger className="h-8 text-xs w-44 border-purple-300 bg-white text-purple-900 font-semibold">
+                        <SelectValue placeholder="Select class" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {gradeList.map(g => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
 
-                {/* Drag-and-drop grid */}
-                <div className="overflow-x-auto rounded-xl border bg-white">
-                  <table className="w-full text-xs border-collapse min-w-[500px]">
-                    <thead>
-                      <tr className="bg-slate-100">
-                        <th className="p-2 text-left font-semibold text-slate-600 border-b w-16">Period</th>
-                        {days.map(d => (
-                          <th key={d} className="p-2 text-center font-semibold text-slate-600 border-b">{d.slice(0,3)}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {periods.map(p => (
-                        <tr key={p} className="border-b last:border-0">
-                          <td className="p-2 font-bold text-slate-400 text-center bg-slate-50 border-r">P{p}</td>
-                          {days.map(d => {
-                            const cell = getCell(d, p);
-                            const isDragging = dndDragging?.day === d && dndDragging?.period === p;
-                            const isTarget = !isDragging && dndDragging !== null;
-                            return (
-                              <td
-                                key={d}
-                                className={`p-1 border-r last:border-0 transition-colors ${isTarget ? 'bg-purple-50' : ''}`}
-                                onDragOver={e => { e.preventDefault(); }}
-                                onDrop={() => handleDrop(d, p)}
-                              >
-                                {cell ? (
-                                  <div
-                                    draggable
-                                    onDragStart={() => setDndDragging({ scheduleId: cell.id, subject: cell.subject, teacher: cell.teacherId || '', grade: cell.grade, section: cell.section, day: d, period: p })}
-                                    onDragEnd={() => setDndDragging(null)}
-                                    className={`rounded-lg px-2 py-1.5 cursor-grab active:cursor-grabbing select-none border transition-all ${
-                                      isDragging
-                                        ? 'opacity-40 border-purple-400 bg-purple-100'
-                                        : 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 hover:shadow-sm'
-                                    }`}
+                {gradeList.length === 0 ? (
+                  <div className="py-10 text-center text-slate-400 text-sm">
+                    No timetable data yet — run AI Generate (Step 3) first.
+                  </div>
+                ) : (
+                  <>
+                    {/* Timetable grid */}
+                    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+                      <table className="w-full text-xs border-collapse min-w-[520px]">
+                        <thead>
+                          <tr className="bg-slate-50 border-b">
+                            <th className="py-2.5 px-3 text-left font-semibold text-slate-500 w-14 border-r">Period</th>
+                            {days.map(d => (
+                              <th key={d} className="py-2.5 px-2 text-center font-semibold text-slate-600">{d.slice(0,3)}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {periods.map(p => (
+                            <tr key={p} className="border-b last:border-0 group">
+                              <td className="py-2 px-3 font-bold text-slate-400 bg-slate-50 border-r text-center whitespace-nowrap">P{p}</td>
+                              {days.map(d => {
+                                const cell = getCell(d, p);
+                                const isDraggingThis = dndDragging?.day === d && dndDragging?.period === p;
+                                const isDropTarget = !isDraggingThis && dndDragging !== null;
+                                return (
+                                  <td
+                                    key={d}
+                                    className={`p-1 border-r last:border-0 transition-colors align-top ${isDropTarget ? 'bg-purple-50/60' : ''}`}
+                                    onDragOver={e => e.preventDefault()}
+                                    onDrop={() => handleDrop(d, p)}
                                   >
-                                    <p className="font-semibold text-emerald-900 truncate">{cell.subject}</p>
-                                    <p className="text-[10px] text-emerald-600 truncate">{teachers.find(t => t.id === cell.teacherId)?.name || '—'}</p>
-                                  </div>
-                                ) : (
-                                  <div
-                                    className={`h-10 rounded-lg border-2 border-dashed flex items-center justify-center text-[10px] text-slate-300 transition-colors ${
-                                      dndDragging ? 'border-purple-300 bg-purple-50/50' : 'border-slate-200'
-                                    }`}
-                                  >
-                                    {dndDragging ? 'Drop here' : 'Free'}
-                                  </div>
-                                )}
-                              </td>
-                            );
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                                    {cell ? (
+                                      <div
+                                        draggable
+                                        onDragStart={() => setDndDragging({ scheduleId: cell.id, subject: cell.subject, teacher: cell.teacherId || '', grade: cell.grade, section: cell.section, day: d, period: p })}
+                                        onDragEnd={() => setDndDragging(null)}
+                                        onClick={() => handleCellEdit(cell)}
+                                        title="Drag to swap · Click to edit"
+                                        className={`rounded-lg px-2 py-2 border select-none transition-all ${
+                                          isDraggingThis
+                                            ? 'opacity-40 border-purple-400 bg-purple-100 cursor-grabbing'
+                                            : 'bg-emerald-50 border-emerald-200 hover:border-emerald-400 hover:shadow-md cursor-grab'
+                                        }`}
+                                      >
+                                        <p className="font-semibold text-emerald-900 text-[11px] truncate leading-tight">{cell.subject}</p>
+                                        <p className="text-[10px] text-emerald-600 truncate mt-0.5">{teachers.find(t => t.id === cell.teacherId)?.name || <span className="text-red-400">No teacher</span>}</p>
+                                        <div className="flex gap-1 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                          <span className="text-[8px] text-purple-500 bg-purple-50 border border-purple-200 rounded px-1 py-0.5 flex items-center gap-0.5">
+                                            <GraduationCap className="w-2 h-2" /> drag
+                                          </span>
+                                          <span className="text-[8px] text-blue-500 bg-blue-50 border border-blue-200 rounded px-1 py-0.5 flex items-center gap-0.5">
+                                            <Settings className="w-2 h-2" /> edit
+                                          </span>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div
+                                        className={`h-14 rounded-lg border-2 border-dashed flex items-center justify-center text-[10px] font-medium transition-colors ${
+                                          dndDragging ? 'border-purple-300 bg-purple-50 text-purple-400' : 'border-slate-200 text-slate-300'
+                                        }`}
+                                        onDragOver={e => e.preventDefault()}
+                                        onDrop={() => handleDrop(d, p)}
+                                      >
+                                        {dndDragging ? 'Drop here' : 'Free'}
+                                      </div>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
 
-                <div className="flex items-center gap-2 text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border">
-                  <span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300 inline-block" /> Subject period &nbsp;&nbsp;
-                  <span className="w-3 h-3 rounded border-2 border-dashed border-slate-300 inline-block" /> Free slot (drop target)
-                  &nbsp;— Drag a green cell onto any cell to swap them
-                </div>
+                    {/* Legend */}
+                    <div className="flex flex-wrap items-center gap-4 text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2 border border-slate-200">
+                      <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-emerald-100 border border-emerald-300 inline-block" /> Period assigned</span>
+                      <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded border-2 border-dashed border-slate-300 inline-block" /> Free slot</span>
+                      <span className="flex items-center gap-1.5"><span className="w-3 h-3 rounded bg-purple-100 border border-purple-300 inline-block" /> Drop target while dragging</span>
+                      <span className="ml-auto text-slate-400 italic">Hover a cell for actions</span>
+                    </div>
+                  </>
+                )}
 
-                <div className="flex justify-between items-center pt-3 border-t">
+                <div className="flex justify-between items-center pt-2 border-t">
                   <Button variant="outline" onClick={() => setWizardStep(3)}>
-                    <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to AI Result
+                    <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back
                   </Button>
                   <Button
                     onClick={() => {
                       pushActivity('Step 4 Completed', 'Timetable reviewed and edits saved', 'edit');
                       completeStep(4);
                     }}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold gap-1.5"
                   >
-                    Next: Finalize Timetable <Check className="w-4 h-4 ml-1" />
+                    Next: Finalize Timetable <Check className="w-4 h-4" />
                   </Button>
                 </div>
               </div>
@@ -3345,7 +3566,7 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
 
           {/* STEP 5: Finalization & Audit Log */}
           {wizardStep === 5 && (
-            <div className="space-y-4 py-2">
+            <div className="space-y-4 px-6 pb-6">
               <div className="p-4 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl flex items-center gap-4">
                 <CheckCircle2 className="w-10 h-10 shrink-0 text-emerald-200" />
                 <div>
@@ -7988,6 +8209,8 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
   const [loginRole, setLoginRole] = useState<'admin' | 'school' | 'teacher' | 'superadmin'>('school');
   const [email, setEmail] = useState('pilot@client.school');
   const [password, setPassword] = useState('ClientPilot2026');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [registering, setRegistering] = useState(false);
@@ -8106,17 +8329,49 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
                 <div className="relative">
                   <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                   <Input
-                    type="password"
+                    type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Enter your password"
-                    className="pl-10 bg-gray-800/50 border-gray-600/50 text-white placeholder:text-gray-500 focus:border-emerald-500 focus:ring-emerald-500/20 h-11"
+                    className="pl-10 pr-10 bg-gray-800/50 border-gray-600/50 text-white placeholder:text-gray-500 focus:border-emerald-500 focus:ring-emerald-500/20 h-11"
                     required
                   />
+                  <button
+                    type="button"
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                    onClick={() => setShowPassword((v) => !v)}
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
               </div>
 
-              {registering && <div className="space-y-2"><Label className="text-gray-300 text-xs font-medium">Confirm Password</Label><div className="relative"><Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"/><Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Repeat your password" minLength={8} className="pl-10 bg-gray-800/50 border-gray-600/50 text-white h-11" required /></div></div>}
+              {registering && (
+                <div className="space-y-2">
+                  <Label className="text-gray-300 text-xs font-medium">Confirm Password</Label>
+                  <div className="relative">
+                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                    <Input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Repeat your password"
+                      minLength={8}
+                      className="pl-10 pr-10 bg-gray-800/50 border-gray-600/50 text-white h-11"
+                      required
+                    />
+                    <button
+                      type="button"
+                      aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white"
+                      onClick={() => setShowConfirmPassword((v) => !v)}
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {error && (
                 <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg">
@@ -8639,7 +8894,7 @@ export default function AISmartCalendar() {
                 isClientPilot={loginUser?.schoolId === 'sch_client_pilot_001' || loginUser?.schoolCode === 'PILOT01'}
                 featureFlagNote={featureFlags?.customNote ?? undefined}
                 planName={featureFlags?.planName}
-                recentActivities={recentActivities}
+                recentActivities={[]}
               />
             )}
             {activeTab === 'calendar' && (
