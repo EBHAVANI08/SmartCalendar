@@ -111,7 +111,7 @@ interface LessonPlan {
   keyVocabulary: string[];
 }
 
-type TabType = 'dashboard' | 'calendar' | 'bulk-import' | 'substitutions' | 'teachers' | 'teacher-portal' | 'curriculum' | 'analytics' | 'lesson-plans';
+type TabType = 'dashboard' | 'calendar' | 'bulk-import' | 'substitutions' | 'teachers' | 'teacher-portal' | 'analytics';
 type UserRole = 'admin' | 'teacher' | null;
 
 interface LoginUser {
@@ -1190,9 +1190,6 @@ function DashboardSection({
                   <Button variant="outline" className="justify-start h-9 text-xs border-emerald-200" onClick={() => onNavigate('substitutions')}>
                     3. Open Substitutions — absence → auto cover
                   </Button>
-                  <Button variant="outline" className="justify-start h-9 text-xs border-emerald-200" onClick={() => onNavigate('curriculum')}>
-                    4. Open Curriculum / Lesson plans
-                  </Button>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-3">
                   School code: <span className="font-mono font-medium text-emerald-800">{schoolCode || 'PILOT01'}</span>
@@ -1399,19 +1396,6 @@ function DashboardSection({
               <ChevronRight className="w-4 h-4" />
             </Button>
 
-            <Button variant="outline" className="w-full justify-between h-14 text-left" onClick={() => onNavigate('curriculum')}>
-              <div className="flex items-center gap-3">
-                <div className="bg-blue-100 p-2 rounded-lg">
-                  <BookTemplate className="w-5 h-5 text-blue-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-sm">Curriculum Builder</p>
-                  <p className="text-xs text-muted-foreground">AI-powered annual curriculum generation</p>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-
             <Button variant="outline" className="w-full justify-between h-14 text-left" onClick={() => onNavigate('analytics')}>
               <div className="flex items-center gap-3">
                 <div className="bg-orange-100 p-2 rounded-lg">
@@ -1420,19 +1404,6 @@ function DashboardSection({
                 <div>
                   <p className="font-medium text-sm">Workload Analytics</p>
                   <p className="text-xs text-muted-foreground">Teacher workload heatmap &amp; distribution</p>
-                </div>
-              </div>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-
-            <Button variant="outline" className="w-full justify-between h-14 text-left" onClick={() => onNavigate('lesson-plans')}>
-              <div className="flex items-center gap-3">
-                <div className="bg-rose-100 p-2 rounded-lg">
-                  <Library className="w-5 h-5 text-rose-600" />
-                </div>
-                <div>
-                  <p className="font-medium text-sm">Lesson Plan Library</p>
-                  <p className="text-xs text-muted-foreground">AI-generated teaching resources</p>
                 </div>
               </div>
               <ChevronRight className="w-4 h-4" />
@@ -1663,7 +1634,7 @@ function BulkTeacherImportSection({ schoolId, onCompleted }: { schoolId?: string
     <div className="grid grid-cols-3 gap-2 md:grid-cols-6">{['Import','Validate','Draft','Review','Approve','Publish'].map((step, index) => <div key={step} className={`rounded-lg border p-2 text-center text-xs font-medium ${index < 2 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}`}><span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-current/10">{index + 1}</span>{step}</div>)}</div>
     <Card><CardHeader><CardTitle className="text-lg">1. {importKind === 'complete' ? 'Upload complete timetable configuration' : 'Upload teacher allotment'}</CardTitle><CardDescription>{importKind === 'complete' ? 'Linked sheets: Teachers, Classes, SubjectRequirements, TeacherAssignments, Availability, Rooms, FixedPeriods and BellSchedule.' : 'Required information: Teacher Name, Subject and Eligible Grades. Employee ID and Email are recommended.'}</CardDescription></CardHeader><CardContent className="space-y-4">
       <div className="border-2 border-dashed border-emerald-200 rounded-xl p-5 md:p-8 text-center bg-emerald-50/30"><Upload className="w-10 h-10 mx-auto text-emerald-600 mb-3"/><Input type="file" accept={importKind === 'complete' ? '.xlsx' : '.xlsx,.xls,.pdf'} onChange={(event) => { setFile(event.target.files?.[0] || null); setPreview(null); setCompletePreview(null); }} className="w-full max-w-xl mx-auto bg-white"/><p className="text-xs text-muted-foreground mt-2">{importKind === 'complete' ? 'Upload the multi-sheet workbook containing Teachers, Classes, Requirements and Assignments.' : 'Any common Excel layout or searchable PDF; headings are detected automatically.'}</p></div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap"><Button asChild variant="outline"><a href="/api/timetable/import/template"><Download className="w-4 h-4 mr-2"/>Download Excel Template</a></Button><Button disabled={!file || busy || !schoolId} onClick={() => upload(false)} className="bg-emerald-600 hover:bg-emerald-700">{busy ? <RefreshCw className="w-4 h-4 mr-2 animate-spin"/> : <Eye className="w-4 h-4 mr-2"/>}Validate & Preview</Button></div>
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap"><Button disabled={!file || busy || !schoolId} onClick={() => upload(false)} className="bg-emerald-600 hover:bg-emerald-700">{busy ? <RefreshCw className="w-4 h-4 mr-2 animate-spin"/> : <Eye className="w-4 h-4 mr-2"/>}Validate & Preview</Button></div>
     </CardContent></Card>
     {preview && <Card><CardHeader><CardTitle className="flex items-center justify-between">2. Review <Badge variant={preview.blocking ? 'destructive' : 'default'}>{preview.summary.valid}/{preview.summary.detected} valid</Badge></CardTitle>{preview.layout === 'grade-section-matrix' && <CardDescription>Detected grade-section matrix: {preview.classesDetected} classes and {preview.allotmentsDetected} teacher-subject allotments. Import will create a Monday-Friday timetable for every detected grade and section.</CardDescription>}</CardHeader><CardContent className="space-y-4">
       {preview.issues.length > 0 && <ScrollArea className="h-28 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{preview.issues.map((issue, index) => <p key={index}>Row {issue.row} - {issue.field}: {issue.message}</p>)}</ScrollArea>}
@@ -1671,7 +1642,7 @@ function BulkTeacherImportSection({ schoolId, onCompleted }: { schoolId?: string
       <Button disabled={preview.blocking || busy} onClick={() => upload(true)} className="bg-purple-600 hover:bg-purple-700"><Sparkles className="w-4 h-4 mr-2"/>Import Teachers & Auto-Allot Timetable</Button>
     </CardContent></Card>}
     {completePreview && <Card><CardHeader><CardTitle className="flex items-center justify-between">Complete Setup Validation <Badge variant={completePreview.blocking ? 'destructive' : 'default'}>{completePreview.blocking ? 'Blocking errors' : 'Ready for draft'}</Badge></CardTitle></CardHeader><CardContent className="space-y-4"><div className="grid grid-cols-2 gap-3 md:grid-cols-4">{Object.entries(completePreview.summary).map(([dataset, result]) => <div key={dataset} className="rounded-lg border bg-white p-3"><p className="truncate text-xs font-semibold">{dataset}</p><p className="mt-1 text-lg font-bold text-emerald-700">{result.valid}/{result.total}</p><p className="text-[10px] text-muted-foreground">{result.errors} errors - {result.warnings} warnings</p></div>)}</div>{completePreview.issues.length > 0 && <ScrollArea className="h-40 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{completePreview.issues.map((issue, index) => <p key={index}>{issue.dataset}{issue.rowNumber ? ` row ${issue.rowNumber}` : ''}: {issue.message}</p>)}</ScrollArea>}<div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800"><strong>Safe lifecycle:</strong> successful validation prepares timetable input for a database draft. It is not published until independent validation, review and approval are complete.</div></CardContent></Card>}
-    {result && <Card className="border-2 border-emerald-300"><CardHeader><CardTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2 text-emerald-800"><CheckCircle2 className="h-5 w-5"/>3. Teacher Allotment & Timetable Preview</span><Button asChild className="bg-blue-600 hover:bg-blue-700"><a href={`/api/timetable/export?schoolId=${encodeURIComponent(schoolId || '')}`}><Download className="mr-2 h-4 w-4"/>Download Timetable Excel</a></Button></CardTitle><CardDescription>Review teachers allotted to every subject for each grade and section before leaving this page.</CardDescription></CardHeader><CardContent className="space-y-4">
+    {result && <Card className="border-2 border-emerald-300"><CardHeader><CardTitle className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2 text-emerald-800"><CheckCircle2 className="h-5 w-5"/>3. Teacher Allotment & Timetable Preview</span></CardTitle><CardDescription>Review teachers allotted to every subject for each grade and section before leaving this page.</CardDescription></CardHeader><CardContent className="space-y-4">
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4"><div className="rounded-xl bg-blue-50 p-3"><p className="text-2xl font-bold text-blue-700">{result.classesCreated || new Set(generatedSchedules.map((item) => `${item.grade}|${item.section}`)).size}</p><p className="text-xs text-blue-700">Grades/Sections</p></div><div className="rounded-xl bg-purple-50 p-3"><p className="text-2xl font-bold text-purple-700">{result.imported}</p><p className="text-xs text-purple-700">Teachers Imported</p></div><div className="rounded-xl bg-emerald-50 p-3"><p className="text-2xl font-bold text-emerald-700">{result.allotted}</p><p className="text-xs text-emerald-700">Periods Allotted</p></div><div className="rounded-xl bg-amber-50 p-3"><p className="text-2xl font-bold text-amber-700">{result.unallotted}</p><p className="text-xs text-amber-700">Need Teacher</p></div></div>
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center"><Label className="shrink-0">Preview grade & section</Label><Select value={resultClass} onValueChange={setResultClass}><SelectTrigger className="w-full sm:w-[260px]"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All grades and sections</SelectItem>{[...new Set(generatedSchedules.map((item) => `${item.grade}|${item.section}`))].sort().map((key) => { const [grade, section] = key.split('|'); return <SelectItem key={key} value={key}>{grade} - Section {section}</SelectItem>; })}</SelectContent></Select></div>
       <div className="max-h-[48dvh] overflow-auto rounded-xl border"><table className="w-full min-w-[900px] text-sm"><thead className="sticky top-0 z-10 bg-slate-100"><tr className="text-left"><th className="p-3">Grade</th><th className="p-3">Section</th><th className="p-3">Day</th><th className="p-3">Period</th><th className="p-3">Subject</th><th className="p-3">Allotted Teacher</th><th className="p-3">Room</th><th className="p-3">Status</th></tr></thead><tbody>{generatedSchedules.filter((item) => resultClass === 'all' || `${item.grade}|${item.section}` === resultClass).map((item) => <tr key={item.id} className="border-t hover:bg-slate-50"><td className="p-3 font-medium">{item.grade}</td><td className="p-3">{item.section}</td><td className="p-3">{item.day}</td><td className="p-3">P{item.period}</td><td className="p-3 font-medium text-blue-700">{item.subject}</td><td className="p-3">{item.teacher?.name || <span className="text-amber-700">Not allotted</span>}</td><td className="p-3">{item.roomId || '-'}</td><td className="p-3"><Badge className={item.teacherId ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>{item.teacherId ? 'Allotted' : 'Needs teacher'}</Badge></td></tr>)}</tbody></table></div>
@@ -2130,7 +2101,6 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
             <SelectContent>{classOptions.map((item) => <SelectItem key={`${item.grade}|${item.section}`} value={`${item.grade}|${item.section}`}>{item.grade} · Section {item.section}</SelectItem>)}</SelectContent>
           </Select>
           <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { if (!activeClass) return; setAiGradeSection(activeClass); setTimetableSetupAction('timings'); const first = classSchedule.find((item) => item.period === 1); const last = [...classSchedule].sort((a, b) => b.period - a.period)[0]; setTimetableSetup((current) => ({ ...current, startTime: first?.startTime || current.startTime, endTime: last?.endTime || current.endTime })); setAiGradeSelectOpen(true); }}><Clock className="mr-2 h-4 w-4"/>Edit Timings</Button>
-          <Button asChild variant="outline" className="h-11 rounded-xl border-blue-200 text-blue-700"><a href={`/api/timetable/export?schoolId=${encodeURIComponent(schoolId || '')}`}><Download className="mr-2 h-4 w-4"/>Download Timetable</a></Button>
         </div>
       </div>
       {!activeClass ? <Card><CardContent className="p-10 text-center text-muted-foreground">Import or generate timetable data to create a class timetable.</CardContent></Card> :
@@ -4505,7 +4475,7 @@ function TeachersSection({
       <Dialog open={teacherPopupOpen} onOpenChange={setTeacherPopupOpen}>
         <DialogContent className="!w-[calc(100vw-1.5rem)] !max-w-[1600px] sm:!w-[calc(100vw-3rem)] sm:!max-w-[1600px] max-h-[92vh] overflow-hidden p-0">
           <DialogHeader className="border-b bg-gradient-to-r from-emerald-50 to-cyan-50 p-5">
-            <DialogTitle className="flex flex-col gap-3 text-emerald-800 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><User className="w-5 h-5" />{selectedTeacher?.name}</span>{selectedTeacher && schoolId && <Button asChild size="sm" className="bg-blue-700 hover:bg-blue-800"><a href={`/api/timetable/export?schoolId=${encodeURIComponent(schoolId)}&teacherId=${encodeURIComponent(selectedTeacher.id)}`}><Download className="mr-2 h-4 w-4"/>Download My Timetable</a></Button>}</DialogTitle>
+            <DialogTitle className="flex flex-col gap-3 text-emerald-800 sm:flex-row sm:items-center sm:justify-between"><span className="flex items-center gap-2"><User className="w-5 h-5" />{selectedTeacher?.name}</span></DialogTitle>
             <DialogDescription>
               {selectedTeacher?.subject} Specialist • {selectedTeacher?.email}
             </DialogDescription>
@@ -8118,15 +8088,11 @@ export default function AISmartCalendar() {
     { id: 'calendar', label: 'Academic Calendar', icon: <Calendar className="w-4 h-4" /> },
     { id: 'substitutions', label: 'Substitutions', icon: <RefreshCw className="w-4 h-4" /> },
     { id: 'teachers', label: 'Teachers', icon: <Users className="w-4 h-4" /> },
-    { id: 'curriculum', label: 'Curriculum Builder', icon: <BookTemplate className="w-4 h-4" /> },
     { id: 'analytics', label: 'Workload Analytics', icon: <BarChart3 className="w-4 h-4" /> },
-    { id: 'lesson-plans', label: 'Lesson Plans', icon: <Library className="w-4 h-4" /> },
   ];
 
   const teacherTabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'teacher-portal', label: 'Teacher Dashboard', icon: <GraduationCap className="w-4 h-4" /> },
-    { id: 'lesson-plans', label: 'Lesson Plans', icon: <Library className="w-4 h-4" /> },
-    { id: 'curriculum', label: 'Curriculum', icon: <BookTemplate className="w-4 h-4" /> },
   ];
 
   const handleLogin = async (user: LoginUser, role: UserRole) => {
@@ -8360,14 +8326,8 @@ export default function AISmartCalendar() {
                 generatingLessonPlan={generatingLessonPlan}
               />
             )}
-            {activeTab === 'curriculum' && (
-              <CurriculumBuilderSection teachers={teachers} />
-            )}
             {activeTab === 'analytics' && (
               <WorkloadAnalyticsSection teachers={teachers} schedules={allSchedules} onRefresh={() => { fetchSchedules(selectedDay); fetchAllSchedules(); fetchStats(); }} />
-            )}
-            {activeTab === 'lesson-plans' && (
-              <LessonPlanLibrarySection teachers={teachers} />
             )}
           </>
         )}
