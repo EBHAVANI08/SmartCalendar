@@ -1091,7 +1091,7 @@ function BiometricAgentCards({
                     <Button
                       onClick={() => {
                         setAbsentDetailOpen(false);
-                        onNavigate('lesson-plans');
+                        onNavigate('teachers');
                       }}
                       variant="outline"
                       className="w-full border-amber-300 hover:bg-amber-50 text-amber-700 h-9 gap-2"
@@ -1293,7 +1293,7 @@ function DashboardSection({
       </div>
 
       {/* AI Biometric Substitution Agent + Biometric Attendance */}
-      <BiometricAgentCards teachers={teachers} schedules={schedules} onNavigate={onNavigate} />
+      <BiometricAgentCards teachers={teachers} schedules={schedules} sharedSchedules={allSchedules} onNavigate={onNavigate} />
 
       {/* Behavioral Pattern Awareness + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1922,6 +1922,14 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
     return groups;
   };
 
+  const gradeGroups = getGradeGroups();
+  const classOptions = Object.entries(gradeGroups)
+    .flatMap(([grade, sections]) => sections.map((section) => ({ grade, section })))
+    .sort((a, b) => a.grade.localeCompare(b.grade, undefined, { numeric: true }) || a.section.localeCompare(b.section, undefined, { numeric: true }));
+  const activeClass = selectedGrade && classOptions.some((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section)
+    ? selectedGrade
+    : classOptions[0] || null;
+
   const getSchedulesForGrade = (grade: string, section: string) => {
     return schedules.filter((s) => s.grade === grade && s.section === section).sort((a, b) => a.period - b.period);
   };
@@ -2073,12 +2081,6 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
   if (workspaceTab === 'workload') return <div className="space-y-6">{moduleHeader}<WorkloadAnalyticsSection teachers={teachers} schedules={sharedData} onRefresh={() => { if (onRefreshAll) void onRefreshAll(); }} /></div>;
   if (workspaceTab === 'teachers') return <div className="space-y-6">{moduleHeader}<TeachersSection teachers={teachers} schedules={sharedData} selectedDay={selectedDay} onRefresh={onRefreshTeachers} schoolId={schoolId} /></div>;
   if (workspaceTab === 'classes') {
-    const classOptions = Object.entries(gradeGroups)
-      .flatMap(([grade, sections]) => sections.map((section) => ({ grade, section })))
-      .sort((a, b) => a.grade.localeCompare(b.grade, undefined, { numeric: true }) || a.section.localeCompare(b.section, undefined, { numeric: true }));
-    const activeClass = selectedGrade && classOptions.some((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section)
-      ? selectedGrade
-      : classOptions[0] || null;
     const classSchedule = activeClass ? sharedData.filter((item) => item.grade === activeClass.grade && item.section === activeClass.section) : [];
     const teacherFrequency = classSchedule.reduce<Record<string, number>>((counts, item) => {
       if (item.teacherId) counts[item.teacherId] = (counts[item.teacherId] || 0) + 1;
@@ -2242,8 +2244,8 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
       <div className="flex flex-col gap-4">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
           <div>
-            <h2 className="text-2xl font-bold text-emerald-800">{workspaceTab === 'studio' ? 'Timetable Studio' : workspaceTab === 'classes' ? 'Class View' : 'Weekly / Monthly'}</h2>
-            <p className="text-sm text-muted-foreground">{workspaceTab === 'studio' ? 'Configure, generate and review timetable drafts' : workspaceTab === 'classes' ? 'Inspect subjects and allotted teachers for one grade and section' : 'Review the shared timetable by teaching day and calendar date'}</p>
+            <h2 className="text-2xl font-bold text-emerald-800">Class View</h2>
+            <p className="text-sm text-muted-foreground">Inspect subjects and allotted teachers for one grade and section</p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
             <Button
