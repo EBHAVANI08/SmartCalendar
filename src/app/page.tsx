@@ -1755,12 +1755,12 @@ function AcademicCalendarSection({
     }
   };
 
-  const handleSwapPeriods = async (scheduleId1: string, scheduleId2?: string, targetDay?: string, targetPeriod?: number) => {
+  const handleSwapPeriods = async (fromId: string, toId?: string, targetDay?: string, targetPeriod?: number) => {
     try {
       const res = await fetch('/api/schedules/swap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scheduleId1, scheduleId2, targetDay, targetPeriod }),
+        body: JSON.stringify({ fromId, toId, targetDay, targetPeriod, grade: activeClass?.grade, section: activeClass?.section, schoolId }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -2137,12 +2137,87 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                   const schedule = classSchedule.find((item) => item.day === day && item.period === period);
                   const sports = !!schedule && /sport|physical|games|p\.e\.?/i.test(schedule.subject);
                   const saturdayClosed = day === 'Saturday' && period > saturdayTeachingPeriods;
-                  const cells = [<td key={`${day}-${period}`} className={`h-[92px] border p-2 align-top ${saturdayClosed ? 'bg-slate-100' : sports ? 'bg-blue-50' : ''}`}>
-                    {saturdayClosed ? <div className="flex h-full flex-col items-center justify-center font-semibold text-slate-400"><span>Half day</span><span className="text-[10px] font-normal">School closed</span></div> : schedule ? <button className="h-full w-full rounded-lg p-1 text-left transition hover:bg-emerald-50" onClick={() => { setSelectedPeriod(schedule); setSelectedTeacherId(''); setPeriodDetailOpen(true); }}>
-                      <span className={`block font-bold ${sports ? 'text-blue-700' : 'text-slate-900'}`}>{sports ? '⚽ ' : ''}{schedule.subject}</span>
-                      <span className="mt-1 block text-[11px] font-medium text-emerald-700">{schedule.teacher?.name || 'Teacher not assigned'}</span>
-                      <span className="mt-1 block text-[10px] text-slate-500">{schedule.startTime}–{schedule.endTime}</span>
-                    </button> : <div className="flex h-full items-center justify-center text-[11px] text-slate-400">Free / unassigned</div>}
+                  const isOver = dragOverCell === `${day}-${period}`;
+                  const cells = [<td
+                    key={`${day}-${period}`}
+                    onDragOver={(e) => {
+                      if (saturdayClosed) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                      setDragOverCell(`${day}-${period}`);
+                    }}
+                    onDragLeave={() => setDragOverCell(null)}
+                    onDrop={(e) => {
+                      if (saturdayClosed) return;
+                      e.preventDefault();
+                      setDragOverCell(null);
+                      if (!draggedSchedule) return;
+                      if (schedule && schedule.id !== draggedSchedule.id) {
+                        handleSwapPeriods(draggedSchedule.id, schedule.id);
+                      } else if (!schedule) {
+                        handleSwapPeriods(draggedSchedule.id, undefined, day, period);
+                      }
+                      setDraggedSchedule(null);
+                    }}
+                    className={`h-[92px] border p-1.5 align-top transition-all ${
+                      saturdayClosed
+                        ? 'bg-slate-100'
+                        : isOver
+                        ? 'border-2 border-dashed border-emerald-500 bg-emerald-100/70 scale-[1.02] shadow-inner'
+                        : sports
+                        ? 'bg-blue-50'
+                        : ''
+                    }`}
+                  >
+                    {saturdayClosed ? (
+                      <div className="flex h-full flex-col items-center justify-center font-semibold text-slate-400">
+                        <span>Half day</span>
+                        <span className="text-[10px] font-normal">School closed</span>
+                      </div>
+                    ) : schedule ? (
+                      <div
+                        draggable={true}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData('text/plain', schedule.id);
+                          setDraggedSchedule(schedule);
+                        }}
+                        onDragEnd={() => {
+                          setDraggedSchedule(null);
+                          setDragOverCell(null);
+                        }}
+                        className="h-full w-full cursor-grab active:cursor-grabbing group"
+                      >
+                        <button
+                          className={`h-full w-full rounded-lg p-1.5 text-left transition ${
+                            draggedSchedule?.id === schedule.id
+                              ? 'opacity-40 scale-95 border-2 border-dashed border-emerald-400 bg-emerald-50'
+                              : 'hover:bg-emerald-50 hover:shadow-sm'
+                          }`}
+                          onClick={() => {
+                            setSelectedPeriod(schedule);
+                            setSelectedTeacherId('');
+                            setPeriodDetailOpen(true);
+                          }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className={`block font-bold text-xs ${sports ? 'text-blue-700' : 'text-slate-900'}`}>
+                              {sports ? '⚽ ' : ''}{schedule.subject}
+                            </span>
+                            <span className="opacity-0 group-hover:opacity-100 text-[10px] text-slate-400 transition-opacity">⋮⋮</span>
+                          </div>
+                          <span className="mt-1 block text-[11px] font-medium text-emerald-700 truncate">
+                            {schedule.teacher?.name || 'Teacher not assigned'}
+                          </span>
+                          <span className="mt-1 block text-[10px] text-slate-500">
+                            {schedule.startTime}–{schedule.endTime}
+                          </span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-[11px] text-slate-400 border-2 border-dashed border-transparent hover:border-emerald-300 rounded-lg transition-colors">
+                        Free / drop here
+                      </div>
+                    )}
                   </td>];
                   if (period === 2) cells.push(<td key={`${day}-break`} className="border border-amber-200 bg-amber-50 text-center font-semibold text-amber-700"><span className="[writing-mode:vertical-rl] rotate-180">Short Break</span></td>);
                   if (period === 4) cells.push(day === 'Saturday'
