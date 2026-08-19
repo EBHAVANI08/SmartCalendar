@@ -10,12 +10,16 @@ export async function POST() {
     await db.leaveApplication.deleteMany();
     await db.substitution.deleteMany();
     await db.schedule.deleteMany();
+    await db.timetableSlot.deleteMany();
+    await db.timetableVersion.deleteMany();
+    await db.auditLog.deleteMany();
     await db.student.deleteMany();
     await db.curriculumTopic.deleteMany();
     await db.curriculumDocument.deleteMany();
     await db.curriculum.deleteMany();
-    await db.admin.deleteMany();
     await db.teacher.deleteMany();
+    await db.admin.deleteMany();
+    await db.school.deleteMany();
 
     const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const timeSlots = [
