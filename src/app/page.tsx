@@ -7936,18 +7936,6 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
               <div className="grid grid-cols-1 gap-2">
                 <Button
                   type="button"
-                  onClick={() => { setLoginRole('school'); setEmail('pilot@client.school'); setPassword('ClientPilot2026'); }}
-                  variant="outline"
-                  className="w-full justify-start text-xs border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 h-auto py-2.5"
-                >
-                  <GraduationCap className="w-3.5 h-3.5 mr-2 text-amber-400 shrink-0" />
-                  <span className="text-left">
-                    <span className="block font-semibold">Client Pilot School ★</span>
-                    <span className="block text-[10px] text-amber-200/70 font-normal">Grades 3–8 · 24 teachers · full access trial</span>
-                  </span>
-                </Button>
-                <Button
-                  type="button"
                   onClick={() => handleQuickSchool('admin@demo1.edu')}
                   variant="outline"
                   className="w-full justify-start text-xs border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 h-9"
