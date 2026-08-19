@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, startTransition } from 'react';
 import {
   Calendar, Users, BookOpen, RefreshCw, ChevronRight, Clock, User,
   GraduationCap, AlertCircle, CheckCircle2, Sparkles, Brain,
@@ -9,7 +9,8 @@ import {
   LogOut, FileText, Eye, Target, ListChecks, Lightbulb, BookMarked, CalendarDays,
   Lock, ShieldCheck, Coffee, BarChart3, BookTemplate, Library,
   Download, Copy, Check, Filter, Grid3X3, TrendingUp, TrendingDown,
-  ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle, UserPlus, Upload, FileSpreadsheet
+  ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle, UserPlus, Upload, FileSpreadsheet, Plus,
+  Save, Settings
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -112,7 +113,7 @@ interface LessonPlan {
 }
 
 type TabType = 'dashboard' | 'calendar' | 'bulk-import' | 'substitutions' | 'teachers' | 'teacher-portal' | 'analytics';
-type UserRole = 'admin' | 'teacher' | null;
+type UserRole = 'admin' | 'teacher' | 'superadmin' | null;
 
 interface LoginUser {
   id: string;
@@ -124,6 +125,28 @@ interface LoginUser {
   phone?: string;
   schoolId?: string;
   schoolCode?: string;
+  isSuperAdmin?: boolean;
+}
+
+interface SchoolFeatureFlags {
+  id: string;
+  schoolId: string;
+  aiTimetableEnabled: boolean;
+  manualTimetableEnabled: boolean;
+  bulkImportEnabled: boolean;
+  shortBreakEnabled: boolean;
+  lunchBreakEnabled: boolean;
+  ptPeriodsEnabled: boolean;
+  substitutionEnabled: boolean;
+  autoSubstitutionEnabled: boolean;
+  workloadAnalyticsEnabled: boolean;
+  teacherNotifyEnabled: boolean;
+  maxGrades: number;
+  maxTeachers: number;
+  maxPeriodsPerDay: number;
+  planName: string;
+  customNote?: string | null;
+  trialEndsAt?: string | null;
 }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -1139,6 +1162,8 @@ function DashboardSection({
   schoolName,
   schoolCode,
   isClientPilot,
+  featureFlagNote,
+  planName,
 }: {
   stats: Stats | null;
   onNavigate: (tab: TabType) => void;
@@ -1148,6 +1173,8 @@ function DashboardSection({
   schoolName?: string;
   schoolCode?: string;
   isClientPilot?: boolean;
+  featureFlagNote?: string;
+  planName?: string;
 }) {
   const classCount = new Set(schedules.map((s) => `${s.grade}|${s.section}`)).size;
   const subjectCount = new Set(schedules.map((s) => s.subject)).size;
@@ -1155,6 +1182,13 @@ function DashboardSection({
 
   return (
     <div className="space-y-6">
+      {/* Super-admin custom note banner */}
+      {featureFlagNote && (
+        <div className={`rounded-xl border px-4 py-3 text-sm flex items-start gap-3 ${planName === 'trial' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'}`}>
+          <ShieldCheck className="w-4 h-4 mt-0.5 shrink-0" />
+          <span>{featureFlagNote}</span>
+        </div>
+      )}
       {/* Client Pilot — clear offer summary */}
       {isClientPilot && (
         <Card className="border-emerald-200 bg-gradient-to-br from-emerald-50 via-white to-teal-50 shadow-sm overflow-hidden">
@@ -1222,7 +1256,7 @@ function DashboardSection({
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-2 gap-4 ${isClientPilot ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
         <Card className="cursor-pointer hover:shadow-lg hover:border-emerald-300 transition-all duration-200" onClick={() => onNavigate('teachers')}>
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center justify-between">
@@ -1240,22 +1274,24 @@ function DashboardSection({
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-lg hover:border-amber-300 transition-all duration-200" onClick={() => onNavigate('calendar')}>
-          <CardContent className="p-4 md:p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Total Students</p>
-                <p className="text-2xl md:text-3xl font-bold text-amber-700">{stats?.totalStudents || 0}</p>
+        {!isClientPilot && (
+          <Card className="cursor-pointer hover:shadow-lg hover:border-amber-300 transition-all duration-200" onClick={() => onNavigate('calendar')}>
+            <CardContent className="p-4 md:p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Total Students</p>
+                  <p className="text-2xl md:text-3xl font-bold text-amber-700">{stats?.totalStudents || 0}</p>
+                </div>
+                <div className="bg-amber-100 p-3 rounded-xl">
+                  <GraduationCap className="w-6 h-6 text-amber-600" />
+                </div>
               </div>
-              <div className="bg-amber-100 p-3 rounded-xl">
-                <GraduationCap className="w-6 h-6 text-amber-600" />
+              <div className="flex items-center mt-2 text-xs text-amber-600">
+                <ArrowRight className="w-3 h-3 mr-1" /> View schedules
               </div>
-            </div>
-            <div className="flex items-center mt-2 text-xs text-amber-600">
-              <ArrowRight className="w-3 h-3 mr-1" /> View schedules
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="cursor-pointer hover:shadow-lg hover:border-orange-300 transition-all duration-200" onClick={() => onNavigate('substitutions')}>
           <CardContent className="p-4 md:p-6">
@@ -1295,56 +1331,47 @@ function DashboardSection({
       {/* AI Biometric Substitution Agent + Biometric Attendance */}
       <BiometricAgentCards teachers={teachers} schedules={schedules} onNavigate={onNavigate} />
 
-      {/* Behavioral Pattern Awareness + Quick Actions */}
+      {/* Schedule Insights + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-lg">
               <Activity className="w-5 h-5 text-emerald-600" />
-              Behavioral Pattern Awareness
+              Schedule Insights
             </CardTitle>
-            <CardDescription>AI-detected patterns across the school schedule</CardDescription>
+            <CardDescription>Live analysis based on your current timetable data</CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-48">
-              <div className="space-y-3">
-                <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
-                  <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">High Substitution Rate on Mondays</p>
-                    <p className="text-xs text-muted-foreground">Monday has 40% more teacher absences compared to other days. Consider scheduling lighter workloads.</p>
+            <div className="space-y-2.5">
+              {(() => {
+                const insights: { color: string; icon: React.ReactNode; title: string; desc: string }[] = [];
+                const emptyCount = schedules.filter((s) => !s.teacherId).length;
+                const totalPeriods = schedules.length;
+                const gradeSet = new Set(schedules.map((s) => `${s.grade}|${s.section}`));
+                const subjectSet = new Set(schedules.map((s) => s.subject));
+                const teacherLoad = teachers.map((t) => ({ name: t.name, count: schedules.filter((s) => s.teacherId === t.id).length })).sort((a, b) => b.count - a.count);
+                const maxLoad = teacherLoad[0];
+                const minLoad = teacherLoad.filter((t) => t.count > 0).sort((a, b) => a.count - b.count)[0];
+                const unassignedTeachers = teachers.filter((t) => !schedules.some((s) => s.teacherId === t.id));
+
+                if (totalPeriods === 0) {
+                  insights.push({ color: 'bg-slate-50', icon: <AlertCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />, title: 'No timetable generated yet', desc: 'Go to Timetable Studio → Create Timetable to get started.' });
+                } else {
+                  insights.push({ color: 'bg-emerald-50', icon: <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />, title: `${totalPeriods} periods across ${gradeSet.size} classes`, desc: `${subjectSet.size} subjects mapped. ${teachers.length} teachers in system.` });
+                  if (emptyCount > 0) insights.push({ color: 'bg-red-50', icon: <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />, title: `${emptyCount} periods have no teacher assigned`, desc: 'Open Timetable Studio and click any amber cell to assign a teacher.' });
+                  else insights.push({ color: 'bg-emerald-50', icon: <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />, title: 'All periods are fully allotted', desc: 'Every period has a teacher assigned. No empty slots.' });
+                  if (maxLoad && maxLoad.count > 0) insights.push({ color: 'bg-blue-50', icon: <TrendingUp className="w-4 h-4 text-blue-500 shrink-0 mt-0.5" />, title: `Highest load: ${maxLoad.name} (${maxLoad.count} periods/week)`, desc: minLoad && minLoad.name !== maxLoad.name ? `Lowest: ${minLoad.name} with ${minLoad.count} periods.` : 'Review workload in Analytics tab.' });
+                  if (unassignedTeachers.length > 0) insights.push({ color: 'bg-amber-50', icon: <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />, title: `${unassignedTeachers.length} teacher${unassignedTeachers.length > 1 ? 's' : ''} not yet assigned to any period`, desc: unassignedTeachers.slice(0, 3).map((t) => t.name).join(', ') + (unassignedTeachers.length > 3 ? ` +${unassignedTeachers.length - 3} more` : '') });
+                  if (stats?.todaySubstitutions ?? 0 > 0) insights.push({ color: 'bg-orange-50', icon: <RefreshCw className="w-4 h-4 text-orange-500 shrink-0 mt-0.5" />, title: `${stats?.todaySubstitutions} substitution${(stats?.todaySubstitutions ?? 0) > 1 ? 's' : ''} active today`, desc: 'Open Substitutions to review coverage status.' });
+                }
+                return insights.map((ins, i) => (
+                  <div key={i} className={`flex items-start gap-3 p-3 rounded-xl ${ins.color}`}>
+                    {ins.icon}
+                    <div><p className="text-sm font-semibold text-slate-800">{ins.title}</p><p className="text-xs text-slate-500 mt-0.5">{ins.desc}</p></div>
                   </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">Period 6 Engagement Drop</p>
-                    <p className="text-xs text-muted-foreground">After-lunch periods (12:45-13:30) show 25% lower student engagement. Recommend interactive activities.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-teal-50 rounded-lg">
-                  <CheckCircle2 className="w-5 h-5 text-teal-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">Math Teachers Optimally Distributed</p>
-                    <p className="text-xs text-muted-foreground">Math periods are well-distributed across the week with no conflicts detected.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">Empty Periods in Grade 7-8</p>
-                    <p className="text-xs text-muted-foreground">Several periods in Grades 7 and 8 have no teachers assigned. Use AI auto-assign to fill them.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
-                  <Brain className="w-5 h-5 text-emerald-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">PE Scheduling Conflict Resolved</p>
-                    <p className="text-xs text-muted-foreground">AI detected and resolved 3 double-booking conflicts in PE scheduling for Grades 5-6.</p>
-                  </div>
-                </div>
-              </div>
-            </ScrollArea>
+                ));
+              })()}
+            </div>
           </CardContent>
         </Card>
 
@@ -1652,19 +1679,19 @@ function BulkTeacherImportSection({ schoolId, onCompleted }: { schoolId?: string
 
 function TimetableGovernancePanel({ schoolId, onChanged }: { schoolId?: string; onChanged?: () => Promise<void> }) {
   const { toast } = useToast();
-  const [context, setContext] = useState<any>(null); const [versionId, setVersionId] = useState(''); const [issues, setIssues] = useState<any[]>([]); const [candidates, setCandidates] = useState<any[]>([]); const [busy, setBusy] = useState(false);
+  const [context, setContext] = useState<any>(null); const [versionId, setVersionId] = useState(''); const [issues, setIssues] = useState<any[]>([]); const [candidates, setCandidates] = useState<any[]>([]); const [busy, setBusy] = useState(false); const [generateHint, setGenerateHint] = useState('');
   const [loadError, setLoadError] = useState('');
   const readApiResponse = async (response: Response) => { const text = await response.text(); let data: any = {}; if (text) { try { data = JSON.parse(text); } catch { throw new Error(`The server returned an invalid response (${response.status}).`); } } if (!response.ok) throw new Error(data.error || `Request failed with status ${response.status}.`); return data; };
   const load = useCallback(async () => { if (!schoolId) { setLoadError('School workspace is not available.'); return; } setLoadError(''); try { let response = await fetch(`/api/timetable/context?schoolId=${encodeURIComponent(schoolId)}`); let data = await readApiResponse(response); if (!data.active) { response = await fetch('/api/timetable/bootstrap', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, actorId: schoolId }) }); await readApiResponse(response); response = await fetch(`/api/timetable/context?schoolId=${encodeURIComponent(schoolId)}`); data = await readApiResponse(response); } setContext(data); setVersionId((current) => current || data.active?.id || data.versions?.[0]?.id || ''); } catch (error) { setContext(null); setLoadError(error instanceof Error ? error.message : 'Unable to load timetable governance.'); } }, [schoolId]);
   useEffect(() => { void load(); }, [load]);
   const version = context?.versions?.find((item: any) => item.id === versionId);
   const validate = async () => { setBusy(true); try { const response = await fetch(`/api/timetable/versions/${versionId}/validate`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId }) }); const data = await response.json(); setIssues(data.issues || []); toast({ title: data.blocking ? 'Validation found blocking issues' : 'Validation passed', description: `${data.summary?.errors || 0} errors and ${data.summary?.warnings || 0} warnings.` }); } finally { setBusy(false); } };
-  const generate = async () => { setBusy(true); try { const response = await fetch('/api/timetable/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, timetableVersionId: versionId, createdBy: schoolId, role: 'school', alternatives: 3 }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setCandidates(data.candidates || []); toast({ title: 'Candidates ready', description: `${data.candidates?.length || 0} alternatives generated.` }); } catch (error) { toast({ title: 'Generation failed', description: error instanceof Error ? error.message : 'Unable to generate', variant: 'destructive' }); } finally { setBusy(false); } };
+  const generate = async () => { setBusy(true); setGenerateHint(''); try { const response = await fetch('/api/timetable/generations', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, timetableVersionId: versionId, createdBy: schoolId, role: 'school', alternatives: 3 }) }); const data = await response.json(); if (!response.ok) { if (data.hint) setGenerateHint(data.hint); throw new Error(data.error); } setCandidates(data.candidates || []); toast({ title: 'Candidates ready', description: `${data.candidates?.length || 0} alternatives generated.` }); } catch (error) { const msg = error instanceof Error ? error.message : 'Unable to generate'; const isConfigIssue = /requirements|configured|not configured/i.test(msg); toast({ title: isConfigIssue ? 'Action needed' : 'Generation failed', description: msg, variant: isConfigIssue ? 'default' : 'destructive' }); } finally { setBusy(false); } };
   const choose = async (id: string) => { const response = await fetch(`/api/timetable/candidates/${id}/select`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, actorId: schoolId }) }); if (response.ok) { toast({ title: 'Candidate selected', description: 'Candidate slots are now the working draft.' }); if (onChanged) await onChanged(); } };
   const workflow = async (action: string) => { setBusy(true); try { const response = await fetch(`/api/timetable/versions/${versionId}/workflow`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ schoolId, actorId: schoolId, actorRole: 'school', action }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); await load(); toast({ title: `Timetable ${action} successful` }); } catch (error) { toast({ title: `${action} failed`, description: error instanceof Error ? error.message : 'Request failed', variant: 'destructive' }); } finally { setBusy(false); } };
   if (loadError) return <Card className="border-amber-200 bg-amber-50"><CardContent className="flex flex-col items-start gap-3 p-6"><div className="flex items-center gap-2 font-semibold text-amber-900"><AlertTriangle className="h-5 w-5"/>Timetable governance is temporarily unavailable</div><p className="text-sm text-amber-800">{loadError}</p><Button variant="outline" size="sm" onClick={() => void load()}><RefreshCw className="mr-2 h-4 w-4"/>Retry</Button></CardContent></Card>;
   if (!context) return <Card><CardContent className="p-6"><RefreshCw className="h-5 w-5 animate-spin text-emerald-600"/></CardContent></Card>;
-  return <div className="grid gap-4 xl:grid-cols-[320px_1fr]"><Card><CardHeader><CardTitle className="text-base">Timetable Context</CardTitle></CardHeader><CardContent className="space-y-3"><Label>Version</Label><Select value={versionId} onValueChange={setVersionId}><SelectTrigger className="w-full"><SelectValue placeholder="Select version"/></SelectTrigger><SelectContent>{context.versions?.map((item: any) => <SelectItem key={item.id} value={item.id}>{item.name} v{item.version} · {item.status}</SelectItem>)}</SelectContent></Select><div className="grid grid-cols-2 gap-2 text-xs"><div className="rounded-lg bg-slate-50 p-2"><p className="text-muted-foreground">Campus</p><p className="font-semibold">{context.campuses?.[0]?.name || 'Main Campus'}</p></div><div className="rounded-lg bg-slate-50 p-2"><p className="text-muted-foreground">Academic year</p><p className="font-semibold">{context.academicYears?.[0]?.name || '2026-27'}</p></div></div><Badge className="capitalize">{version?.status || 'draft'}</Badge></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Draft Controls & Governance</CardTitle><CardDescription>Generate candidates, validate independently, then review, approve and publish.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap gap-2"><Button disabled={busy || !versionId || version?.status !== 'draft'} onClick={generate}><Sparkles className="mr-2 h-4 w-4"/>Generate 3 Candidates</Button><Button disabled={busy || !versionId} variant="outline" onClick={validate}><ShieldCheck className="mr-2 h-4 w-4"/>Validate Draft</Button>{version?.status === 'draft' && <Button disabled={busy} variant="outline" onClick={() => workflow('submit')}>Submit Review</Button>}{version?.status === 'review' && <><Button disabled={busy} onClick={() => workflow('approve')}>Approve</Button><Button disabled={busy} variant="destructive" onClick={() => workflow('reject')}>Request Changes</Button></>}{version?.status === 'approved' && <Button disabled={busy} className="bg-blue-700" onClick={() => workflow('publish')}>Publish Atomically</Button>}</div>{issues.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{issues.slice(0, 6).map((issue, index) => <p key={index}>{issue.code}: {issue.message}</p>)}</div>}{candidates.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">Candidate</th><th>Hard conflicts</th><th>Unallocated</th><th>Teacher gaps</th><th>Quality</th><th></th></tr></thead><tbody>{candidates.map((candidate) => <tr key={candidate.id} className="border-b"><td className="p-2 font-semibold">{candidate.name}{candidate.recommended ? ' · Recommended' : ''}</td><td>{candidate.hardConflicts}</td><td>{candidate.unallocatedPeriods}</td><td>{candidate.teacherGaps}</td><td>{Math.round(candidate.preferenceScore)}%</td><td><Button size="sm" variant="outline" onClick={() => choose(candidate.id)}>Use Draft</Button></td></tr>)}</tbody></table></div>}</CardContent></Card></div>;
+  return <div className="grid gap-4 xl:grid-cols-[320px_1fr]"><Card><CardHeader><CardTitle className="text-base">Timetable Context</CardTitle></CardHeader><CardContent className="space-y-3"><Label>Version</Label><Select value={versionId} onValueChange={setVersionId}><SelectTrigger className="w-full"><SelectValue placeholder="Select version"/></SelectTrigger><SelectContent>{context.versions?.map((item: any) => <SelectItem key={item.id} value={item.id}>{item.name} v{item.version} · {item.status}</SelectItem>)}</SelectContent></Select><div className="grid grid-cols-2 gap-2 text-xs"><div className="rounded-lg bg-slate-50 p-2"><p className="text-muted-foreground">Campus</p><p className="font-semibold">{context.campuses?.[0]?.name || 'Main Campus'}</p></div><div className="rounded-lg bg-slate-50 p-2"><p className="text-muted-foreground">Academic year</p><p className="font-semibold">{context.academicYears?.[0]?.name || '2026-27'}</p></div></div><Badge className="capitalize">{version?.status || 'draft'}</Badge></CardContent></Card><Card><CardHeader><CardTitle className="text-base">Draft Controls & Governance</CardTitle><CardDescription>Generate candidates, validate independently, then review, approve and publish.</CardDescription></CardHeader><CardContent className="space-y-4"><div className="flex flex-wrap gap-2"><Button disabled={busy || !versionId || version?.status !== 'draft'} onClick={generate}><Sparkles className="mr-2 h-4 w-4"/>Generate 3 Candidates</Button><Button disabled={busy || !versionId} variant="outline" onClick={validate}><ShieldCheck className="mr-2 h-4 w-4"/>Validate Draft</Button>{version?.status === 'draft' && <Button disabled={busy} variant="outline" onClick={() => workflow('submit')}>Submit Review</Button>}{version?.status === 'review' && <><Button disabled={busy} onClick={() => workflow('approve')}>Approve</Button><Button disabled={busy} variant="destructive" onClick={() => workflow('reject')}>Request Changes</Button></>}{version?.status === 'approved' && <Button disabled={busy} className="bg-blue-700" onClick={() => workflow('publish')}>Publish Atomically</Button>}</div>{generateHint && <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-xs text-blue-800 flex items-start gap-2"><Lightbulb className="w-4 h-4 text-blue-500 shrink-0 mt-0.5"/><span>{generateHint}</span></div>}{issues.length > 0 && <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{issues.slice(0, 6).map((issue, index) => <p key={index}>{issue.code}: {issue.message}</p>)}</div>}{candidates.length > 0 && <div className="overflow-x-auto"><table className="w-full min-w-[650px] text-sm"><thead><tr className="border-b text-left"><th className="p-2">Candidate</th><th>Hard conflicts</th><th>Unallocated</th><th>Teacher gaps</th><th>Quality</th><th></th></tr></thead><tbody>{candidates.map((candidate) => <tr key={candidate.id} className="border-b"><td className="p-2 font-semibold">{candidate.name}{candidate.recommended ? ' · Recommended' : ''}</td><td>{candidate.hardConflicts}</td><td>{candidate.unallocatedPeriods}</td><td>{candidate.teacherGaps}</td><td>{Math.round(candidate.preferenceScore)}%</td><td><Button size="sm" variant="outline" onClick={() => choose(candidate.id)}>Use Draft</Button></td></tr>)}</tbody></table></div>}</CardContent></Card></div>;
 }
 
 function AcademicCalendarSection({
@@ -1713,7 +1740,22 @@ function AcademicCalendarSection({
   const [aiGradeSection, setAiGradeSection] = useState<{grade: string; section: string} | null>(null);
   const [aiGradeSelectOpen, setAiGradeSelectOpen] = useState(false);
   const [timetableSetupAction, setTimetableSetupAction] = useState<'generate' | 'timings'>('generate');
-  const [timetableSetup, setTimetableSetup] = useState({ schoolLevel: 'high', startTime: '09:30', endTime: '17:00', periodsPerDay: 8, workingDays: 6, saturdayPeriods: 4, breakAfter: 2, breakMinutes: 15, lunchAfter: 4, lunchMinutes: 45, sportsPeriods: 2 });
+  const timetableSetupDefaults = { schoolLevel: 'high', startTime: '09:30', endTime: '17:00', periodsPerDay: 8, workingDays: 6, saturdayPeriods: 4, breakAfter: 2, breakMinutes: 15, lunchAfter: 4, lunchMinutes: 45, sportsPeriods: 2, ptEnabled: true, ptPeriodsPerWeek: 2, ptPreferredDay: 'Wednesday', ptPreferredPeriod: 1 };
+  const [timetableSetup, setTimetableSetupRaw] = useState(timetableSetupDefaults);
+  const setTimetableSetup: typeof setTimetableSetupRaw = (val) => {
+    setTimetableSetupRaw((prev) => {
+      const next = typeof val === 'function' ? val(prev) : val;
+      try { localStorage.setItem(`tt_setup_${schoolId || 'default'}`, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(`tt_setup_${schoolId || 'default'}`);
+      if (saved) { const parsed = JSON.parse(saved); setTimetableSetupRaw({ ...timetableSetupDefaults, ...parsed }); }
+    } catch {}
+  }, [schoolId]);
+  const [wizardCreationMode, setWizardCreationMode] = useState<'ai' | 'manual'>('ai');
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
   // Drag & Drop, Deactivate & 5-Step Wizard State
@@ -1855,8 +1897,27 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
     }
   };
 
+  const openEditTimingsDialog = useCallback((targetClass: { grade: string; section: string }) => {
+    const scheduleForClass = (sharedSchedules.length ? sharedSchedules : schedules).filter(
+      (item) => item.grade === targetClass.grade && item.section === targetClass.section,
+    );
+    const first = scheduleForClass.find((item) => item.period === 1);
+    const lastPeriod = scheduleForClass.reduce((max, item) => (item.period > max ? item.period : max), 0);
+    const last = scheduleForClass.find((item) => item.period === lastPeriod);
+    startTransition(() => {
+      setAiGradeSection(targetClass);
+      setTimetableSetupAction('timings');
+      setTimetableSetup((current) => ({
+        ...current,
+        startTime: first?.startTime || current.startTime || '09:30',
+        endTime: last?.endTime || current.endTime || '17:00',
+      }));
+      setAiGradeSelectOpen(true);
+    });
+  }, [sharedSchedules, schedules]);
+
   const handleApplyTimings = async () => {
-    const targetClass = aiGradeSection || activeClass || classOptions[0];
+    const targetClass = aiGradeSection;
     if (!targetClass) {
       toast({ title: 'No Class Selected', description: 'Please select a grade and section first.', variant: 'destructive' });
       return;
@@ -2069,9 +2130,32 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
     <div className="overflow-x-auto rounded-xl border bg-white p-1 shadow-sm"><div className="flex min-w-max gap-1">{timetableTabs.map((tab) => <button key={tab.id} onClick={() => selectWorkspace(tab.id)} className={`flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${workspaceTab === tab.id ? 'bg-emerald-600 text-white shadow-sm' : 'text-slate-600 hover:bg-emerald-50 hover:text-emerald-800'}`}>{tab.icon}{tab.label}</button>)}</div></div>
   </div>;
 
-  if (workspaceTab === 'import') return <div className="space-y-6">{moduleHeader}<BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} /></div>;
-  if (workspaceTab === 'workload') return <div className="space-y-6">{moduleHeader}<WorkloadAnalyticsSection teachers={teachers} schedules={sharedData} onRefresh={() => { if (onRefreshAll) void onRefreshAll(); }} /></div>;
-  if (workspaceTab === 'teachers') return <div className="space-y-6">{moduleHeader}<TeachersSection teachers={teachers} schedules={sharedData} selectedDay={selectedDay} onRefresh={onRefreshTeachers} schoolId={schoolId} /></div>;
+  const timingsSetupDialog = (
+    <Dialog open={aiGradeSelectOpen} onOpenChange={setAiGradeSelectOpen}>
+      <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogHeader><DialogTitle>{timetableSetupAction === 'timings' ? 'Edit existing timetable timings' : 'Set timetable timings'}</DialogTitle><DialogDescription>{timetableSetupAction === 'timings' ? 'Update saved period times without changing subjects or assigned teachers' : 'Confirm or edit these settings before creating the timetable'} for {aiGradeSection ? `${aiGradeSection.grade} Section ${aiGradeSection.section}` : 'the selected class'}.</DialogDescription></DialogHeader>
+        <div className="grid gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="space-y-2"><Label>School level</Label><Select value={timetableSetup.schoolLevel} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, schoolLevel: value, endTime: value === 'primary' ? '15:00' : value === 'middle' ? '16:00' : '17:00' }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="primary">Primary school</SelectItem><SelectItem value="middle">Middle school</SelectItem><SelectItem value="high">High school</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>Class starts</Label><Input type="time" value={timetableSetup.startTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, startTime: e.target.value }))}/></div>
+          <div className="space-y-2"><Label>Class ends</Label><Input type="time" value={timetableSetup.endTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, endTime: e.target.value }))}/></div>
+          <div className="space-y-2"><Label>Periods per full day</Label><Input type="number" min={4} max={10} value={timetableSetup.periodsPerDay} onChange={(e) => setTimetableSetup((current) => ({ ...current, periodsPerDay: Number(e.target.value) }))}/></div>
+          <div className="space-y-2"><Label>Working days</Label><Select value={String(timetableSetup.workingDays)} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, workingDays: Number(value) }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="5">Monday–Friday</SelectItem><SelectItem value="6">Monday–Saturday</SelectItem></SelectContent></Select></div>
+          <div className="space-y-2"><Label>Saturday periods</Label><Input type="number" min={1} max={8} disabled={timetableSetup.workingDays === 5} value={timetableSetup.saturdayPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, saturdayPeriods: Number(e.target.value) }))}/></div>
+          <div className="space-y-2"><Label>Short break after period</Label><Input type="number" min={1} max={7} value={timetableSetup.breakAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakAfter: Number(e.target.value) }))}/></div>
+          <div className="space-y-2"><Label>Short break minutes</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakMinutes: Number(e.target.value) }))}/></div>
+          <div className="space-y-2"><Label>Lunch after period</Label><Input type="number" min={2} max={7} value={timetableSetup.lunchAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchAfter: Number(e.target.value) }))}/></div>
+          <div className="space-y-2"><Label>Lunch minutes</Label><Input type="number" min={15} max={90} value={timetableSetup.lunchMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchMinutes: Number(e.target.value) }))}/></div>
+          <div className="space-y-2"><Label>Sports periods per week</Label><Input type="number" min={1} max={6} value={timetableSetup.sportsPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, sportsPeriods: Number(e.target.value) }))}/></div>
+        </div>
+        <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">Suggested: Primary 9:30 AM–3:00 PM, Middle 9:30 AM–4:00 PM, High school 9:30 AM–5:00 PM. You can edit every value.</div>
+        <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setAiGradeSelectOpen(false)}>Cancel</Button><Button disabled={!aiGradeSection || aiGenerating} className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { if (timetableSetupAction === 'timings') void handleApplyTimings(); else { setAiGradeSelectOpen(false); if (aiGradeSection) void handleAiGenerateTimetable(aiGradeSection.grade, aiGradeSection.section, timetableSetup); } }}><Sparkles className="mr-2 h-4 w-4"/>{timetableSetupAction === 'timings' ? 'Apply New Timings' : 'Create Timetable'}</Button></div>
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (workspaceTab === 'import') return <div className="space-y-6">{moduleHeader}<BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} />{timingsSetupDialog}</div>;
+  if (workspaceTab === 'workload') return <div className="space-y-6">{moduleHeader}<WorkloadAnalyticsSection teachers={teachers} schedules={sharedData} onRefresh={() => { if (onRefreshAll) void onRefreshAll(); }} />{timingsSetupDialog}</div>;
+  if (workspaceTab === 'teachers') return <div className="space-y-6">{moduleHeader}<TeachersSection teachers={teachers} schedules={sharedData} selectedDay={selectedDay} onRefresh={onRefreshTeachers} schoolId={schoolId} timetableSetup={timetableSetup} />{timingsSetupDialog}</div>;
   if (workspaceTab === 'classes') {
     const classOptions = Object.entries(gradeGroups)
       .flatMap(([grade, sections]) => sections.map((section) => ({ grade, section })))
@@ -2102,16 +2186,30 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
     };
     const saturdayTeachingPeriods = Math.max(4, ...classSchedule.filter((item) => item.day === 'Saturday').map((item) => item.period));
 
+    const hasShortBreak = timetableSetup.breakMinutes > 0;
+    const hasLunchBreak = timetableSetup.lunchMinutes > 0;
+    const shortBreakAfter = timetableSetup.breakAfter;
+    const lunchBreakAfter = timetableSetup.lunchAfter;
+    const totalPeriods = timetableSetup.periodsPerDay;
+    const satPeriods = timetableSetup.workingDays === 6 ? timetableSetup.saturdayPeriods : 0;
+    const workDays = timetableSetup.workingDays;
+    const descParts: string[] = [];
+    descParts.push(`${workDays} working days`);
+    descParts.push(`${totalPeriods} periods${workDays === 6 ? ' Mon–Fri' : ' per day'}`);
+    if (satPeriods > 0) descParts.push(`${satPeriods} periods Saturday`);
+    if (hasShortBreak) descParts.push(`Short break after P${shortBreakAfter}`);
+    if (hasLunchBreak) descParts.push(`Lunch after P${lunchBreakAfter}`);
+
     return <div className="space-y-6">
       {moduleHeader}
       <div className="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div><h2 className="text-xl font-bold text-slate-900">Class Timetable</h2><p className="text-sm text-muted-foreground">Six working days: eight periods Monday–Friday and four periods on Saturday.</p></div>
+        <div><h2 className="text-xl font-bold text-slate-900">Class Timetable</h2><p className="text-sm text-muted-foreground">{descParts.join(' · ')}</p></div>
         <div className="flex flex-col gap-2 sm:flex-row">
           <Select value={activeClass ? `${activeClass.grade}|${activeClass.section}` : undefined} onValueChange={(value) => { const [grade, section] = value.split('|'); setSelectedGrade({ grade, section }); }}>
             <SelectTrigger className="h-11 min-w-[230px] rounded-xl"><SelectValue placeholder="Choose grade and section"/></SelectTrigger>
             <SelectContent>{classOptions.map((item) => <SelectItem key={`${item.grade}|${item.section}`} value={`${item.grade}|${item.section}`}>{item.grade} · Section {item.section}</SelectItem>)}</SelectContent>
           </Select>
-          <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { const targetClass = activeClass || classOptions[0]; if (!targetClass) { toast({ title: 'No Class Selected', description: 'Please import or select a grade and section first.', variant: 'destructive' }); return; } setAiGradeSection(targetClass); setTimetableSetupAction('timings'); const first = classSchedule.find((item) => item.period === 1); const last = [...classSchedule].sort((a, b) => b.period - a.period)[0]; setTimetableSetup((current) => ({ ...current, startTime: first?.startTime || current.startTime || '09:30', endTime: last?.endTime || current.endTime || '17:00' })); setAiGradeSelectOpen(true); }}><Clock className="mr-2 h-4 w-4"/>Edit Timings</Button>
+          <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { const targetClass = activeClass || classOptions[0]; if (!targetClass) { toast({ title: 'No Class Selected', description: 'Please import or select a grade and section first.', variant: 'destructive' }); return; } openEditTimingsDialog(targetClass); }}><Clock className="mr-2 h-4 w-4"/>Edit Timings</Button>
         </div>
       </div>
       {!activeClass ? <Card><CardContent className="p-10 text-center text-muted-foreground">Import or generate timetable data to create a class timetable.</CardContent></Card> :
@@ -2121,41 +2219,55 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
         </div>
         <CardContent className="p-0">
           <div className="max-h-[70vh] overflow-auto overscroll-contain">
-            <table className="w-full min-w-[1540px] border-collapse text-xs">
+            <table className="w-full min-w-[1200px] border-collapse text-xs">
               <thead className="sticky top-0 z-20 bg-slate-950 text-white"><tr>
                 <th className="sticky left-0 z-30 min-w-[110px] border border-slate-700 bg-slate-950 p-3 text-left">Day</th>
-                {Array.from({ length: 8 }, (_, index) => index + 1).flatMap((period) => {
+                {Array.from({ length: totalPeriods }, (_, index) => index + 1).flatMap((period) => {
                   const cells = [<th key={`p-${period}`} className="min-w-[155px] border border-slate-700 p-2"><span className="block text-sm font-bold">Period {period}</span><span className="font-normal text-slate-300">{periodTime(period)}</span></th>];
-                  if (period === 2) cells.push(<th key="break-head" className="min-w-[82px] border border-amber-300 bg-amber-500 p-2 text-amber-950"><span className="font-bold">BREAK</span><span className="block text-[10px]">{gapTime(2, 'Short break')}</span></th>);
-                  if (period === 4) cells.push(<th key="lunch-head" className="min-w-[90px] border border-orange-300 bg-orange-500 p-2 text-orange-950"><span className="font-bold">LUNCH</span><span className="block text-[10px]">{gapTime(4, 'Lunch break')}</span></th>);
+                  if (hasShortBreak && period === shortBreakAfter) cells.push(<th key="break-head" className="min-w-[82px] border border-amber-300 bg-amber-500 p-2 text-amber-950"><span className="font-bold">BREAK</span><span className="block text-[10px]">{gapTime(shortBreakAfter, `${timetableSetup.breakMinutes} min`)}</span></th>);
+                  if (hasLunchBreak && period === lunchBreakAfter) cells.push(<th key="lunch-head" className="min-w-[90px] border border-orange-300 bg-orange-500 p-2 text-orange-950"><span className="font-bold">LUNCH</span><span className="block text-[10px]">{gapTime(lunchBreakAfter, `${timetableSetup.lunchMinutes} min`)}</span></th>);
                   return cells;
                 })}
               </tr></thead>
-              <tbody>{timetableDays.map((day) => <tr key={day} className="odd:bg-white even:bg-slate-50/70">
+              <tbody>{timetableDays.slice(0, workDays).map((day) => <tr key={day} className="odd:bg-white even:bg-slate-50/70">
                 <th className="sticky left-0 z-10 border bg-emerald-50 p-3 text-left text-sm font-bold text-emerald-900">{day}</th>
-                {Array.from({ length: 8 }, (_, index) => index + 1).flatMap((period) => {
+                {Array.from({ length: day === 'Saturday' && satPeriods > 0 ? satPeriods : totalPeriods }, (_, index) => index + 1).flatMap((period) => {
                   const schedule = classSchedule.find((item) => item.day === day && item.period === period);
                   const sports = !!schedule && /sport|physical|games|p\.e\.?/i.test(schedule.subject);
-                  const saturdayClosed = day === 'Saturday' && period > saturdayTeachingPeriods;
-                  const cells = [<td key={`${day}-${period}`} className={`h-[92px] border p-2 align-top ${saturdayClosed ? 'bg-slate-100' : sports ? 'bg-blue-50' : ''}`}>
-                    {saturdayClosed ? <div className="flex h-full flex-col items-center justify-center font-semibold text-slate-400"><span>Half day</span><span className="text-[10px] font-normal">School closed</span></div> : schedule ? <button className="h-full w-full rounded-lg p-1 text-left transition hover:bg-emerald-50" onClick={() => { setSelectedPeriod(schedule); setSelectedTeacherId(''); setPeriodDetailOpen(true); }}>
+                  const cells = [<td key={`${day}-${period}`} className={`h-[92px] border p-2 align-top ${sports ? 'bg-blue-50' : ''}`}>
+                    {schedule ? <button className="h-full w-full rounded-lg p-1 text-left transition hover:bg-emerald-50" onClick={() => { setSelectedPeriod(schedule); setSelectedTeacherId(''); setPeriodDetailOpen(true); }}>
                       <span className={`block font-bold ${sports ? 'text-blue-700' : 'text-slate-900'}`}>{sports ? '⚽ ' : ''}{schedule.subject}</span>
                       <span className="mt-1 block text-[11px] font-medium text-emerald-700">{schedule.teacher?.name || 'Teacher not assigned'}</span>
                       <span className="mt-1 block text-[10px] text-slate-500">{schedule.startTime}–{schedule.endTime}</span>
                     </button> : <div className="flex h-full items-center justify-center text-[11px] text-slate-400">Free / unassigned</div>}
                   </td>];
-                  if (period === 2) cells.push(<td key={`${day}-break`} className="border border-amber-200 bg-amber-50 text-center font-semibold text-amber-700"><span className="[writing-mode:vertical-rl] rotate-180">Short Break</span></td>);
-                  if (period === 4) cells.push(day === 'Saturday'
-                    ? <td key={`${day}-lunch`} className="border border-slate-300 bg-slate-200 text-center font-semibold text-slate-600"><span className="[writing-mode:vertical-rl] rotate-180">Half Day Ends</span></td>
-                    : <td key={`${day}-lunch`} className="border border-orange-200 bg-orange-50 text-center font-semibold text-orange-700"><span className="[writing-mode:vertical-rl] rotate-180">Lunch Break</span></td>);
+                  if (hasShortBreak && period === shortBreakAfter) cells.push(<td key={`${day}-break`} className="border border-amber-200 bg-amber-50 text-center font-semibold text-amber-700"><span className="[writing-mode:vertical-rl] rotate-180">Short Break</span></td>);
+                  if (hasLunchBreak && period === lunchBreakAfter) {
+                    if (day === 'Saturday' && satPeriods > 0 && period === satPeriods) {
+                      cells.push(<td key={`${day}-lunch`} className="border border-slate-300 bg-slate-200 text-center font-semibold text-slate-600"><span className="[writing-mode:vertical-rl] rotate-180">Half Day Ends</span></td>);
+                    } else {
+                      cells.push(<td key={`${day}-lunch`} className="border border-orange-200 bg-orange-50 text-center font-semibold text-orange-700"><span className="[writing-mode:vertical-rl] rotate-180">Lunch Break</span></td>);
+                    }
+                  }
                   return cells;
                 })}
+                {day === 'Saturday' && satPeriods > 0 && satPeriods < totalPeriods && (
+                  <td colSpan={totalPeriods - satPeriods + (hasShortBreak && shortBreakAfter > satPeriods ? 1 : 0) + (hasLunchBreak && lunchBreakAfter > satPeriods ? 1 : 0)} className="border bg-slate-100 text-center font-semibold text-slate-400"><div className="flex h-full flex-col items-center justify-center py-4"><span>Half day</span><span className="text-[10px] font-normal">School closed</span></div></td>
+                )}
               </tr>)}</tbody>
             </table>
           </div>
-          <div className="flex flex-wrap gap-4 border-t bg-slate-50 px-4 py-3 text-[11px] text-slate-600"><span><b>6</b> working days</span><span><b>8</b> periods Monday–Friday</span><span><b>4</b> periods Saturday</span><span className="text-amber-700">■ Short break</span><span className="text-orange-700">■ Lunch break</span><span className="text-blue-700">■ Sports / Physical Education</span></div>
+          <div className="flex flex-wrap gap-4 border-t bg-slate-50 px-4 py-3 text-[11px] text-slate-600">
+            <span><b>{workDays}</b> working days</span>
+            <span><b>{totalPeriods}</b> periods{workDays === 6 ? ' Mon–Fri' : ''}</span>
+            {satPeriods > 0 && <span><b>{satPeriods}</b> periods Saturday</span>}
+            {hasShortBreak && <span className="text-amber-700">■ Short break</span>}
+            {hasLunchBreak && <span className="text-orange-700">■ Lunch break</span>}
+            <span className="text-blue-700">■ Sports / Physical Education</span>
+          </div>
         </CardContent>
       </Card>}
+      {timingsSetupDialog}
     </div>;
   }
 
@@ -2208,26 +2320,7 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="mx-auto w-full max-w-[1600px] p-3 sm:p-5 md:p-8"><BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} /></div></div>
       </div>}
 
-      <Dialog open={aiGradeSelectOpen} onOpenChange={setAiGradeSelectOpen}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
-          <DialogHeader><DialogTitle>{timetableSetupAction === 'timings' ? 'Edit existing timetable timings' : 'Set timetable timings'}</DialogTitle><DialogDescription>{timetableSetupAction === 'timings' ? 'Update saved period times without changing subjects or assigned teachers' : 'Confirm or edit these settings before creating the timetable'} for {aiGradeSection ? `${aiGradeSection.grade} Section ${aiGradeSection.section}` : 'the selected class'}.</DialogDescription></DialogHeader>
-          <div className="grid gap-4 py-2 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="space-y-2"><Label>School level</Label><Select value={timetableSetup.schoolLevel} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, schoolLevel: value, endTime: value === 'primary' ? '15:00' : value === 'middle' ? '16:00' : '17:00' }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="primary">Primary school</SelectItem><SelectItem value="middle">Middle school</SelectItem><SelectItem value="high">High school</SelectItem></SelectContent></Select></div>
-            <div className="space-y-2"><Label>Class starts</Label><Input type="time" value={timetableSetup.startTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, startTime: e.target.value }))}/></div>
-            <div className="space-y-2"><Label>Class ends</Label><Input type="time" value={timetableSetup.endTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, endTime: e.target.value }))}/></div>
-            <div className="space-y-2"><Label>Periods per full day</Label><Input type="number" min={4} max={10} value={timetableSetup.periodsPerDay} onChange={(e) => setTimetableSetup((current) => ({ ...current, periodsPerDay: Number(e.target.value) }))}/></div>
-            <div className="space-y-2"><Label>Working days</Label><Select value={String(timetableSetup.workingDays)} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, workingDays: Number(value) }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="5">Monday–Friday</SelectItem><SelectItem value="6">Monday–Saturday</SelectItem></SelectContent></Select></div>
-            <div className="space-y-2"><Label>Saturday periods</Label><Input type="number" min={1} max={8} disabled={timetableSetup.workingDays === 5} value={timetableSetup.saturdayPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, saturdayPeriods: Number(e.target.value) }))}/></div>
-            <div className="space-y-2"><Label>Short break after period</Label><Input type="number" min={1} max={7} value={timetableSetup.breakAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakAfter: Number(e.target.value) }))}/></div>
-            <div className="space-y-2"><Label>Short break minutes</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakMinutes: Number(e.target.value) }))}/></div>
-            <div className="space-y-2"><Label>Lunch after period</Label><Input type="number" min={2} max={7} value={timetableSetup.lunchAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchAfter: Number(e.target.value) }))}/></div>
-            <div className="space-y-2"><Label>Lunch minutes</Label><Input type="number" min={15} max={90} value={timetableSetup.lunchMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchMinutes: Number(e.target.value) }))}/></div>
-            <div className="space-y-2"><Label>Sports periods per week</Label><Input type="number" min={1} max={6} value={timetableSetup.sportsPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, sportsPeriods: Number(e.target.value) }))}/></div>
-          </div>
-          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">Suggested: Primary 9:30 AM–3:00 PM, Middle 9:30 AM–4:00 PM, High school 9:30 AM–5:00 PM. You can edit every value.</div>
-          <div className="flex justify-end gap-2"><Button variant="outline" onClick={() => setAiGradeSelectOpen(false)}>Cancel</Button><Button disabled={!aiGradeSection || aiGenerating} className="bg-emerald-600 hover:bg-emerald-700" onClick={() => { if (timetableSetupAction === 'timings') void handleApplyTimings(); else { setAiGradeSelectOpen(false); if (aiGradeSection) void handleAiGenerateTimetable(aiGradeSection.grade, aiGradeSection.section, timetableSetup); } }}><Sparkles className="mr-2 h-4 w-4"/>{timetableSetupAction === 'timings' ? 'Apply New Timings' : 'Create Timetable'}</Button></div>
-        </DialogContent>
-      </Dialog>
+      {timingsSetupDialog}
 
       {/* AI Timetable Generator Progress */}
       {aiGenerating && (
@@ -2538,15 +2631,23 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
               <GraduationCap className="w-5 h-5" />
               {selectedGrade ? `${selectedGrade.grade} · Section ${selectedGrade.section} — Weekly Timetable` : ''}
             </DialogTitle>
-            <DialogDescription>Monday–Friday: 8 periods · Saturday: 4 periods. Click any populated cell to edit it.</DialogDescription>
+            <DialogDescription>{timetableSetup.workingDays === 6 ? `Mon–Fri: ${timetableSetup.periodsPerDay} periods · Saturday: ${timetableSetup.saturdayPeriods} periods` : `Mon–Fri: ${timetableSetup.periodsPerDay} periods`}. Click any populated cell to edit it.</DialogDescription>
           </DialogHeader>
           <div className="max-h-[72vh] overflow-auto overscroll-contain p-4">
-            {selectedGrade && <table className="w-full min-w-[1180px] border-separate border-spacing-0 overflow-hidden rounded-xl border text-xs">
-              <thead className="sticky top-0 z-20"><tr className="bg-slate-900 text-white"><th className="sticky left-0 z-30 min-w-[105px] border-b border-r border-slate-700 bg-slate-900 p-3 text-left">Day</th>{Array.from({ length: 8 }, (_, index) => index + 1).map((period) => { const sample = sharedData.find((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section && item.period === period); return <th key={period} className="min-w-[132px] border-b border-r border-slate-700 p-2"><span className="block font-bold">P{period}</span><span className="block text-[9px] font-normal text-slate-300">{sample ? `${sample.startTime}–${sample.endTime}` : 'Time not set'}</span>{period === 2 && <span className="mt-1 block rounded bg-amber-400 px-1 text-[8px] text-amber-950">Break after P2</span>}{period === 4 && <span className="mt-1 block rounded bg-orange-400 px-1 text-[8px] text-orange-950">Lunch after P4</span>}</th>; })}</tr></thead>
-              <tbody>{DAYS.map((day) => <tr key={day}><th className="sticky left-0 z-10 border-b border-r bg-emerald-50 p-3 text-left font-bold text-emerald-900">{day}{day === 'Saturday' && <span className="mt-1 block text-[9px] font-normal text-emerald-600">Half day</span>}</th>{Array.from({ length: 8 }, (_, index) => index + 1).map((period) => { const schedule = sharedData.find((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section && item.day === day && item.period === period); const closed = day === 'Saturday' && period > 4; return <td key={`${day}-${period}`} className={`h-[106px] border-b border-r p-1.5 align-top ${closed ? 'bg-slate-100' : 'bg-white'}`}>{closed ? <div className="flex h-full items-center justify-center text-[10px] font-medium text-slate-400">Half-day closed</div> : schedule ? <button className={`flex h-full w-full flex-col rounded-lg border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md ${schedule.teacherId ? 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100' : 'border-amber-200 bg-amber-50 hover:bg-amber-100'}`} onClick={() => { setSelectedPeriod(schedule); setSelectedTeacherId(''); setPeriodDetailOpen(true); }}><span className="font-bold text-slate-900">{schedule.subject}</span><span className={`mt-1 text-[10px] font-medium ${schedule.teacherId ? 'text-emerald-700' : 'text-amber-700'}`}>{schedule.teacher?.name || 'Assign teacher'}</span><span className="mt-auto truncate text-[9px] text-slate-500">{schedule.topic || schedule.roomId || 'Click to edit'}</span></button> : <div className="flex h-full items-center justify-center rounded-lg border border-dashed text-[10px] text-slate-400">No period</div>}</td>; })}</tr>)}</tbody>
-            </table>}
+            {selectedGrade && (() => {
+              const _hasShort = timetableSetup.breakMinutes > 0;
+              const _hasLunch = timetableSetup.lunchMinutes > 0;
+              const _shortAfter = timetableSetup.breakAfter;
+              const _lunchAfter = timetableSetup.lunchAfter;
+              const _total = timetableSetup.periodsPerDay;
+              const _satP = timetableSetup.workingDays === 6 ? timetableSetup.saturdayPeriods : 0;
+              const _days = DAYS.slice(0, timetableSetup.workingDays);
+              return <table className="w-full min-w-[1180px] border-separate border-spacing-0 overflow-hidden rounded-xl border text-xs">
+              <thead className="sticky top-0 z-20"><tr className="bg-slate-900 text-white"><th className="sticky left-0 z-30 min-w-[105px] border-b border-r border-slate-700 bg-slate-900 p-3 text-left">Day</th>{Array.from({ length: _total }, (_, index) => index + 1).flatMap((period) => { const sample = sharedData.find((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section && item.period === period); const cells = [<th key={period} className="min-w-[132px] border-b border-r border-slate-700 p-2"><span className="block font-bold">P{period}</span><span className="block text-[9px] font-normal text-slate-300">{sample ? `${sample.startTime}–${sample.endTime}` : 'Time not set'}</span></th>]; if (_hasShort && period === _shortAfter) cells.push(<th key="sb" className="min-w-[50px] border-b border-r border-amber-400 bg-amber-500 p-1 text-amber-950 text-[9px] font-bold">BREAK</th>); if (_hasLunch && period === _lunchAfter) cells.push(<th key="lb" className="min-w-[50px] border-b border-r border-orange-400 bg-orange-500 p-1 text-orange-950 text-[9px] font-bold">LUNCH</th>); return cells; })}</tr></thead>
+              <tbody>{_days.map((day) => { const isSat = day === 'Saturday'; const dayPeriods = isSat && _satP > 0 ? _satP : _total; return <tr key={day}><th className="sticky left-0 z-10 border-b border-r bg-emerald-50 p-3 text-left font-bold text-emerald-900">{day}{isSat && _satP > 0 && <span className="mt-1 block text-[9px] font-normal text-emerald-600">Half day</span>}</th>{Array.from({ length: dayPeriods }, (_, index) => index + 1).flatMap((period) => { const schedule = sharedData.find((item) => item.grade === selectedGrade.grade && item.section === selectedGrade.section && item.day === day && item.period === period); const cells = [<td key={`${day}-${period}`} className={`h-[106px] border-b border-r p-1.5 align-top bg-white`}>{schedule ? <button className={`flex h-full w-full flex-col rounded-lg border p-2 text-left transition hover:-translate-y-0.5 hover:shadow-md ${schedule.teacherId ? 'border-emerald-200 bg-emerald-50 hover:bg-emerald-100' : 'border-amber-200 bg-amber-50 hover:bg-amber-100'}`} onClick={() => { setSelectedPeriod(schedule); setSelectedTeacherId(''); setPeriodDetailOpen(true); }}><span className="font-bold text-slate-900">{schedule.subject}</span><span className={`mt-1 text-[10px] font-medium ${schedule.teacherId ? 'text-emerald-700' : 'text-amber-700'}`}>{schedule.teacher?.name || 'Assign teacher'}</span><span className="mt-auto truncate text-[9px] text-slate-500">{schedule.topic || schedule.roomId || 'Click to edit'}</span></button> : <div className="flex h-full items-center justify-center rounded-lg border border-dashed text-[10px] text-slate-400">No period</div>}</td>]; if (_hasShort && period === _shortAfter) cells.push(<td key={`${day}-sb`} className="border-b border-r border-amber-200 bg-amber-50 text-center text-[9px] font-semibold text-amber-700"><span className="[writing-mode:vertical-rl] rotate-180">Break</span></td>); if (_hasLunch && period === _lunchAfter) cells.push(<td key={`${day}-lb`} className="border-b border-r border-orange-200 bg-orange-50 text-center text-[9px] font-semibold text-orange-700"><span className="[writing-mode:vertical-rl] rotate-180">Lunch</span></td>); return cells; })}{isSat && _satP > 0 && _satP < _total && <td colSpan={_total - _satP} className="border-b border-r bg-slate-100 text-center text-[10px] font-medium text-slate-400">Half-day closed</td>}</tr>; })}</tbody>
+            </table>; })()}
           </div>
-          <div className="flex flex-wrap gap-4 border-t bg-slate-50 px-5 py-3 text-[10px] text-slate-600"><span className="font-semibold text-emerald-700">■ Assigned</span><span className="font-semibold text-amber-700">■ Teacher required</span><span>Click a timetable cell to edit subject, teacher, room, topic or timing.</span></div>
+          <div className="flex flex-wrap gap-4 border-t bg-slate-50 px-5 py-3 text-[10px] text-slate-600"><span className="font-semibold text-emerald-700">■ Assigned</span><span className="font-semibold text-amber-700">■ Teacher required</span>{timetableSetup.breakMinutes > 0 && <span className="font-semibold text-amber-600">■ Short break</span>}{timetableSetup.lunchMinutes > 0 && <span className="font-semibold text-orange-600">■ Lunch break</span>}<span>Click a timetable cell to edit subject, teacher, room, topic or timing.</span></div>
         </DialogContent>
       </Dialog>
 
@@ -2753,154 +2854,335 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
 
       {/* 5-Step Timetable Creation Wizard Dialog */}
       <Dialog open={creationWizardOpen} onOpenChange={setCreationWizardOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-[700px] sm:w-[calc(100vw-2rem)] sm:max-w-2xl lg:max-w-3xl max-h-[92dvh] overflow-y-auto rounded-2xl p-4 sm:p-6">
           <DialogHeader>
-            <div className="flex items-center justify-between border-b pb-3">
-              <div>
-                <DialogTitle className="text-xl font-bold text-emerald-950 flex items-center gap-2">
-                  <Sparkles className="w-5 h-5 text-emerald-600" />
-                  5-Step AI Timetable Creation Wizard
+            <div className="flex items-start justify-between gap-2 border-b pb-3">
+              <div className="min-w-0">
+                <DialogTitle className="text-base sm:text-xl font-bold text-emerald-950 flex items-center gap-2 flex-wrap">
+                  <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-emerald-600 shrink-0" />
+                  <span>5-Step AI Timetable Wizard</span>
                 </DialogTitle>
-                <DialogDescription>
-                  Configure school parameters, upload or paste data, run AI timetable engine, preview & finalize.
+                <DialogDescription className="text-[11px] sm:text-xs mt-0.5 line-clamp-2">
+                  Configure school parameters, upload or paste data, run AI engine, preview & finalize.
                 </DialogDescription>
               </div>
-              <Badge className="bg-emerald-100 text-emerald-800 text-xs px-3 py-1 font-semibold">
-                Step {wizardStep} of 5
+              <Badge className="bg-emerald-100 text-emerald-800 text-[10px] sm:text-xs px-2 py-0.5 font-semibold shrink-0 whitespace-nowrap">
+                Step {wizardStep}/5
               </Badge>
             </div>
           </DialogHeader>
 
           {/* Stepper Progress Indicator */}
-          <div className="grid grid-cols-5 gap-2 my-2">
+          <div className="flex gap-1 my-2 flex-wrap sm:flex-nowrap">
             {[
-              { step: 1, title: '1. Timings & Periods' },
-              { step: 2, title: '2. Upload / Paste Data' },
-              { step: 3, title: '3. AI Engine Run' },
-              { step: 4, title: '4. Preview Grid' },
-              { step: 5, title: '5. Finalize & Log' },
+              { step: 1, title: 'Setup' },
+              { step: 2, title: 'Data' },
+              { step: 3, title: 'AI Run' },
+              { step: 4, title: 'Preview' },
+              { step: 5, title: 'Finalize' },
             ].map((s) => (
               <button
                 key={s.step}
                 onClick={() => setWizardStep(s.step as any)}
-                className={`py-2 px-1 text-center text-xs font-semibold rounded-lg border transition-all ${
+                className={`flex-1 min-w-[56px] py-1.5 px-1 text-center text-[11px] font-semibold rounded-lg border transition-all ${
                   wizardStep === s.step
                     ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                     : wizardStep > s.step
-                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                     : 'bg-gray-50 text-gray-400 border-gray-200'
                 }`}
               >
-                {s.title}
+                <span className="hidden sm:inline">{s.step}. </span>{s.title}
               </button>
             ))}
           </div>
 
-          {/* STEP 1: Timings & Periods */}
+          {/* STEP 1: School Setup — redesigned */}
           {wizardStep === 1 && (
             <div className="space-y-4 py-2">
-              <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
-                <Clock className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>Configure bell timings, period duration, working days, and break intervals for your school.</span>
+
+              {/* ── Row 1: School Info + Class Timings side-by-side ── */}
+              <div className="grid gap-4 md:grid-cols-2">
+                {/* School Info card */}
+                <div className="rounded-2xl border border-emerald-200 bg-gradient-to-br from-emerald-50 to-teal-50 p-5 space-y-3">
+                  <p className="text-[11px] font-bold text-emerald-800 uppercase tracking-widest flex items-center gap-1.5">
+                    <GraduationCap className="w-4 h-4" /> School
+                  </p>
+                  <Input
+                    placeholder="e.g. Delhi Public School"
+                    value={schoolName || ''}
+                    readOnly
+                    className="bg-white/80 text-slate-900 font-semibold text-base h-11 rounded-xl border-emerald-200 shadow-sm"
+                  />
+                  <p className="text-[10px] text-emerald-700/70">Registered school name from your account.</p>
+                </div>
+
+                {/* Class Timings card */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
+                  <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                    <Clock className="w-4 h-4 text-emerald-600" /> Class Timings
+                  </p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold text-slate-600">Start Time <span className="text-red-400">*</span></Label>
+                      <Input type="time" value={timetableSetup.startTime} onChange={(e) => setTimetableSetup((c) => ({ ...c, startTime: e.target.value }))} className="h-10 rounded-xl bg-slate-50 font-semibold" />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold text-slate-600">End Time <span className="text-red-400">*</span></Label>
+                      <Input type="time" value={timetableSetup.endTime} onChange={(e) => setTimetableSetup((c) => ({ ...c, endTime: e.target.value }))} className="h-10 rounded-xl bg-slate-50 font-semibold" />
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">School Level</Label><Select value={timetableSetup.schoolLevel} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, schoolLevel: value, endTime: value === 'primary' ? '15:00' : value === 'middle' ? '16:00' : '17:00' }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="primary">Primary School (9:30–15:00)</SelectItem><SelectItem value="middle">Middle School (9:30–16:00)</SelectItem><SelectItem value="high">High School (9:30–17:00)</SelectItem></SelectContent></Select></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Class Starts</Label><Input type="time" value={timetableSetup.startTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, startTime: e.target.value }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Class Ends</Label><Input type="time" value={timetableSetup.endTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, endTime: e.target.value }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Periods per Day</Label><Input type="number" min={4} max={10} value={timetableSetup.periodsPerDay} onChange={(e) => setTimetableSetup((current) => ({ ...current, periodsPerDay: Number(e.target.value) }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Working Days</Label><Select value={String(timetableSetup.workingDays)} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, workingDays: Number(value) }))}><SelectTrigger><SelectValue/></SelectTrigger><SelectContent><SelectItem value="5">5 Days (Mon–Fri)</SelectItem><SelectItem value="6">6 Days (Mon–Sat)</SelectItem></SelectContent></Select></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Saturday Periods</Label><Input type="number" min={1} max={8} disabled={timetableSetup.workingDays === 5} value={timetableSetup.saturdayPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, saturdayPeriods: Number(e.target.value) }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Short Break After Period</Label><Input type="number" min={1} max={7} value={timetableSetup.breakAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakAfter: Number(e.target.value) }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Short Break Minutes</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakMinutes: Number(e.target.value) }))}/></div>
-                <div className="space-y-1.5"><Label className="text-xs font-semibold">Lunch After Period</Label><Input type="number" min={2} max={7} value={timetableSetup.lunchAfter} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchAfter: Number(e.target.value) }))}/></div>
+
+              {/* ── Row 2: Periods & Days — compact horizontal strip ── */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-3">
+                <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                  <LayoutDashboard className="w-4 h-4 text-emerald-600" /> Periods & Working Days
+                </p>
+                <div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-slate-600">Periods / Day <span className="text-red-400">*</span></Label>
+                    <Input type="number" min={4} max={10} value={timetableSetup.periodsPerDay} onChange={(e) => setTimetableSetup((c) => ({ ...c, periodsPerDay: Number(e.target.value) }))} className="h-10 rounded-xl bg-slate-50 font-semibold text-center text-lg" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-slate-600">Working Days <span className="text-red-400">*</span></Label>
+                    <div className="flex gap-1.5 h-10">
+                      {[{ v: 5, l: 'Mon–Fri' }, { v: 6, l: 'Mon–Sat' }].map((o) => (
+                        <button key={o.v} type="button" onClick={() => setTimetableSetup((c) => ({ ...c, workingDays: o.v }))}
+                          className={`flex-1 rounded-xl text-xs font-bold transition-all ${timetableSetup.workingDays === o.v ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-emerald-50'}`}>
+                          {o.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Label className={`text-xs font-semibold ${timetableSetup.workingDays === 5 ? 'text-slate-300' : 'text-slate-600'}`}>Sat Periods</Label>
+                    <Input type="number" min={1} max={8} value={timetableSetup.saturdayPeriods} disabled={timetableSetup.workingDays === 5} onChange={(e) => setTimetableSetup((c) => ({ ...c, saturdayPeriods: Number(e.target.value) }))} className={`h-10 rounded-xl font-semibold text-center text-lg ${timetableSetup.workingDays === 5 ? 'bg-slate-100 text-slate-300' : 'bg-slate-50'}`} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold text-slate-600">Creation Mode</Label>
+                    <div className="flex gap-1.5 h-10">
+                      {[{ v: 'ai' as const, l: 'AI Auto', icon: '⚡' }, { v: 'manual' as const, l: 'Manual', icon: '✏️' }].map((o) => (
+                        <button key={o.v} type="button" onClick={() => setWizardCreationMode(o.v)}
+                          className={`flex-1 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1 ${wizardCreationMode === o.v ? 'bg-emerald-600 text-white shadow-md' : 'bg-slate-100 text-slate-500 hover:bg-emerald-50'}`}>
+                          <span>{o.icon}</span>{o.l}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div className="flex justify-between items-center pt-4 border-t">
-                <Button variant="outline" onClick={() => setCreationWizardOpen(false)}>Cancel</Button>
-                <Button onClick={() => setWizardStep(2)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold">
-                  Next: Upload or Paste Master Data <ChevronRight className="w-4 h-4 ml-1" />
+
+              {/* ── Row 3: Breaks & PT — two-column toggle cards ── */}
+              <div className="grid gap-4 md:grid-cols-2">
+
+                {/* ── LEFT: Breaks ── */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                  <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                    <Coffee className="w-4 h-4 text-amber-500" /> Breaks
+                    <span className="ml-auto text-[10px] font-normal text-slate-400 normal-case tracking-normal">Toggle on/off</span>
+                  </p>
+
+                  {/* Short Break */}
+                  <div className={`rounded-xl border-2 transition-all ${timetableSetup.breakMinutes > 0 ? 'border-amber-300 bg-amber-50/60' : 'border-slate-100 bg-slate-50/50'}`}>
+                    <button type="button" onClick={() => setTimetableSetup((c) => ({ ...c, breakMinutes: c.breakMinutes > 0 ? 0 : 15 }))} className="w-full flex items-center justify-between px-4 py-3 text-left">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm ${timetableSetup.breakMinutes > 0 ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-400'}`}><Coffee className="w-3.5 h-3.5" /></div>
+                        <div><p className={`font-bold text-sm leading-tight ${timetableSetup.breakMinutes > 0 ? 'text-amber-900' : 'text-slate-500'}`}>Short Break</p><p className="text-[10px] text-slate-400">Recess between periods</p></div>
+                      </div>
+                      <div className={`w-11 h-6 rounded-full transition-all flex items-center px-0.5 ${timetableSetup.breakMinutes > 0 ? 'bg-amber-500 justify-end' : 'bg-slate-300 justify-start'}`}><div className="w-5 h-5 bg-white rounded-full shadow-sm" /></div>
+                    </button>
+                    {timetableSetup.breakMinutes > 0 && (
+                      <div className="px-4 pb-3 grid grid-cols-2 gap-2 border-t border-amber-200 pt-2.5">
+                        <div><Label className="text-[10px] font-semibold text-amber-800">After period</Label><Input type="number" min={1} max={timetableSetup.periodsPerDay - 1} value={timetableSetup.breakAfter} onChange={(e) => setTimetableSetup((c) => ({ ...c, breakAfter: Number(e.target.value) }))} className="h-9 rounded-lg bg-white border-amber-200 text-center font-bold" /></div>
+                        <div><Label className="text-[10px] font-semibold text-amber-800">Duration (min)</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes} onChange={(e) => setTimetableSetup((c) => ({ ...c, breakMinutes: Number(e.target.value) }))} className="h-9 rounded-lg bg-white border-amber-200 text-center font-bold" /></div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lunch Break */}
+                  <div className={`rounded-xl border-2 transition-all ${timetableSetup.lunchMinutes > 0 ? 'border-orange-300 bg-orange-50/60' : 'border-slate-100 bg-slate-50/50'}`}>
+                    <button type="button" onClick={() => setTimetableSetup((c) => ({ ...c, lunchMinutes: c.lunchMinutes > 0 ? 0 : 45 }))} className="w-full flex items-center justify-between px-4 py-3 text-left">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm ${timetableSetup.lunchMinutes > 0 ? 'bg-orange-500 text-white' : 'bg-slate-200 text-slate-400'}`}><Timer className="w-3.5 h-3.5" /></div>
+                        <div><p className={`font-bold text-sm leading-tight ${timetableSetup.lunchMinutes > 0 ? 'text-orange-900' : 'text-slate-500'}`}>Lunch Break</p><p className="text-[10px] text-slate-400">Mid-day meal break</p></div>
+                      </div>
+                      <div className={`w-11 h-6 rounded-full transition-all flex items-center px-0.5 ${timetableSetup.lunchMinutes > 0 ? 'bg-orange-500 justify-end' : 'bg-slate-300 justify-start'}`}><div className="w-5 h-5 bg-white rounded-full shadow-sm" /></div>
+                    </button>
+                    {timetableSetup.lunchMinutes > 0 && (
+                      <div className="px-4 pb-3 grid grid-cols-2 gap-2 border-t border-orange-200 pt-2.5">
+                        <div><Label className="text-[10px] font-semibold text-orange-800">After period</Label><Input type="number" min={2} max={timetableSetup.periodsPerDay - 1} value={timetableSetup.lunchAfter} onChange={(e) => setTimetableSetup((c) => ({ ...c, lunchAfter: Number(e.target.value) }))} className="h-9 rounded-lg bg-white border-orange-200 text-center font-bold" /></div>
+                        <div><Label className="text-[10px] font-semibold text-orange-800">Duration (min)</Label><Input type="number" min={15} max={90} value={timetableSetup.lunchMinutes} onChange={(e) => setTimetableSetup((c) => ({ ...c, lunchMinutes: Number(e.target.value) }))} className="h-9 rounded-lg bg-white border-orange-200 text-center font-bold" /></div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── RIGHT: PT / Sports ── */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 space-y-3">
+                  <p className="text-[11px] font-bold text-slate-700 uppercase tracking-widest flex items-center gap-1.5">
+                    <Activity className="w-4 h-4 text-blue-500" /> PT / Sports Period
+                    <span className="ml-auto text-[10px] font-normal text-slate-400 normal-case tracking-normal">Optional</span>
+                  </p>
+
+                  <div className={`rounded-xl border-2 transition-all ${timetableSetup.ptEnabled ? 'border-blue-300 bg-blue-50/60' : 'border-slate-100 bg-slate-50/50'}`}>
+                    <button type="button" onClick={() => setTimetableSetup((c) => ({ ...c, ptEnabled: !c.ptEnabled }))} className="w-full flex items-center justify-between px-4 py-3 text-left">
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-lg ${timetableSetup.ptEnabled ? 'bg-blue-500 text-white' : 'bg-slate-200 text-slate-400'}`}>⚽</div>
+                        <div><p className={`font-bold text-sm leading-tight ${timetableSetup.ptEnabled ? 'text-blue-900' : 'text-slate-500'}`}>Physical Education / PT</p><p className="text-[10px] text-slate-400">Sports, games & physical training</p></div>
+                      </div>
+                      <div className={`w-11 h-6 rounded-full transition-all flex items-center px-0.5 ${timetableSetup.ptEnabled ? 'bg-blue-500 justify-end' : 'bg-slate-300 justify-start'}`}><div className="w-5 h-5 bg-white rounded-full shadow-sm" /></div>
+                    </button>
+                    {timetableSetup.ptEnabled && (
+                      <div className="px-4 pb-3 space-y-2.5 border-t border-blue-200 pt-2.5">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div><Label className="text-[10px] font-semibold text-blue-800">Periods / Week</Label><Input type="number" min={1} max={6} value={timetableSetup.ptPeriodsPerWeek} onChange={(e) => setTimetableSetup((c) => ({ ...c, ptPeriodsPerWeek: Number(e.target.value) }))} className="h-9 rounded-lg bg-white border-blue-200 text-center font-bold" /></div>
+                          <div><Label className="text-[10px] font-semibold text-blue-800">Preferred Period</Label><Input type="number" min={1} max={timetableSetup.periodsPerDay} value={timetableSetup.ptPreferredPeriod} onChange={(e) => setTimetableSetup((c) => ({ ...c, ptPreferredPeriod: Number(e.target.value) }))} className="h-9 rounded-lg bg-white border-blue-200 text-center font-bold" /></div>
+                        </div>
+                        <div>
+                          <Label className="text-[10px] font-semibold text-blue-800">Preferred Day</Label>
+                          <div className="flex gap-1 mt-1 flex-wrap">
+                            {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', ...(timetableSetup.workingDays === 6 ? ['Saturday'] : [])].map((d) => (
+                              <button key={d} type="button" onClick={() => setTimetableSetup((c) => ({ ...c, ptPreferredDay: d }))}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${timetableSetup.ptPreferredDay === d ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-blue-50'}`}>
+                                {d.slice(0, 3)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <p className="text-[10px] text-blue-700/70">AI will place PT periods on {timetableSetup.ptPreferredDay} (Period {timetableSetup.ptPreferredPeriod}) where possible.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Creation mode explanation */}
+                  <div className={`rounded-xl border-2 p-4 ${wizardCreationMode === 'manual' ? 'border-violet-300 bg-violet-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl">{wizardCreationMode === 'ai' ? '⚡' : '✏️'}</span>
+                      <div>
+                        <p className="font-bold text-sm text-slate-800">{wizardCreationMode === 'ai' ? 'AI Auto-Generate' : 'Manual Creation'}</p>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {wizardCreationMode === 'ai'
+                            ? 'Upload teacher data → AI builds a clash-free timetable automatically. You can edit individual periods afterward.'
+                            : 'Build the timetable yourself — add grades, sections, subjects, and assign teachers period-by-period with full control.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Summary bar ── */}
+              <div className="rounded-xl bg-slate-900 text-white px-4 py-3 text-[11px] sm:text-xs flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="font-bold text-emerald-400">Preview:</span>
+                <span>P1–P{timetableSetup.periodsPerDay}</span>
+                {timetableSetup.breakMinutes > 0 && <span className="text-amber-300">Break after P{timetableSetup.breakAfter} ({timetableSetup.breakMinutes}m)</span>}
+                {timetableSetup.lunchMinutes > 0 && <span className="text-orange-300">Lunch after P{timetableSetup.lunchAfter} ({timetableSetup.lunchMinutes}m)</span>}
+                {timetableSetup.ptEnabled && <span className="text-blue-300">PT {timetableSetup.ptPeriodsPerWeek}x/wk</span>}
+                <span>{timetableSetup.workingDays === 6 ? `Mon–Sat (Sat: ${timetableSetup.saturdayPeriods}P)` : 'Mon–Fri'}</span>
+                <span className="ml-auto font-semibold">{wizardCreationMode === 'ai' ? '⚡ AI Mode' : '✏️ Manual Mode'}</span>
+              </div>
+
+              <div className="flex justify-between items-center pt-3 border-t">
+                <Button variant="outline" onClick={() => setCreationWizardOpen(false)} className="rounded-xl">Cancel</Button>
+                <Button onClick={() => setWizardStep(2)} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-6 rounded-xl shadow-md">
+                  Next: {wizardCreationMode === 'ai' ? 'Upload or Paste Data' : 'Add Classes & Teachers'} <ChevronRight className="w-4 h-4 ml-1" />
                 </Button>
               </div>
             </div>
           )}
 
-          {/* STEP 2: Upload File or Excel Copy-Paste */}
+          {/* STEP 2: Upload Data (AI mode) or Manual Builder */}
           {wizardStep === 2 && (
             <div className="space-y-4 py-2">
-              <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="w-4 h-4 text-blue-600 shrink-0" />
-                  <span>Upload CSV/Excel file <b>OR</b> copy and paste rows directly from Excel/Spreadsheet.</span>
+              {wizardCreationMode === 'ai' ? (<>
+                {/* AI Mode — upload / paste */}
+                <div className="p-3 bg-blue-50 rounded-xl border border-blue-200 text-xs text-blue-800 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <FileSpreadsheet className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Upload CSV/Excel file <b>OR</b> copy and paste rows directly from Excel/Spreadsheet.</span>
+                  </div>
+                  <Button size="sm" variant="outline" className="h-7 text-xs bg-white border-blue-300 text-blue-700" onClick={loadSampleExcelData}>
+                    Load Sample Data
+                  </Button>
                 </div>
-                <Button size="sm" variant="outline" className="h-7 text-xs bg-white border-blue-300 text-blue-700" onClick={loadSampleExcelData}>
-                  Load Sample Excel Data
-                </Button>
-              </div>
-
-              {/* Copy & Paste Area */}
-              <div className="space-y-2">
-                <Label className="text-xs font-bold text-slate-800">Paste Excel Data (Grade, Section, Subject, Teacher Name, Periods/Week, Room No)</Label>
-                <Textarea
-                  rows={4}
-                  placeholder={`Grade 10\tA\tMathematics\tDr. Rajesh Sharma\t6\tRoom 101\nGrade 10\tA\tPhysics\tProf. Ananya Verma\t5\tLab 1`}
-                  value={excelPasteText}
-                  onChange={(e) => parseExcelPasteData(e.target.value)}
-                  className="font-mono text-xs bg-slate-50 border-slate-300"
-                />
-              </div>
-
-              {/* Parsed Data Live Preview Table */}
-              {previewRows.length > 0 && (
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      Parsed Data Preview ({previewRows.length} allotments detected)
-                    </p>
-                    <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300">
-                      Ready for AI Engine
-                    </Badge>
+                  <Label className="text-xs font-bold text-slate-800">Paste Excel Data (Grade, Section, Subject, Teacher Name, Periods/Week, Room No)</Label>
+                  <Textarea rows={4} placeholder={`Grade 10\tA\tMathematics\tDr. Rajesh Sharma\t6\tRoom 101\nGrade 10\tA\tPhysics\tProf. Ananya Verma\t5\tLab 1`} value={excelPasteText} onChange={(e) => parseExcelPasteData(e.target.value)} className="font-mono text-xs bg-slate-50 border-slate-300 rounded-xl" />
+                </div>
+                {previewRows.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5"><CheckCircle2 className="w-4 h-4 text-emerald-600" /> {previewRows.length} allotments detected</p>
+                      <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-300">Ready for AI</Badge>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto border rounded-xl bg-white">
+                      <table className="w-full text-xs border-collapse"><thead className="bg-slate-100 sticky top-0 border-b"><tr><th className="p-2 text-left font-semibold">Grade</th><th className="p-2 text-left font-semibold">Section</th><th className="p-2 text-left font-semibold">Subject</th><th className="p-2 text-left font-semibold">Teacher</th><th className="p-2 text-center font-semibold">P/Wk</th><th className="p-2 text-left font-semibold">Room</th></tr></thead>
+                      <tbody>{previewRows.map((r, i) => (<tr key={i} className="border-b odd:bg-white even:bg-slate-50/50"><td className="p-2 font-medium">{r.grade}</td><td className="p-2">{r.section}</td><td className="p-2 font-bold text-slate-800">{r.subject}</td><td className="p-2 text-emerald-700">{r.teacherName}</td><td className="p-2 text-center font-semibold">{r.periodsWeek}</td><td className="p-2 text-slate-500">{r.roomNo}</td></tr>))}</tbody></table>
+                    </div>
                   </div>
-                  <div className="max-h-48 overflow-y-auto border rounded-xl bg-white">
-                    <table className="w-full text-xs border-collapse">
-                      <thead className="bg-slate-100 sticky top-0 border-b">
-                        <tr>
-                          <th className="p-2 text-left font-semibold">Grade</th>
-                          <th className="p-2 text-left font-semibold">Section</th>
-                          <th className="p-2 text-left font-semibold">Subject</th>
-                          <th className="p-2 text-left font-semibold">Teacher Name</th>
-                          <th className="p-2 text-center font-semibold">Periods / Wk</th>
-                          <th className="p-2 text-left font-semibold">Room No</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {previewRows.map((r, i) => (
-                          <tr key={i} className="border-b odd:bg-white even:bg-slate-50/50">
-                            <td className="p-2 font-medium">{r.grade}</td>
-                            <td className="p-2">{r.section}</td>
-                            <td className="p-2 font-bold text-slate-800">{r.subject}</td>
-                            <td className="p-2 text-emerald-700">{r.teacherName}</td>
-                            <td className="p-2 text-center font-semibold">{r.periodsWeek}</td>
-                            <td className="p-2 text-slate-500">{r.roomNo}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                )}
+                <div className="rounded-xl bg-emerald-50 border border-emerald-200 p-3 text-xs text-emerald-800 flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>After generating, you can <b>edit any individual period</b> — change subject, teacher, or timing by clicking on any cell in the timetable.</span>
+                </div>
+              </>) : (<>
+                {/* Manual Mode — step-by-step builder */}
+                <div className="p-4 bg-violet-50 rounded-xl border border-violet-200 space-y-3">
+                  <div className="flex items-center gap-2 text-violet-900">
+                    <span className="text-lg">✏️</span>
+                    <div><p className="font-bold text-sm">Manual Timetable Builder</p><p className="text-[11px] text-violet-700">Build your timetable step-by-step with full control over every period.</p></div>
                   </div>
                 </div>
-              )}
+                <div className="grid gap-4 md:grid-cols-3">
+                  <div className="rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-4 text-center space-y-2">
+                    <div className="mx-auto w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 font-bold">1</div>
+                    <p className="font-bold text-sm text-violet-900">Add Grades & Sections</p>
+                    <p className="text-[10px] text-slate-500">Create Grade 1–12 with sections A, B, C etc.</p>
+                    <Button size="sm" variant="outline" className="border-violet-300 text-violet-700 text-xs w-full mt-1">
+                      <Plus className="w-3 h-3 mr-1" /> Add Grade
+                    </Button>
+                  </div>
+                  <div className="rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-4 text-center space-y-2">
+                    <div className="mx-auto w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 font-bold">2</div>
+                    <p className="font-bold text-sm text-violet-900">Add Subjects & Teachers</p>
+                    <p className="text-[10px] text-slate-500">Assign subjects to grades and link teachers.</p>
+                    <Button size="sm" variant="outline" className="border-violet-300 text-violet-700 text-xs w-full mt-1">
+                      <Plus className="w-3 h-3 mr-1" /> Add Subject
+                    </Button>
+                  </div>
+                  <div className="rounded-xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-4 text-center space-y-2">
+                    <div className="mx-auto w-10 h-10 rounded-full bg-violet-100 flex items-center justify-center text-violet-600 font-bold">3</div>
+                    <p className="font-bold text-sm text-violet-900">Assign Periods</p>
+                    <p className="text-[10px] text-slate-500">Drag or click to place each period manually.</p>
+                    <Button size="sm" variant="outline" className="border-violet-300 text-violet-700 text-xs w-full mt-1">
+                      <Grid3X3 className="w-3 h-3 mr-1" /> Open Grid
+                    </Button>
+                  </div>
+                </div>
+                <div className="rounded-xl bg-violet-50 border border-violet-200 p-3 text-xs text-violet-800 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-violet-600 shrink-0" />
+                  <span>You can also paste Excel data into Manual mode — <button type="button" className="underline font-bold" onClick={() => setWizardCreationMode('ai')}>switch to AI mode</button> anytime.</span>
+                </div>
+              </>)}
 
               <div className="flex justify-between items-center pt-4 border-t">
-                <Button variant="outline" onClick={() => setWizardStep(1)}>
-                  <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back to Timings
+                <Button variant="outline" onClick={() => setWizardStep(1)} className="rounded-xl">
+                  <ChevronRight className="w-4 h-4 mr-1 rotate-180" /> Back
                 </Button>
                 <Button
                   onClick={() => {
-                    setWizardStep(3);
-                    void handleAiGenerateTimetable(undefined, undefined, timetableSetup);
+                    if (wizardCreationMode === 'ai') {
+                      setWizardStep(3);
+                      void handleAiGenerateTimetable(undefined, undefined, timetableSetup);
+                    } else {
+                      setWizardStep(4);
+                    }
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl px-6"
                 >
-                  Next: Run AI Timetable Engine <Sparkles className="w-4 h-4 ml-1" />
+                  {wizardCreationMode === 'ai' ? <>Generate Timetable <Sparkles className="w-4 h-4 ml-1" /></> : <>Preview & Edit Grid <ChevronRight className="w-4 h-4 ml-1" /></>}
                 </Button>
               </div>
             </div>
@@ -4292,12 +4574,14 @@ function TeachersSection({
   selectedDay,
   onRefresh,
   schoolId,
+  timetableSetup,
 }: {
   teachers: Teacher[];
   schedules: Schedule[];
   selectedDay: string;
   onRefresh: () => void;
   schoolId?: string;
+  timetableSetup?: { periodsPerDay: number; workingDays: number; saturdayPeriods: number; breakMinutes: number; breakAfter: number; lunchMinutes: number; lunchAfter: number };
 }) {
   const [teacherPopupOpen, setTeacherPopupOpen] = useState(false);
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
@@ -4341,7 +4625,9 @@ function TeachersSection({
   };
 
   const getTeacherWeeklySchedule = (teacher: Teacher) => {
-    // Use the schedules embedded in the teacher object from the API (includes ALL days)
+    // First try the shared schedules prop (all schedules loaded for the school), then fall back to embedded
+    const fromShared = schedules.filter((s) => s.teacherId === teacher.id);
+    if (fromShared.length > 0) return fromShared;
     return teacher.schedules || [];
   };
 
@@ -4503,18 +4789,69 @@ function TeachersSection({
                 </div>
                 <div className="flex items-center justify-between"><div><h3 className="font-bold text-slate-900">Teacher Weekly Timetable</h3><p className="text-xs text-muted-foreground">All assigned classes, timings and subjects</p></div><Badge className="bg-emerald-100 text-emerald-700">{getTeacherWeeklySchedule(selectedTeacher).length} weekly periods</Badge></div>
                 <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs text-blue-900"><p className="font-semibold">Period guide</p><p className="mt-1">P1 means Period 1, P2 means Period 2, and so on. Monday–Friday can contain P1–P8. Saturday is a half day and contains only P1–P4. The exact start and end time is displayed below every period.</p></div>
-                <table className="w-full min-w-[1180px] border-separate border-spacing-0 overflow-hidden rounded-xl border text-xs">
-                  <thead className="sticky top-0 z-20"><tr className="bg-slate-900 text-white"><th className="sticky left-0 z-30 min-w-[105px] border-b border-r border-slate-700 bg-slate-900 p-3 text-left">Day</th>{Array.from({ length: 8 }, (_, index) => index + 1).map((period) => { const sample = getTeacherWeeklySchedule(selectedTeacher).find((item) => item.period === period); return <th key={period} className="min-w-[132px] border-b border-r border-slate-700 p-2"><span className="block font-bold">P{period}</span><span className="text-[9px] font-normal text-slate-300">{sample ? `${sample.startTime}–${sample.endTime}` : 'Time not set'}</span>{period === 2 && <span className="mt-1 block rounded bg-amber-400 text-[8px] text-amber-950">Break after P2</span>}{period === 4 && <span className="mt-1 block rounded bg-orange-400 text-[8px] text-orange-950">Lunch after P4</span>}</th>; })}</tr></thead>
-                  <tbody>{DAYS.map((day) => <tr key={day}><th className="sticky left-0 z-10 border-b border-r bg-emerald-50 p-3 text-left font-bold text-emerald-900">{day}{day === 'Saturday' && <span className="mt-1 block text-[9px] font-normal text-emerald-600">Half day</span>}</th>{Array.from({ length: 8 }, (_, index) => index + 1).map((period) => { const schedule = getTeacherWeeklySchedule(selectedTeacher).find((item) => item.day === day && item.period === period); const closed = day === 'Saturday' && period > 4; return <td key={`${day}-${period}`} className={`h-[102px] border-b border-r p-1.5 align-top ${closed ? 'bg-slate-100' : 'bg-white'}`}>{closed ? <div className="flex h-full items-center justify-center text-[10px] text-slate-400">Half-day closed</div> : schedule ? <div className="flex h-full flex-col rounded-lg border border-emerald-200 bg-emerald-50 p-2"><span className="font-bold text-emerald-900">{schedule.grade} {schedule.section}</span><span className="mt-1 font-medium text-slate-700">{schedule.subject}</span><span className="mt-auto text-[9px] text-slate-500">{schedule.startTime}–{schedule.endTime}</span></div> : <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-[10px] text-slate-400">Free period</div>}</td>; })}</tr>)}</tbody>
-                </table>
+                {(() => {
+                  const _total = timetableSetup?.periodsPerDay ?? 8;
+                  const _wdays = timetableSetup?.workingDays ?? 6;
+                  const _satP = _wdays === 6 ? (timetableSetup?.saturdayPeriods ?? 4) : 0;
+                  const _hasBreak = (timetableSetup?.breakMinutes ?? 15) > 0;
+                  const _breakAfter = timetableSetup?.breakAfter ?? 2;
+                  const _hasLunch = (timetableSetup?.lunchMinutes ?? 45) > 0;
+                  const _lunchAfter = timetableSetup?.lunchAfter ?? 4;
+                  const _days = DAYS.slice(0, _wdays);
+                  const weekSchedule = getTeacherWeeklySchedule(selectedTeacher);
+                  return <table className="w-full min-w-[900px] border-separate border-spacing-0 overflow-hidden rounded-xl border text-xs">
+                    <thead className="sticky top-0 z-20"><tr className="bg-slate-900 text-white">
+                      <th className="sticky left-0 z-30 min-w-[90px] border-b border-r border-slate-700 bg-slate-900 p-3 text-left">Day</th>
+                      {Array.from({ length: _total }, (_, i) => i + 1).flatMap((period) => {
+                        const sample = weekSchedule.find((item) => item.period === period);
+                        const cells = [<th key={period} className="min-w-[120px] border-b border-r border-slate-700 p-2"><span className="block font-bold">P{period}</span><span className="text-[9px] font-normal text-slate-300">{sample ? `${sample.startTime}–${sample.endTime}` : '–'}</span></th>];
+                        if (_hasBreak && period === _breakAfter) cells.push(<th key="sb" className="min-w-[44px] border-b border-r border-amber-400 bg-amber-500 p-1 text-[9px] font-bold text-amber-950">BRK</th>);
+                        if (_hasLunch && period === _lunchAfter) cells.push(<th key="lb" className="min-w-[44px] border-b border-r border-orange-400 bg-orange-500 p-1 text-[9px] font-bold text-orange-950">LCH</th>);
+                        return cells;
+                      })}
+                    </tr></thead>
+                    <tbody>{_days.map((day) => {
+                      const isSat = day === 'Saturday';
+                      const dayPeriods = isSat && _satP > 0 ? _satP : _total;
+                      return <tr key={day}>
+                        <th className="sticky left-0 z-10 border-b border-r bg-emerald-50 p-3 text-left font-bold text-emerald-900">{day}{isSat && _satP > 0 && <span className="mt-0.5 block text-[9px] font-normal text-emerald-600">Half day</span>}</th>
+                        {Array.from({ length: dayPeriods }, (_, i) => i + 1).flatMap((period) => {
+                          const schedule = weekSchedule.find((item) => item.day === day && item.period === period);
+                          const cells = [<td key={`${day}-${period}`} className="h-[96px] border-b border-r p-1.5 align-top bg-white">
+                            {schedule
+                              ? <div className="flex h-full flex-col rounded-lg border border-emerald-200 bg-emerald-50 p-2"><span className="font-bold text-emerald-900 text-[11px]">{schedule.grade} {schedule.section}</span><span className="mt-0.5 font-medium text-slate-700 text-[11px]">{schedule.subject}</span><span className="mt-auto text-[9px] text-slate-500">{schedule.startTime}–{schedule.endTime}</span></div>
+                              : <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-slate-200 text-[10px] text-slate-400">Free</div>}
+                          </td>];
+                          if (_hasBreak && period === _breakAfter) cells.push(<td key={`${day}-sb`} className="border-b border-r border-amber-200 bg-amber-50 text-center text-[9px] font-semibold text-amber-700"><span className="[writing-mode:vertical-rl] rotate-180">Break</span></td>);
+                          if (_hasLunch && period === _lunchAfter) cells.push(<td key={`${day}-lb`} className="border-b border-r border-orange-200 bg-orange-50 text-center text-[9px] font-semibold text-orange-700"><span className="[writing-mode:vertical-rl] rotate-180">Lunch</span></td>);
+                          return cells;
+                        })}
+                        {isSat && _satP > 0 && _satP < _total && <td colSpan={_total - _satP} className="border-b border-r bg-slate-100 text-center text-[10px] text-slate-400">Half-day closed</td>}
+                      </tr>;
+                    })}</tbody>
+                  </table>;
+                })()}
 
                 <Separator />
-                <div className="p-4 bg-emerald-50 rounded-xl">
-                  <h4 className="text-sm font-semibold text-emerald-800 mb-2">Weekly Summary</h4>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Total Periods per Week</span>
-                    <span className="font-bold text-emerald-700">{getTeacherWeeklySchedule(selectedTeacher).length}</span>
-                  </div>
+                <div className="p-4 bg-emerald-50 rounded-xl space-y-3">
+                  <h4 className="text-sm font-semibold text-emerald-800">Weekly Summary</h4>
+                  {(() => {
+                    const ws = getTeacherWeeklySchedule(selectedTeacher);
+                    const byGrade = ws.reduce<Record<string, number>>((acc, s) => { const key = `${s.grade} ${s.section}`; acc[key] = (acc[key] || 0) + 1; return acc; }, {});
+                    return <>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-muted-foreground">Total periods / week</span>
+                        <span className="font-bold text-emerald-700">{ws.length}</span>
+                      </div>
+                      {Object.keys(byGrade).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mt-1">
+                          {Object.entries(byGrade).sort().map(([cls, cnt]) => (
+                            <span key={cls} className="rounded-md bg-white border border-emerald-200 px-2 py-0.5 text-[11px] font-medium text-emerald-800">{cls} <span className="text-emerald-600">×{cnt}</span></span>
+                          ))}
+                        </div>
+                      )}
+                    </>;
+                  })()}
                 </div>
               </div>
             )}
@@ -7654,9 +7991,336 @@ function LessonPlanLibrarySection({ teachers }: { teachers: Teacher[] }) {
   );
 }
 
+// ─── Super-Admin Portal ───────────────────────────────────────────────────────
+const SA_TOKEN = 'sa_dev_token_2026';
+
+interface SASchool {
+  id: string;
+  name: string;
+  code: string;
+  email: string;
+  createdAt: string;
+  featureFlags: SchoolFeatureFlags | null;
+  _count: { teachers: number; schedules: number };
+}
+
+const FLAG_META: { key: keyof SchoolFeatureFlags; label: string; group: string }[] = [
+  { key: 'aiTimetableEnabled',      label: 'AI Timetable Generation',    group: 'Timetable' },
+  { key: 'manualTimetableEnabled',  label: 'Manual Timetable Builder',   group: 'Timetable' },
+  { key: 'bulkImportEnabled',       label: 'Bulk Import (CSV/PDF)',       group: 'Timetable' },
+  { key: 'shortBreakEnabled',       label: 'Short Break Support',        group: 'Breaks' },
+  { key: 'lunchBreakEnabled',       label: 'Lunch Break Support',        group: 'Breaks' },
+  { key: 'ptPeriodsEnabled',        label: 'PT / Sports Periods',        group: 'Breaks' },
+  { key: 'substitutionEnabled',     label: 'Substitution Management',    group: 'Operations' },
+  { key: 'autoSubstitutionEnabled', label: 'Auto Substitution Engine',   group: 'Operations' },
+  { key: 'workloadAnalyticsEnabled',label: 'Workload Analytics',         group: 'Analytics' },
+  { key: 'teacherNotifyEnabled',    label: 'Teacher Notifications',      group: 'Communication' },
+];
+
+const PLAN_COLORS: Record<string, string> = {
+  trial: 'bg-amber-100 text-amber-700 border-amber-200',
+  standard: 'bg-blue-100 text-blue-700 border-blue-200',
+  premium: 'bg-purple-100 text-purple-700 border-purple-200',
+};
+
+function SuperAdminPortal({ user, onLogout }: { user: LoginUser; onLogout: () => void }) {
+  const [schools, setSchools] = useState<SASchool[]>([]);
+  const [loadingSchools, setLoadingSchools] = useState(true);
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
+  const [flags, setFlags] = useState<Partial<SchoolFeatureFlags>>({});
+  const [savingFlags, setSavingFlags] = useState(false);
+  const [savedMsg, setSavedMsg] = useState('');
+  const [addSchoolOpen, setAddSchoolOpen] = useState(false);
+  const [newSchool, setNewSchool] = useState({ name: '', code: '', email: '', password: '', planName: 'standard' });
+  const [creatingSchool, setCreatingSchool] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [saView, setSaView] = useState<'schools' | 'flags'>('schools');
+  const { toast } = useToast();
+
+  const loadSchools = async () => {
+    setLoadingSchools(true);
+    try {
+      const res = await fetch(`/api/superadmin/schools?token=${SA_TOKEN}`);
+      if (res.ok) { const d = await res.json(); setSchools(d.schools || []); }
+    } finally { setLoadingSchools(false); }
+  };
+
+  useEffect(() => { loadSchools(); }, []);
+
+  const openFlags = (school: SASchool) => {
+    setSelectedSchoolId(school.id);
+    setFlags(school.featureFlags ?? {
+      aiTimetableEnabled: true, manualTimetableEnabled: true, bulkImportEnabled: true,
+      shortBreakEnabled: true, lunchBreakEnabled: true, ptPeriodsEnabled: true,
+      substitutionEnabled: true, autoSubstitutionEnabled: true, workloadAnalyticsEnabled: true,
+      teacherNotifyEnabled: true, maxGrades: 12, maxTeachers: 200, maxPeriodsPerDay: 10,
+      planName: 'standard',
+    });
+    setSaView('flags');
+  };
+
+  const saveFlags = async () => {
+    if (!selectedSchoolId) return;
+    setSavingFlags(true); setSavedMsg('');
+    try {
+      const res = await fetch(`/api/superadmin/feature-flags?schoolId=${selectedSchoolId}&token=${SA_TOKEN}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(flags),
+      });
+      if (res.ok) { setSavedMsg('Saved!'); await loadSchools(); setTimeout(() => setSavedMsg(''), 2500); }
+    } finally { setSavingFlags(false); }
+  };
+
+  const createSchool = async () => {
+    if (!newSchool.name || !newSchool.code || !newSchool.email || !newSchool.password) {
+      setCreateError('All fields are required'); return;
+    }
+    setCreatingSchool(true); setCreateError('');
+    try {
+      const res = await fetch(`/api/superadmin/schools?token=${SA_TOKEN}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newSchool),
+      });
+      const d = await res.json();
+      if (!res.ok) { setCreateError(d.error || 'Failed to create school'); return; }
+      toast({ title: 'School created', description: `${newSchool.name} is ready.` });
+      setAddSchoolOpen(false);
+      setNewSchool({ name: '', code: '', email: '', password: '', planName: 'standard' });
+      await loadSchools();
+    } finally { setCreatingSchool(false); }
+  };
+
+  const selectedSchool = schools.find(s => s.id === selectedSchoolId);
+  const groups = [...new Set(FLAG_META.map(f => f.group))];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-900 flex flex-col">
+      {/* Top bar */}
+      <header className="sticky top-0 z-30 border-b border-purple-800/40 bg-slate-950/80 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-purple-500 to-violet-600 p-1.5 rounded-xl">
+              <ShieldCheck className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <span className="text-white font-bold text-sm">Super Admin Console</span>
+              <span className="hidden sm:inline text-purple-300/60 text-xs ml-2">AI Smart Calendar Platform</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 text-purple-300/70 text-xs border border-purple-700/40 rounded-lg px-2.5 py-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              {user.name} &bull; {user.email}
+            </div>
+            <Button size="sm" variant="outline" onClick={onLogout} className="text-xs border-purple-700 text-purple-200 hover:bg-purple-900 h-8">
+              <LogOut className="w-3 h-3 mr-1" /> Logout
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-xs text-purple-300/60 mb-6">
+          <button onClick={() => setSaView('schools')} className={`hover:text-purple-200 ${saView === 'schools' ? 'text-purple-200 font-semibold' : ''}`}>
+            All Schools
+          </button>
+          {saView === 'flags' && selectedSchool && (
+            <>
+              <span>/</span>
+              <span className="text-purple-200 font-semibold">{selectedSchool.name} — Feature Flags</span>
+            </>
+          )}
+        </div>
+
+        {/* ── Schools List ── */}
+        {saView === 'schools' && (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-white">School Accounts</h2>
+                <p className="text-purple-300/60 text-sm">{schools.length} schools registered on the platform</p>
+              </div>
+              <Button onClick={() => setAddSchoolOpen(true)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs h-9 gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Add School
+              </Button>
+            </div>
+
+            {loadingSchools ? (
+              <div className="flex items-center gap-3 text-purple-300/60 py-12 justify-center">
+                <RefreshCw className="w-5 h-5 animate-spin" /> Loading schools…
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {schools.map(school => (
+                  <div key={school.id} className="rounded-2xl border border-purple-700/30 bg-slate-900/60 p-5 hover:border-purple-500/50 transition-all">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="min-w-0">
+                        <p className="text-white font-semibold truncate">{school.name}</p>
+                        <p className="text-purple-300/60 text-xs truncate">{school.email}</p>
+                      </div>
+                      <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${PLAN_COLORS[school.featureFlags?.planName ?? 'standard'] ?? PLAN_COLORS.standard}`}>
+                        {(school.featureFlags?.planName ?? 'standard').toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <div className="bg-slate-800/60 rounded-xl p-2 text-center">
+                        <p className="text-white font-bold text-lg">{school._count.teachers}</p>
+                        <p className="text-purple-300/50 text-[10px]">Teachers</p>
+                      </div>
+                      <div className="bg-slate-800/60 rounded-xl p-2 text-center">
+                        <p className="text-white font-bold text-lg">{school._count.schedules}</p>
+                        <p className="text-purple-300/50 text-[10px]">Periods</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={() => openFlags(school)} size="sm" className="flex-1 bg-purple-700/60 hover:bg-purple-700 text-white text-xs h-8">
+                        <Settings className="w-3 h-3 mr-1" /> Feature Flags
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Feature Flags Editor ── */}
+        {saView === 'flags' && selectedSchool && (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-white">{selectedSchool.name}</h2>
+                <p className="text-purple-300/60 text-sm">Manage enabled features and plan limits</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {savedMsg && <span className="text-emerald-400 text-xs font-medium">{savedMsg}</span>}
+                <Button onClick={saveFlags} disabled={savingFlags} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9">
+                  {savingFlags ? <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1" />}
+                  Save Changes
+                </Button>
+              </div>
+            </div>
+
+            {/* Plan */}
+            <div className="rounded-2xl border border-purple-700/30 bg-slate-900/60 p-5">
+              <p className="text-xs font-semibold text-purple-300/70 uppercase tracking-wider mb-3">Plan & Limits</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-300">Plan Name</Label>
+                  <select
+                    value={(flags.planName as string) ?? 'standard'}
+                    onChange={e => setFlags(f => ({ ...f, planName: e.target.value }))}
+                    className="w-full rounded-lg bg-slate-800 border border-purple-700/40 text-white text-xs px-3 py-2"
+                  >
+                    <option value="trial">Trial</option>
+                    <option value="standard">Standard</option>
+                    <option value="premium">Premium</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-300">Max Grades</Label>
+                  <Input type="number" min={1} max={20}
+                    value={(flags.maxGrades as number) ?? 12}
+                    onChange={e => setFlags(f => ({ ...f, maxGrades: parseInt(e.target.value) || 12 }))}
+                    className="bg-slate-800 border-purple-700/40 text-white text-xs h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-300">Max Teachers</Label>
+                  <Input type="number" min={1} max={1000}
+                    value={(flags.maxTeachers as number) ?? 200}
+                    onChange={e => setFlags(f => ({ ...f, maxTeachers: parseInt(e.target.value) || 200 }))}
+                    className="bg-slate-800 border-purple-700/40 text-white text-xs h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-300">Max Periods/Day</Label>
+                  <Input type="number" min={1} max={15}
+                    value={(flags.maxPeriodsPerDay as number) ?? 10}
+                    onChange={e => setFlags(f => ({ ...f, maxPeriodsPerDay: parseInt(e.target.value) || 10 }))}
+                    className="bg-slate-800 border-purple-700/40 text-white text-xs h-9"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 space-y-1.5">
+                <Label className="text-xs text-gray-300">Custom Note (shown on school dashboard)</Label>
+                <Input
+                  value={(flags.customNote as string) ?? ''}
+                  onChange={e => setFlags(f => ({ ...f, customNote: e.target.value }))}
+                  placeholder="e.g. Trial expires on 30 Sep 2026. Upgrade to unlock advanced features."
+                  className="bg-slate-800 border-purple-700/40 text-white text-xs h-9"
+                />
+              </div>
+            </div>
+
+            {/* Feature toggle groups */}
+            {groups.map(group => (
+              <div key={group} className="rounded-2xl border border-purple-700/30 bg-slate-900/60 p-5">
+                <p className="text-xs font-semibold text-purple-300/70 uppercase tracking-wider mb-3">{group}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {FLAG_META.filter(f => f.group === group).map(({ key, label }) => {
+                    const enabled = (flags[key] as boolean) ?? true;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setFlags(f => ({ ...f, [key]: !enabled }))}
+                        className={`flex items-center justify-between rounded-xl px-4 py-3 border text-sm font-medium transition-all ${
+                          enabled
+                            ? 'bg-emerald-900/30 border-emerald-600/40 text-emerald-300'
+                            : 'bg-slate-800/60 border-slate-600/40 text-slate-400'
+                        }`}
+                      >
+                        <span>{label}</span>
+                        <div className={`w-9 h-5 rounded-full flex items-center transition-colors relative ${enabled ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                          <div className={`absolute w-3.5 h-3.5 bg-white rounded-full shadow transition-all ${enabled ? 'left-4' : 'left-1'}`} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Add School Dialog */}
+      <Dialog open={addSchoolOpen} onOpenChange={setAddSchoolOpen}>
+        <DialogContent className="max-w-md bg-slate-900 border-purple-700/40 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Add New School</DialogTitle>
+            <DialogDescription className="text-purple-300/60">Create a new school account on the platform.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {createError && <div className="bg-red-900/30 border border-red-500/40 text-red-300 rounded-lg px-3 py-2 text-xs">{createError}</div>}
+            <div className="space-y-1.5"><Label className="text-xs text-gray-300">School Name</Label><Input value={newSchool.name} onChange={e => setNewSchool(s => ({ ...s, name: e.target.value }))} placeholder="Sunrise Public School" className="bg-slate-800 border-purple-700/40 text-white h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-gray-300">School Code (unique)</Label><Input value={newSchool.code} onChange={e => setNewSchool(s => ({ ...s, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') }))} placeholder="SUNRISE01" className="bg-slate-800 border-purple-700/40 text-white h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-gray-300">Admin Email</Label><Input type="email" value={newSchool.email} onChange={e => setNewSchool(s => ({ ...s, email: e.target.value }))} placeholder="admin@sunrisepublic.edu" className="bg-slate-800 border-purple-700/40 text-white h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-gray-300">Password</Label><Input type="password" value={newSchool.password} onChange={e => setNewSchool(s => ({ ...s, password: e.target.value }))} placeholder="Minimum 8 characters" className="bg-slate-800 border-purple-700/40 text-white h-9 text-sm" /></div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-300">Plan</Label>
+              <select value={newSchool.planName} onChange={e => setNewSchool(s => ({ ...s, planName: e.target.value }))} className="w-full rounded-lg bg-slate-800 border border-purple-700/40 text-white text-sm px-3 py-2">
+                <option value="trial">Trial</option>
+                <option value="standard">Standard</option>
+                <option value="premium">Premium</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddSchoolOpen(false)} className="text-gray-400 hover:text-white">Cancel</Button>
+            <Button onClick={createSchool} disabled={creatingSchool} className="bg-purple-600 hover:bg-purple-700 text-white">
+              {creatingSchool ? <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+              Create School
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 // ─── Login Page Component ───
 function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => void }) {
-  const [loginRole, setLoginRole] = useState<'admin' | 'school' | 'teacher'>('school');
+  const [loginRole, setLoginRole] = useState<'admin' | 'school' | 'teacher' | 'superadmin'>('school');
   const [email, setEmail] = useState('pilot@client.school');
   const [password, setPassword] = useState('ClientPilot2026');
   const [error, setError] = useState('');
@@ -7682,7 +8346,8 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
       const data = await res.json();
 
       if (res.ok && data.success) {
-        onLogin(data.user, !registering && loginRole === 'teacher' ? 'teacher' : 'admin');
+        const role: UserRole = !registering && loginRole === 'superadmin' ? 'superadmin' : !registering && loginRole === 'teacher' ? 'teacher' : 'admin';
+        onLogin(data.user, role);
       } else {
         setError(data.error || 'Invalid credentials');
       }
@@ -7693,13 +8358,13 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
     }
   };
 
-  const handleQuickSchool = async (schoolEmail: string) => {
+  const handleQuickSchool = async (schoolEmail: string, quickPassword = 'school123') => {
     setLoginRole('school');
     setEmail(schoolEmail);
-    setPassword('school123');
+    setPassword(quickPassword);
     setRegistering(false); setError(''); setLoading(true);
     try {
-      const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: schoolEmail, password: 'school123', role: 'school' }) });
+      const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: schoolEmail, password: quickPassword, role: 'school' }) });
       const data = await response.json();
       if (!response.ok || !data.success) throw new Error(data.error || 'Demo login failed');
       onLogin(data.user, 'admin');
@@ -7723,19 +8388,29 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
         <Card className="bg-gray-900/80 border-gray-700/50 backdrop-blur-xl shadow-2xl">
           <CardContent className="p-6">
             {/* Role Tabs */}
-            {!registering && <Tabs value={loginRole} onValueChange={(v) => { setLoginRole(v as 'admin' | 'school' | 'teacher'); setError(''); }} className="mb-6">
+            {!registering && <Tabs value={loginRole} onValueChange={(v) => {
+              setLoginRole(v as 'admin' | 'school' | 'teacher' | 'superadmin');
+              setError('');
+              if (v === 'superadmin') { setEmail('superadmin@smartcalendar.app'); setPassword(''); }
+              else if (v === 'school') { setEmail('pilot@client.school'); setPassword('ClientPilot2026'); }
+              else { setEmail(''); setPassword(''); }
+            }} className="mb-6">
               <TabsList className="w-full bg-gray-800 border border-gray-700 h-11">
                 <TabsTrigger value="school" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
                   <GraduationCap className="w-3.5 h-3.5 mr-1" />
-                  School Admin
+                  School
                 </TabsTrigger>
                 <TabsTrigger value="admin" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
                   <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                  Global Admin
+                  Admin
                 </TabsTrigger>
                 <TabsTrigger value="teacher" className="flex-1 data-[state=active]:bg-emerald-600 data-[state=active]:text-white text-gray-400 h-9 text-xs">
                   <User className="w-3.5 h-3.5 mr-1" />
                   Teacher
+                </TabsTrigger>
+                <TabsTrigger value="superadmin" className="flex-1 data-[state=active]:bg-purple-700 data-[state=active]:text-white text-gray-400 h-9 text-xs">
+                  <Settings className="w-3.5 h-3.5 mr-1" />
+                  Super Admin
                 </TabsTrigger>
               </TabsList>
             </Tabs>}
@@ -7808,7 +8483,7 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
               <div className="grid grid-cols-1 gap-2">
                 <Button
                   type="button"
-                  onClick={() => { setLoginRole('school'); setEmail('pilot@client.school'); setPassword('ClientPilot2026'); }}
+                  onClick={() => handleQuickSchool('pilot@client.school', 'ClientPilot2026')}
                   variant="outline"
                   className="w-full justify-start text-xs border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-200 h-auto py-2.5"
                 >
@@ -7864,12 +8539,13 @@ export default function AISmartCalendar() {
   const [autoAssigning, setAutoAssigning] = useState(false);
   const [generatingDna, setGeneratingDna] = useState(false);
   const [generatingLessonPlan, setGeneratingLessonPlan] = useState(false);
-  const [userMode, setUserMode] = useState<'admin' | 'teacher'>('admin');
+  const [userMode, setUserMode] = useState<'admin' | 'teacher' | 'superadmin'>('admin');
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginUser, setLoginUser] = useState<LoginUser | null>(null);
   const [teacherLoginOpen, setTeacherLoginOpen] = useState(false);
   const [loginTeacherId, setLoginTeacherId] = useState('');
+  const [featureFlags, setFeatureFlags] = useState<SchoolFeatureFlags | null>(null);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -8110,9 +8786,22 @@ export default function AISmartCalendar() {
     setIsLoggedIn(true);
     setLoginUser(user);
 
+    if (role === 'superadmin') {
+      setUserMode('superadmin');
+      setActiveTab('dashboard');
+      return;
+    }
+
     if (role === 'admin') {
       setUserMode('admin');
       setActiveTab('dashboard');
+      // Fetch feature flags for this school
+      if (user.schoolId) {
+        try {
+          const res = await fetch(`/api/school/feature-flags?schoolId=${user.schoolId}`);
+          if (res.ok) { const data = await res.json(); setFeatureFlags(data.flags); }
+        } catch {}
+      }
     } else if (role === 'teacher') {
       // Find the teacher from our loaded teachers list
       const teacher = teachers.find((t) => t.id === user.id);
@@ -8164,6 +8853,11 @@ export default function AISmartCalendar() {
   // Show login page if not logged in
   if (!isLoggedIn) {
     return <LoginPage onLogin={handleLogin} />;
+  }
+
+  // Super-admin portal — completely separate UI
+  if (userMode === 'superadmin') {
+    return <SuperAdminPortal user={loginUser!} onLogout={handleLogout} />;
   }
 
   return (
@@ -8291,6 +8985,8 @@ export default function AISmartCalendar() {
                 schoolName={loginUser?.name}
                 schoolCode={loginUser?.schoolCode}
                 isClientPilot={loginUser?.schoolId === 'sch_client_pilot_001' || loginUser?.schoolCode === 'PILOT01'}
+                featureFlagNote={featureFlags?.customNote ?? undefined}
+                planName={featureFlags?.planName}
               />
             )}
             {activeTab === 'calendar' && (

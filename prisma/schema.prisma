@@ -8,15 +8,16 @@ datasource db {
 }
 
 model School {
-  id        String     @id @default(cuid())
-  name      String
-  code      String     @unique
-  email     String     @unique
-  password  String     @default("school123")
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  teachers  Teacher[]
-  schedules Schedule[]
+  id           String              @id @default(cuid())
+  name         String
+  code         String              @unique
+  email        String              @unique
+  password     String              @default("school123")
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  teachers     Teacher[]
+  schedules    Schedule[]
+  featureFlags SchoolFeatureFlags?
 }
 
 model Teacher {
@@ -113,13 +114,46 @@ model BiometricAttendance {
 }
 
 model Admin {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  password  String
-  role      String   @default("admin")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  password     String
+  role         String   @default("admin")
+  isSuperAdmin Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model SchoolFeatureFlags {
+  id                      String   @id @default(cuid())
+  schoolId                String   @unique
+  school                  School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  // Timetable features
+  aiTimetableEnabled      Boolean  @default(true)
+  manualTimetableEnabled  Boolean  @default(true)
+  bulkImportEnabled       Boolean  @default(true)
+  // Break features
+  shortBreakEnabled       Boolean  @default(true)
+  lunchBreakEnabled       Boolean  @default(true)
+  // PT/Sports
+  ptPeriodsEnabled        Boolean  @default(true)
+  // Substitution features
+  substitutionEnabled     Boolean  @default(true)
+  autoSubstitutionEnabled Boolean  @default(true)
+  // Analytics
+  workloadAnalyticsEnabled Boolean @default(true)
+  // Communication
+  teacherNotifyEnabled    Boolean  @default(true)
+  // Limits
+  maxGrades               Int      @default(12)
+  maxTeachers             Int      @default(200)
+  maxPeriodsPerDay        Int      @default(10)
+  // Custom branding / notes
+  planName                String   @default("standard")  // trial | standard | premium
+  customNote              String?
+  trialEndsAt             DateTime?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 }
 
 model Curriculum {

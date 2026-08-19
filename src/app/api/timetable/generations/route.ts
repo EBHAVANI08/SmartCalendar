@@ -9,5 +9,10 @@ export async function POST(request: Request) {
   const version = await db.timetableVersion.findFirst({ where: { id: timetableVersionId, schoolId } }); if (!version || version.status !== 'draft') return NextResponse.json({ error: 'A draft timetable version is required.' }, { status: 409 });
   const job = await db.generationJob.create({ data: { schoolId, timetableVersionId, createdBy, solveTimeSeconds, alternatives: Math.min(5, Math.max(1, alternatives)), allowPartial } });
   try { await generateCandidates(job.id); return NextResponse.json({ success: true, job: await db.generationJob.findUnique({ where: { id: job.id } }), candidates: await db.timetableCandidate.findMany({ where: { generationJobId: job.id }, orderBy: [{ recommended: 'desc' }, { preferenceScore: 'desc' }] }) }, { status: 201 }); }
-  catch (error) { await db.generationJob.update({ where: { id: job.id }, data: { status: 'failed', stage: 'failed', error: String(error), completedAt: new Date() } }); return NextResponse.json({ error: 'Generation failed', jobId: job.id }, { status: 500 }); }
+  catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    const isConfig = msg.includes('requirements') || msg.includes('not configured') || msg.includes('not found');
+    await db.generationJob.update({ where: { id: job.id }, data: { status: 'failed', stage: 'failed', error: msg, completedAt: new Date() } });
+    return NextResponse.json({ error: msg, jobId: job.id, hint: isConfig ? 'Use the AI Timetable Wizard (Create Timetable button) to generate your timetable. The governance engine requires subject requirements to be pre-configured.' : undefined }, { status: isConfig ? 400 : 500 });
+  }
 }

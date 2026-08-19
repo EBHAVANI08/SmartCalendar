@@ -69,42 +69,40 @@ export async function PATCH(request: Request) {
       select: { id: true, period: true },
     });
 
-    if (matchingSchedules.length === 0) {
-      // Fallback updateMany by grade & section
-      const slotMap = new Map(slots.map((s) => [s.period, s]));
-      const updatePromises = slots.map((slot) =>
-        db.schedule.updateMany({
-          where: { grade, section, period: slot.period },
-          data: { startTime: slot.startTime, endTime: slot.endTime },
-        })
+    const updatePromises = slots.map((slot) =>
+      db.schedule.updateMany({
+        where: {
+          ...whereCondition,
+          period: slot.period,
+        },
+        data: { startTime: slot.startTime, endTime: slot.endTime },
+      }),
+    );
+
+    const results = await db.$transaction(updatePromises);
+    const updated = results.reduce((sum, res) => sum + res.count, 0);
+
+    if (updated === 0 && matchingSchedules.length === 0) {
+      const fallbackResults = await db.$transaction(
+        slots.map((slot) =>
+          db.schedule.updateMany({
+            where: { grade, section, period: slot.period },
+            data: { startTime: slot.startTime, endTime: slot.endTime },
+          }),
+        ),
       );
-      const results = await db.$transaction(updatePromises);
-      const updated = results.reduce((sum, res) => sum + res.count, 0);
+      const fallbackUpdated = fallbackResults.reduce((sum, res) => sum + res.count, 0);
       return NextResponse.json({
         success: true,
-        updated,
-        message: `Updated ${updated} timetable period entries for ${grade} Section ${section} (${setup.startTime || '09:30'}–${setup.endTime || '17:00'}).`,
+        updated: fallbackUpdated,
+        message: `Updated ${fallbackUpdated} timetable period entries for ${grade} Section ${section} (${setup.startTime || '09:30'}–${setup.endTime || '17:00'}).`,
       });
     }
 
-    const slotMap = new Map(slots.map((s) => [s.period, s]));
-    const updates = matchingSchedules
-      .map((item) => {
-        const slot = slotMap.get(item.period);
-        if (!slot) return null;
-        return db.schedule.update({
-          where: { id: item.id },
-          data: { startTime: slot.startTime, endTime: slot.endTime },
-        });
-      })
-      .filter(Boolean) as Array<ReturnType<typeof db.schedule.update>>;
-
-    await db.$transaction(updates);
-
     return NextResponse.json({
       success: true,
-      updated: updates.length,
-      message: `Updated ${updates.length} timetable period entries for ${grade} Section ${section} (${setup.startTime || '09:30'}–${setup.endTime || '17:00'}).`,
+      updated,
+      message: `Updated ${updated} timetable period entries for ${grade} Section ${section} (${setup.startTime || '09:30'}–${setup.endTime || '17:00'}).`,
     });
   } catch (error) {
     console.error('Error updating timetable timings:', error);

@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: false,
   productionBrowserSourceMaps: false,
+  serverExternalPackages: ['pdf-parse', 'xlsx'],
   experimental: {
     cpus: 1,
   },

@@ -310,7 +310,19 @@ export async function POST(request: Request) {
     const buildSubjectOrderForDay = (day: string): { period: number; subject: string }[] => {
       const assignments: { period: number; subject: string }[] = [];
       const usedSubjects = new Map<string, number>(); // subject -> count assigned today
-      const dailySubjectLimit = 1;
+      const isPTGrade = ['Grade 3', 'Grade 4', 'Grade 5'].includes(targetGrade);
+      const subjectDailyLimit = (subject: string): number => {
+        // Allow repeating a subject in the same day (max 2) but never consecutive.
+        // Extra sports balancing:
+        // - Grade 3: only 1 sports (Physical Education) period on Wednesday
+        // - Grade 5: allow up to 2 sports periods on Wednesday
+        if (subject === 'Physical Education' && day === 'Wednesday') {
+          if (targetGrade === 'Grade 3') return 1;
+          if (targetGrade === 'Grade 5') return 2;
+          return 1;
+        }
+        return 2;
+      };
 
       // Categorize subjects
       const rotate = <T,>(items: T[], offset: number) => items.length ? items.slice(offset % items.length).concat(items.slice(0, offset % items.length)) : items;
@@ -319,7 +331,8 @@ export async function POST(request: Request) {
       const afternoonSubs = rotate(subjects.filter((s) => AFTERNOON_PREFERRED.includes(s)), dayOffset);
       const peSubject = subjects.find((s) => s === 'Physical Education');
       const otherSubs = rotate(subjects.filter(
-        (s) => !CORE_SUBJECTS.includes(s) && !AFTERNOON_PREFERRED.includes(s) && s !== 'Physical Education'
+        // Physical Education is allowed here; period-1 restriction is enforced later.
+        (s) => !CORE_SUBJECTS.includes(s) && !AFTERNOON_PREFERRED.includes(s)
       ), dayOffset);
 
       // Track which subjects still need periods
@@ -340,22 +353,34 @@ export async function POST(request: Request) {
       for (const slot of morningSlots) {
         let assigned = false;
 
+        // Rule: PT (Physical Education) for Grades 3–5 must be Period 1 on Wednesday.
+        if (slot.period === 1 && day === 'Wednesday' && isPTGrade) {
+          const pe = 'Physical Education';
+          const currentCount = usedSubjects.get(pe) || 0;
+          if (currentCount < subjectDailyLimit(pe)) {
+            assignments.push({ period: slot.period, subject: pe });
+            usedSubjects.set(pe, currentCount + 1);
+            morningIdx++;
+            assigned = true;
+            continue;
+          }
+        }
+
         // Try to assign a core subject first
         for (const sub of morningQueue) {
           const currentCount = usedSubjects.get(sub) || 0;
-          // Pedagogical constraint: no more than 2 consecutive periods of same subject
-          if (currentCount >= dailySubjectLimit) continue;
+          // Pedagogical constraint: max 2 occurrences per day per subject
+          if (currentCount >= subjectDailyLimit(sub)) continue;
 
-          // PE should not be in period 1
-          if (sub === 'Physical Education' && slot.period === 1) continue;
+          // PE should not be in period 1 (except PT rule above)
+          if (sub === 'Physical Education' && slot.period === 1) {
+            const allowed = day === 'Wednesday' && isPTGrade;
+            if (!allowed) continue;
+          }
 
           // Check if we already assigned this subject recently (avoid consecutive same)
           const lastAssigned = assignments[assignments.length - 1];
-          if (lastAssigned && lastAssigned.subject === sub) {
-            // Allow at most 2 consecutive, but prefer different
-            const secondLast = assignments[assignments.length - 2];
-            if (secondLast && secondLast.subject === sub) continue; // Already 2 consecutive
-          }
+          if (lastAssigned && lastAssigned.subject === sub) continue;
 
           assignments.push({ period: slot.period, subject: sub });
           usedSubjects.set(sub, (usedSubjects.get(sub) || 0) + 1);
@@ -368,13 +393,13 @@ export async function POST(request: Request) {
           // Fallback: assign any subject that hasn't been used too much
           for (const sub of subjects) {
             const currentCount = usedSubjects.get(sub) || 0;
-            if (currentCount >= dailySubjectLimit) continue;
-            if (sub === 'Physical Education' && slot.period === 1) continue;
-            const lastAssigned = assignments[assignments.length - 1];
-            if (lastAssigned && lastAssigned.subject === sub) {
-              const secondLast = assignments[assignments.length - 2];
-              if (secondLast && secondLast.subject === sub) continue;
+            if (currentCount >= subjectDailyLimit(sub)) continue;
+            if (sub === 'Physical Education' && slot.period === 1) {
+              const allowed = day === 'Wednesday' && isPTGrade;
+              if (!allowed) continue;
             }
+            const lastAssigned = assignments[assignments.length - 1];
+            if (lastAssigned && lastAssigned.subject === sub) continue;
             assignments.push({ period: slot.period, subject: sub });
             usedSubjects.set(sub, (usedSubjects.get(sub) || 0) + 1);
             assigned = true;
@@ -382,7 +407,13 @@ export async function POST(request: Request) {
           }
         }
 
-        if (!assigned) { const unused = subjects.find((subject) => !usedSubjects.has(subject)); if (unused) { assignments.push({ period: slot.period, subject: unused }); usedSubjects.set(unused, 1); } }
+        if (!assigned) {
+          const unused = subjects.find((subject) => (usedSubjects.get(subject) || 0) < subjectDailyLimit(subject));
+          if (unused) {
+            assignments.push({ period: slot.period, subject: unused });
+            usedSubjects.set(unused, (usedSubjects.get(unused) || 0) + 1);
+          }
+        }
       }
 
       // Fill afternoon periods — prioritize Art/Music
@@ -393,13 +424,10 @@ export async function POST(request: Request) {
 
         for (const sub of afternoonQueue) {
           const currentCount = usedSubjects.get(sub) || 0;
-          if (currentCount >= dailySubjectLimit) continue;
+          if (currentCount >= subjectDailyLimit(sub)) continue;
 
           const lastAssigned = assignments[assignments.length - 1];
-          if (lastAssigned && lastAssigned.subject === sub) {
-            const secondLast = assignments[assignments.length - 2];
-            if (secondLast && secondLast.subject === sub) continue;
-          }
+          if (lastAssigned && lastAssigned.subject === sub) continue;
 
           assignments.push({ period: slot.period, subject: sub });
           usedSubjects.set(sub, (usedSubjects.get(sub) || 0) + 1);
@@ -407,13 +435,45 @@ export async function POST(request: Request) {
           break;
         }
 
-        if (!assigned) { const unused = subjects.find((subject) => !usedSubjects.has(subject)); if (unused) { assignments.push({ period: slot.period, subject: unused }); usedSubjects.set(unused, 1); } }
+        if (!assigned) {
+          const unused = subjects.find((subject) => (usedSubjects.get(subject) || 0) < subjectDailyLimit(subject));
+          if (unused) {
+            assignments.push({ period: slot.period, subject: unused });
+            usedSubjects.set(unused, (usedSubjects.get(unused) || 0) + 1);
+          }
+        }
+      }
+
+      // PT balancing rule:
+      // Grade 5 should have one extra sports (Physical Education) period on Wednesday vs Grade 3.
+      // If PE is only placed once (and period-1 is already PE), force a second PE into a non-consecutive slot.
+      if (day === 'Wednesday' && targetGrade === 'Grade 5') {
+        const pe = 'Physical Education';
+        const peCount = assignments.filter((a) => a.subject === pe).length;
+        if (peCount < subjectDailyLimit(pe)) {
+          const byPeriod = new Map(assignments.map((a) => [a.period, a]));
+          const hasPeAt = (p: number) => byPeriod.get(p)?.subject === pe;
+          const candidate = [...assignments]
+            .sort((a, b) => a.period - b.period)
+            .find((a) => {
+              if (a.subject === pe) return false;
+              // Avoid consecutive placement with existing PE periods
+              if (hasPeAt(a.period - 1) || hasPeAt(a.period + 1)) return false;
+              return true;
+            });
+          if (candidate) {
+            candidate.subject = pe;
+          }
+        }
       }
 
       return assignments;
     };
 
     // ─── Step 5: Generate timetable for this specific grade+section ───
+    // Rule: for Grades 3–8, keep period-1 teacher consistent across the week (acts as the "class teacher").
+    const isClassTeacherRuleGrade = ['Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8'].includes(targetGrade);
+    let period1AnchorTeacherId: string | null = null;
     for (const day of DAYS) {
       const dayPlan = buildSubjectOrderForDay(day).filter((slot) => day !== 'Saturday' || slot.period <= saturdayPeriods);
 
@@ -444,12 +504,20 @@ export async function POST(request: Request) {
             .sort((a, b) => b.score - a.score);
 
           if (candidates.length > 0) {
-            bestCandidate = candidates[0];
+            const preferAnchor = isClassTeacherRuleGrade && period === 1 && period1AnchorTeacherId;
+            bestCandidate = preferAnchor
+              ? candidates.find((c) => c.id === period1AnchorTeacherId) ?? candidates[0]
+              : candidates[0];
             break; // Use the first pool that has candidates (prefer grade teachers)
           }
         }
 
         if (bestCandidate) {
+          // Soft rule: Period-1 teacher consistency (Class Teacher-like anchor) for Grades 3–8.
+          if (isClassTeacherRuleGrade && period === 1 && !period1AnchorTeacherId) {
+            period1AnchorTeacherId = bestCandidate.id;
+          }
+
           markTeacherBusy(bestCandidate.id, day, period);
           incrementDaySubjectCount(day, subject);
 

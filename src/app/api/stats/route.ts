@@ -11,13 +11,16 @@ export async function GET(request: Request) {
     const today = new Date().toISOString().split('T')[0];
     const schoolWhere = schoolId ? { schoolId } : {};
 
-    const [totalTeachers, todaySubstitutions, emptyPeriods] = await Promise.all([
+    const [totalTeachers, todaySubstitutions, emptyPeriods, classSections] = await Promise.all([
       db.teacher.count({ where: schoolWhere }),
       db.substitution.count({ where: { date: today } }),
       db.schedule.count({ where: { ...schoolWhere, teacherId: null } }),
+      schoolId
+        ? db.classSection.findMany({ where: { schoolId }, select: { studentStrength: true } })
+        : Promise.resolve([]),
     ]);
 
-    const totalStudents = 1200;
+    const totalStudents = classSections.reduce((sum, section) => sum + section.studentStrength, 0);
 
     const pendingSubstitutions = await db.substitution.count({
       where: { date: today, status: 'pending' },
