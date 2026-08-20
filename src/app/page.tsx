@@ -2366,24 +2366,84 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
     const classTeacher = teachers.find((teacher) => teacher.id === classTeacherId);
     const timetableDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     const fallbackTimes = [
-      ['08:30', '09:15'], ['09:15', '10:00'], ['10:15', '11:00'], ['11:00', '11:45'],
-      ['12:30', '13:15'], ['13:15', '14:00'], ['14:00', '14:45'], ['14:45', '15:30'],
+      ['09:30', '10:25'], ['10:25', '11:20'], ['11:35', '12:30'], ['12:30', '13:25'],
+      ['14:10', '15:05'], ['15:05', '16:00'], ['16:00', '16:55'], ['16:55', '17:50'],
     ];
-    const periodTime = (period: number) => {
-      const found = classSchedule.find((item) => item.period === period && item.startTime && item.endTime);
-      return found ? `${found.startTime}–${found.endTime}` : fallbackTimes[period - 1].join('–');
+
+    const parseSlotTime = (value: string, fallback: number) => {
+      if (!value) return fallback;
+      const match = /^(\d{1,2}):(\d{2})\s*(am|pm)?$/i.exec(String(value).trim());
+      if (!match) return fallback;
+      let hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      const ampm = match[3]?.toLowerCase();
+      if (ampm === 'pm' && hours < 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
+      if (!ampm && hours >= 1 && hours <= 6) hours += 12;
+      return hours * 60 + minutes;
     };
+
+    const formatSlotTime = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
+
+    const numPeriods = Math.min(10, Math.max(4, Number(timetableSetup.periodsPerDay) || 8));
+    const startMins = parseSlotTime(timetableSetup.startTime, 9 * 60 + 30); // 09:30
+    const endMins = parseSlotTime(timetableSetup.endTime, 17 * 60); // 17:00
+    const shortBreakActive = timetableSetup.breakEnabled !== false && Number(timetableSetup.breakMinutes) > 0;
+    const shortBreakMins = shortBreakActive ? Number(timetableSetup.breakMinutes) || 15 : 0;
+    const shortBreakPeriod = Number(timetableSetup.breakAfter) || 2;
+    const lunchBreakActive = timetableSetup.lunchEnabled !== false && Number(timetableSetup.lunchMinutes) > 0;
+    const lunchBreakMins = lunchBreakActive ? Number(timetableSetup.lunchMinutes) || 45 : 0;
+    const lunchBreakPeriod = Number(timetableSetup.lunchAfter) || 4;
+
+    const totalBreakMins = (shortBreakActive ? shortBreakMins : 0) + (lunchBreakActive ? lunchBreakMins : 0);
+    const teachingMins = Math.max(numPeriods * 15, endMins - startMins - totalBreakMins);
+    const pMins = Math.floor(teachingMins / numPeriods);
+    const extraPMins = teachingMins % numPeriods;
+
+    let slotCursor = startMins;
+    const computedSlots: Record<number, { startTime: string; endTime: string }> = {};
+    const breakSlotTimes: { shortBreak?: { startTime: string; endTime: string }; lunchBreak?: { startTime: string; endTime: string } } = {};
+
+    for (let i = 1; i <= numPeriods; i++) {
+      const sTime = formatSlotTime(slotCursor);
+      slotCursor += pMins + (i <= extraPMins ? 1 : 0);
+      const eTime = formatSlotTime(slotCursor);
+      computedSlots[i] = { startTime: sTime, endTime: eTime };
+      if (shortBreakActive && i === shortBreakPeriod) {
+        const bStart = eTime;
+        slotCursor += shortBreakMins;
+        const bEnd = formatSlotTime(slotCursor);
+        breakSlotTimes.shortBreak = { startTime: bStart, endTime: bEnd };
+      }
+      if (lunchBreakActive && i === lunchBreakPeriod) {
+        const lStart = eTime;
+        slotCursor += lunchBreakMins;
+        const lEnd = formatSlotTime(slotCursor);
+        breakSlotTimes.lunchBreak = { startTime: lStart, endTime: lEnd };
+      }
+    }
+
+    const periodTime = (period: number) => {
+      if (computedSlots[period]) {
+        return `${computedSlots[period].startTime}–${computedSlots[period].endTime}`;
+      }
+      const found = classSchedule.find((item) => item.period === period && item.startTime && item.endTime);
+      return found ? `${found.startTime}–${found.endTime}` : (fallbackTimes[period - 1] ? fallbackTimes[period - 1].join('–') : '');
+    };
+
     const gapTime = (afterPeriod: number, fallback: string) => {
+      if (shortBreakActive && afterPeriod === shortBreakPeriod && breakSlotTimes.shortBreak) {
+        return `${breakSlotTimes.shortBreak.startTime}–${breakSlotTimes.shortBreak.endTime}`;
+      }
+      if (lunchBreakActive && afterPeriod === lunchBreakPeriod && breakSlotTimes.lunchBreak) {
+        return `${breakSlotTimes.lunchBreak.startTime}–${breakSlotTimes.lunchBreak.endTime}`;
+      }
       const before = classSchedule.find((item) => item.period === afterPeriod);
       const after = classSchedule.find((item) => item.period === afterPeriod + 1);
       return before?.endTime && after?.startTime ? `${before.endTime}–${after.startTime}` : fallback;
     };
-    const saturdayTeachingPeriods = Math.max(4, ...classSchedule.filter((item) => item.day === 'Saturday').map((item) => item.period));
 
-    const shortBreakActive = timetableSetup.breakEnabled !== false && Number(timetableSetup.breakMinutes) > 0;
-    const shortBreakPeriod = Number(timetableSetup.breakAfter) || 2;
-    const lunchBreakActive = timetableSetup.lunchEnabled !== false && Number(timetableSetup.lunchMinutes) > 0;
-    const lunchBreakPeriod = Number(timetableSetup.lunchAfter) || 4;
+    const saturdayTeachingPeriods = Math.max(4, ...classSchedule.filter((item) => item.day === 'Saturday').map((item) => item.period));
 
     return <div className="space-y-6">
       {moduleHeader}
@@ -2498,8 +2558,8 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                           <span className="mt-1 block text-[11px] font-medium text-emerald-700 truncate">
                             {schedule.teacher?.name || 'Teacher not assigned'}
                           </span>
-                          <span className="mt-1 block text-[10px] text-slate-500">
-                            {schedule.startTime}–{schedule.endTime}
+                          <span className="mt-1 block text-[10px] text-slate-500 font-mono">
+                            {computedSlots[period] ? `${computedSlots[period].startTime}–${computedSlots[period].endTime}` : `${schedule.startTime}–${schedule.endTime}`}
                           </span>
                         </button>
                       </div>
@@ -3715,8 +3775,20 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                       Cancel
                     </Button>
                     <Button
-                      onClick={() => {
+                      onClick={async () => {
                         pushActivity('Step 1 Completed', `Timings saved — ${timetableSetup.periodsPerDay} periods/day, ${timetableSetup.workingDays} days/week`, 'setup');
+                        try {
+                          const targetGrade = activeClass?.grade || 'Grade 3';
+                          const targetSection = activeClass?.section || 'A';
+                          await fetch('/api/schedules/timings', {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ grade: targetGrade, section: targetSection, schoolId, setup: timetableSetup }),
+                          });
+                          if (onTimingsRefresh) void onTimingsRefresh();
+                        } catch {
+                          // keep going even if network delay
+                        }
                         completeStep(1);
                       }}
                       className="w-full sm:w-auto bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold h-11 px-6 rounded-xl shadow-md shadow-emerald-600/20 gap-2"
