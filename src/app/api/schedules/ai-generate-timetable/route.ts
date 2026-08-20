@@ -97,8 +97,10 @@ export async function POST(request: Request) {
     const saturdayPeriods = Math.min(periodsPerDay, Math.max(1, Number(setup.saturdayPeriods) || 4));
     const breakAfter = Math.min(periodsPerDay - 1, Math.max(1, Number(setup.breakAfter) || 2));
     const lunchAfter = Math.min(periodsPerDay - 1, Math.max(breakAfter + 1, Number(setup.lunchAfter) || 4));
-    const breakMinutes = Math.min(30, Math.max(5, Number(setup.breakMinutes) || 15));
-    const lunchMinutes = Math.min(90, Math.max(15, Number(setup.lunchMinutes) || 45));
+    const breakEnabled = setup.breakEnabled !== false && Number(setup.breakMinutes) > 0;
+    const lunchEnabled = setup.lunchEnabled !== false && Number(setup.lunchMinutes) > 0;
+    const breakMinutes = breakEnabled ? Math.min(30, Math.max(5, Number(setup.breakMinutes) || 15)) : 0;
+    const lunchMinutes = lunchEnabled ? Math.min(90, Math.max(15, Number(setup.lunchMinutes) || 45)) : 0;
     const parseMinutes = (value: string, fallback: number) => { const match = /^(\d{1,2}):(\d{2})$/.exec(value || ''); return match ? Number(match[1]) * 60 + Number(match[2]) : fallback; };
     const formatMinutes = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
     const startMinutes = parseMinutes(setup.startTime, 9 * 60 + 30);

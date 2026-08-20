@@ -298,6 +298,16 @@
   border-radius: 10px !important;
 }
 
+/* ─── No Scrollbar Utility ─── */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+
 [data-slot="scroll-area-thumb"]:hover {
   background: linear-gradient(180deg, #059669, #0891b2) !important;
 }

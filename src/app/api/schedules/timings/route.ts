@@ -9,8 +9,10 @@ export async function PATCH(request: Request) {
     const periods = Math.min(10, Math.max(4, Number(setup.periodsPerDay) || 8));
     const breakAfter = Math.min(periods - 1, Math.max(1, Number(setup.breakAfter) || 2));
     const lunchAfter = Math.min(periods - 1, Math.max(breakAfter + 1, Number(setup.lunchAfter) || 4));
-    const breakMinutes = Math.min(30, Math.max(5, Number(setup.breakMinutes) || 15));
-    const lunchMinutes = Math.min(90, Math.max(15, Number(setup.lunchMinutes) || 45));
+    const breakEnabled = setup.breakEnabled !== false && Number(setup.breakMinutes) > 0;
+    const lunchEnabled = setup.lunchEnabled !== false && Number(setup.lunchMinutes) > 0;
+    const breakMinutes = breakEnabled ? Math.min(30, Math.max(5, Number(setup.breakMinutes) || 15)) : 0;
+    const lunchMinutes = lunchEnabled ? Math.min(90, Math.max(15, Number(setup.lunchMinutes) || 45)) : 0;
 
     const parseTime = (value: string, fallback: number) => {
       if (!value) return fallback;
