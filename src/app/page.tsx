@@ -2419,10 +2419,7 @@ function AcademicCalendarSection({
     </div>
   </div>;
 
-  if (workspaceTab === 'import') return <div className="space-y-6">{moduleHeader}<BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} /></div>;
-  if (workspaceTab === 'workload') return <div className="space-y-6">{moduleHeader}<WorkloadAnalyticsSection teachers={teachers} schedules={sharedData} onRefresh={() => { if (onRefreshAll) void onRefreshAll(); }} /></div>;
-  if (workspaceTab === 'teachers') return <div className="space-y-6">{moduleHeader}<TeachersSection teachers={teachers} schedules={sharedData} selectedDay={selectedDay} onRefresh={onRefreshTeachers} schoolId={schoolId} /></div>;
-  if (workspaceTab === 'classes') {
+  const renderClassView = () => {
     const classSchedule = activeClass ? sharedData.filter((item) => item.grade === activeClass.grade && item.section === activeClass.section) : [];
     const teacherFrequency = classSchedule.reduce<Record<string, number>>((counts, item) => {
       if (item.teacherId) counts[item.teacherId] = (counts[item.teacherId] || 0) + 1;
@@ -2496,353 +2493,260 @@ function AcademicCalendarSection({
     }
 
     const periodTime = (period: number) => {
-      if (computedSlots[period]) {
-        return `${computedSlots[period].startTime}–${computedSlots[period].endTime}`;
-      }
-      const found = classSchedule.find((item) => item.period === period && item.startTime && item.endTime);
-      return found ? `${found.startTime}–${found.endTime}` : (fallbackTimes[period - 1] ? fallbackTimes[period - 1].join('–') : '');
+      if (computedSlots[period]) return `${computedSlots[period].startTime}–${computedSlots[period].endTime}`;
+      const slot = classSchedule.find((item) => item.period === period && item.startTime && item.endTime);
+      if (slot?.startTime && slot?.endTime) return `${slot.startTime}–${slot.endTime}`;
+      const fallback = fallbackTimes[period - 1];
+      return fallback ? `${fallback[0]}–${fallback[1]}` : `Period ${period}`;
     };
 
-    const gapTime = (afterPeriod: number, fallback: string) => {
-      if (shortBreakActive && afterPeriod === shortBreakPeriod && breakSlotTimes.shortBreak) {
+    const gapTime = (afterPeriod: number, fallbackLabel: string) => {
+      if (afterPeriod === shortBreakPeriod && breakSlotTimes.shortBreak) {
         return `${breakSlotTimes.shortBreak.startTime}–${breakSlotTimes.shortBreak.endTime}`;
       }
-      if (lunchBreakActive && afterPeriod === lunchBreakPeriod && breakSlotTimes.lunchBreak) {
+      if (afterPeriod === lunchBreakPeriod && breakSlotTimes.lunchBreak) {
         return `${breakSlotTimes.lunchBreak.startTime}–${breakSlotTimes.lunchBreak.endTime}`;
       }
-      const before = classSchedule.find((item) => item.period === afterPeriod);
-      const after = classSchedule.find((item) => item.period === afterPeriod + 1);
-      return before?.endTime && after?.startTime ? `${before.endTime}–${after.startTime}` : fallback;
+      const before = classSchedule.find((item) => item.period === afterPeriod)?.endTime;
+      const after = classSchedule.find((item) => item.period === afterPeriod + 1)?.startTime;
+      return before && after ? `${before}–${after}` : fallbackLabel;
     };
 
-    const saturdayTeachingPeriods = Math.max(4, ...classSchedule.filter((item) => item.day === 'Saturday').map((item) => item.period));
+    const saturdayTeachingPeriods = Math.min(numPeriods, Number(timetableSetup.saturdayPeriods) || 4);
 
-    return <div className="space-y-6">
-      {moduleHeader}
-      <div className="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div><h2 className="text-xl font-bold text-slate-900">Class Timetable</h2><p className="text-sm text-muted-foreground">Six working days: eight periods Monday–Friday and four periods on Saturday.</p></div>
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Select
-            value={activeClass ? `${activeClass.grade}|${activeClass.section}` : undefined}
-            onValueChange={(value) => {
-              const [grade, section] = value.split('|');
-              setSelectedGrade({ grade, section });
-              if (typeof window !== 'undefined') {
-                const url = new URL(window.location.href);
-                url.searchParams.set('tab', 'calendar');
-                url.searchParams.set('timetable', 'classes');
-                url.searchParams.set('grade', grade);
-                url.searchParams.set('section', section);
-                window.history.pushState({}, '', url.toString());
-              }
-            }}
-          >
-            <SelectTrigger className="h-11 min-w-[230px] rounded-xl"><SelectValue placeholder="Choose grade and section"/></SelectTrigger>
-            <SelectContent>{classOptions.map((item) => <SelectItem key={`${item.grade}|${item.section}`} value={`${item.grade}|${item.section}`}>{item.grade} · Section {item.section}</SelectItem>)}</SelectContent>
-          </Select>
-          <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { const targetClass = activeClass || classOptions[0]; if (!targetClass) { toast({ title: 'No Class Selected', description: 'Please import or select a grade and section first.', variant: 'destructive' }); return; }
-            const first = classSchedule.find((item) => item.period === 1);
-            const last = classSchedule.length > 0 ? classSchedule.reduce((max, s) => s.period > max.period ? s : max, classSchedule[0]) : null;
-            setAiGradeSection(targetClass);
-            setTimetableSetupAction('timings');
-            setTimetableSetup((current) => ({ ...current, startTime: first?.startTime || current.startTime || '09:30', endTime: last?.endTime || current.endTime || '17:00' }));
-            setAiGradeSelectOpen(true); }}><Clock className="mr-2 h-4 w-4"/>Edit Timings</Button>
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="text-xl font-bold text-slate-900">Class Timetable</h2>
+            <p className="text-xs text-muted-foreground">Six working days: eight periods Monday–Friday and four periods on Saturday.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Select
+              value={activeClass ? `${activeClass.grade}|${activeClass.section}` : ''}
+              onValueChange={(value) => {
+                const [grade, section] = value.split('|');
+                setSelectedGrade({ grade, section });
+                if (typeof window !== 'undefined') {
+                  const url = new URL(window.location.href);
+                  url.pathname = '/calendar';
+                  url.searchParams.delete('tab');
+                  url.searchParams.set('timetable', 'classes');
+                  url.searchParams.set('grade', grade);
+                  url.searchParams.set('section', section);
+                  window.history.pushState({}, '', url.pathname + (url.search ? url.search : ''));
+                }
+              }}
+            >
+              <SelectTrigger className="h-11 min-w-[230px] rounded-xl"><SelectValue placeholder="Choose grade and section"/></SelectTrigger>
+              <SelectContent>{classOptions.map((item) => <SelectItem key={`${item.grade}|${item.section}`} value={`${item.grade}|${item.section}`}>{item.grade} · Section {item.section}</SelectItem>)}</SelectContent>
+            </Select>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-11 rounded-xl border-emerald-200 text-emerald-700 cursor-pointer"
+              onClick={() => {
+                const targetClass = activeClass || classOptions[0];
+                if (!targetClass) {
+                  toast({ title: 'No Class Selected', description: 'Please import or select a grade and section first.', variant: 'destructive' });
+                  return;
+                }
+                const first = classSchedule.find((item) => item.period === 1);
+                const last = classSchedule.length > 0 ? classSchedule.reduce((max, s) => s.period > max.period ? s : max, classSchedule[0]) : null;
+                setAiGradeSection(targetClass);
+                setTimetableSetupAction('timings');
+                setTimetableSetup((current) => ({ ...current, startTime: first?.startTime || current.startTime || '09:30', endTime: last?.endTime || current.endTime || '17:00' }));
+                setAiGradeSelectOpen(true);
+              }}
+            >
+              <Clock className="mr-2 h-4 w-4"/>Edit Timings
+            </Button>
+          </div>
         </div>
-      </div>
-      {!activeClass ? <Card><CardContent className="p-10 text-center text-muted-foreground">Import or generate timetable data to create a class timetable.</CardContent></Card> :
-      <Card className="overflow-hidden border-slate-200 shadow-md">
-        <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-700 px-5 py-5 text-white">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">Grade & Section</p><h2 className="mt-1 text-3xl font-black">{activeClass.grade} — {activeClass.section}</h2></div><div className="rounded-xl bg-white/10 px-4 py-2 backdrop-blur"><p className="text-[11px] uppercase tracking-wider text-emerald-100">Class Teacher</p><p className="font-bold">{classTeacher?.name || 'Not assigned'}</p></div></div>
-        </div>
-        <CardContent className="p-0">
-          <div className="max-h-[70vh] overflow-auto overscroll-contain">
-            <table className="w-full min-w-[1540px] border-collapse text-xs">
-              <thead className="sticky top-0 z-20 bg-slate-950 text-white"><tr>
-                <th className="sticky left-0 z-30 min-w-[110px] border border-slate-700 bg-slate-950 p-3 text-left">Day</th>
-                {Array.from({ length: 8 }, (_, index) => index + 1).flatMap((period) => {
-                  const cells = [<th key={`p-${period}`} className="min-w-[155px] border border-slate-700 p-2"><span className="block text-sm font-bold">Period {period}</span><span className="font-normal text-slate-300">{periodTime(period)}</span></th>];
-                  if (shortBreakActive && period === shortBreakPeriod) cells.push(<th key="break-head" className="min-w-[82px] border border-amber-300 bg-amber-500 p-2 text-amber-950"><span className="font-bold">BREAK</span><span className="block text-[10px]">{gapTime(shortBreakPeriod, 'Short break')}</span></th>);
-                  if (lunchBreakActive && period === lunchBreakPeriod) cells.push(<th key="lunch-head" className="min-w-[90px] border border-orange-300 bg-orange-500 p-2 text-orange-950"><span className="font-bold">LUNCH</span><span className="block text-[10px]">{gapTime(lunchBreakPeriod, 'Lunch break')}</span></th>);
-                  return cells;
-                })}
-              </tr></thead>
-              <tbody>{timetableDays.map((day) => <tr key={day} className="odd:bg-white even:bg-slate-50/70">
-                <th className="sticky left-0 z-10 border bg-emerald-50 p-3 text-left text-sm font-bold text-emerald-900">{day}</th>
-                {Array.from({ length: 8 }, (_, index) => index + 1).flatMap((period) => {
-                  const schedule = classSchedule.find((item) => item.day === day && item.period === period);
-                  const sports = !!schedule && /sport|physical|games|p\.e\.?/i.test(schedule.subject);
-                  const saturdayClosed = day === 'Saturday' && period > saturdayTeachingPeriods;
-                  const isOver = dragOverCell === `${day}-${period}`;
-                  const cells = [<td
-                    key={`${day}-${period}`}
-                    onDragOver={(e) => {
-                      if (saturdayClosed) return;
-                      e.preventDefault();
-                      e.dataTransfer.dropEffect = 'move';
-                      setDragOverCell(`${day}-${period}`);
-                    }}
-                    onDragLeave={() => setDragOverCell(null)}
-                    onDrop={(e) => {
-                      if (saturdayClosed) return;
-                      e.preventDefault();
-                      setDragOverCell(null);
-                      if (!draggedSchedule) return;
-                      if (schedule && schedule.id !== draggedSchedule.id) {
-                        handleSwapPeriods(draggedSchedule.id, schedule.id);
-                      } else if (!schedule) {
-                        handleSwapPeriods(draggedSchedule.id, undefined, day, period);
-                      }
-                      setDraggedSchedule(null);
-                    }}
-                    className={`h-[92px] border p-1.5 align-top transition-all ${
-                      saturdayClosed
-                        ? 'bg-slate-100'
-                        : isOver
-                        ? 'border-2 border-dashed border-emerald-500 bg-emerald-100/70 scale-[1.02] shadow-inner'
-                        : sports
-                        ? 'bg-blue-50'
-                        : ''
-                    }`}
-                  >
-                    {saturdayClosed ? (
-                      <div className="flex h-full flex-col items-center justify-center font-semibold text-slate-400">
-                        <span>Half day</span>
-                        <span className="text-[10px] font-normal">School closed</span>
-                      </div>
-                    ) : schedule ? (
-                      <div
-                        draggable={true}
-                        onDragStart={(e) => {
-                          e.dataTransfer.setData('text/plain', schedule.id);
-                          setDraggedSchedule(schedule);
-                        }}
-                        onDragEnd={() => {
-                          setDraggedSchedule(null);
-                          setDragOverCell(null);
-                        }}
-                        className="h-full w-full cursor-grab active:cursor-grabbing group"
-                      >
-                        <button
-                          className={`h-full w-full rounded-lg p-1.5 text-left transition ${
-                            draggedSchedule?.id === schedule.id
-                              ? 'opacity-40 scale-95 border-2 border-dashed border-emerald-400 bg-emerald-50'
-                              : 'hover:bg-emerald-50 hover:shadow-sm'
-                          }`}
-                          onClick={() => {
-                            setSelectedPeriod(schedule);
-                            setSelectedTeacherId('');
-                            setPeriodDetailOpen(true);
+        {!activeClass ? <Card><CardContent className="p-10 text-center text-muted-foreground">Import or generate timetable data to create a class timetable.</CardContent></Card> :
+        <Card className="overflow-hidden border-slate-200 shadow-md">
+          <div className="bg-gradient-to-r from-emerald-700 via-teal-700 to-cyan-700 px-5 py-5 text-white">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-100">Grade & Section</p><h2 className="mt-1 text-3xl font-black">{activeClass.grade} — {activeClass.section}</h2></div><div className="rounded-xl bg-white/10 px-4 py-2 backdrop-blur"><p className="text-[11px] uppercase tracking-wider text-emerald-100">Class Teacher</p><p className="font-bold">{classTeacher?.name || 'Not assigned'}</p></div></div>
+          </div>
+          <CardContent className="p-0">
+            <div className="max-h-[70vh] overflow-auto overscroll-contain">
+              <table className="w-full min-w-[1540px] border-collapse text-xs">
+                <thead className="sticky top-0 z-20 bg-slate-950 text-white"><tr>
+                  <th className="sticky left-0 z-30 min-w-[110px] border border-slate-700 bg-slate-950 p-3 text-left">Day</th>
+                  {Array.from({ length: 8 }, (_, index) => index + 1).flatMap((period) => {
+                    const cells = [<th key={`p-${period}`} className="min-w-[155px] border border-slate-700 p-2"><span className="block text-sm font-bold">Period {period}</span><span className="font-normal text-slate-300">{periodTime(period)}</span></th>];
+                    if (shortBreakActive && period === shortBreakPeriod) cells.push(<th key="break-head" className="min-w-[82px] border border-amber-300 bg-amber-500 p-2 text-amber-950"><span className="font-bold">BREAK</span><span className="block text-[10px]">{gapTime(shortBreakPeriod, 'Short break')}</span></th>);
+                    if (lunchBreakActive && period === lunchBreakPeriod) cells.push(<th key="lunch-head" className="min-w-[90px] border border-orange-300 bg-orange-500 p-2 text-orange-950"><span className="font-bold">LUNCH</span><span className="block text-[10px]">{gapTime(lunchBreakPeriod, 'Lunch break')}</span></th>);
+                    return cells;
+                  })}
+                </tr></thead>
+                <tbody>{timetableDays.map((day) => <tr key={day} className="odd:bg-white even:bg-slate-50/70">
+                  <th className="sticky left-0 z-10 border bg-emerald-50 p-3 text-left text-sm font-bold text-emerald-900">{day}</th>
+                  {Array.from({ length: 8 }, (_, index) => index + 1).flatMap((period) => {
+                    const schedule = classSchedule.find((item) => item.day === day && item.period === period);
+                    const sports = !!schedule && /sport|physical|games|p\.e\.?/i.test(schedule.subject);
+                    const saturdayClosed = day === 'Saturday' && period > saturdayTeachingPeriods;
+                    const isOver = dragOverCell === `${day}-${period}`;
+                    const cells = [<td
+                      key={`${day}-${period}`}
+                      onDragOver={(e) => {
+                        if (saturdayClosed) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = 'move';
+                        setDragOverCell(`${day}-${period}`);
+                      }}
+                      onDragLeave={() => setDragOverCell(null)}
+                      onDrop={(e) => {
+                        if (saturdayClosed) return;
+                        e.preventDefault();
+                        setDragOverCell(null);
+                        if (!draggedSchedule) return;
+                        if (schedule && schedule.id !== draggedSchedule.id) {
+                          handleSwapPeriods(draggedSchedule.id, schedule.id);
+                        } else if (!schedule) {
+                          handleSwapPeriods(draggedSchedule.id, undefined, day, period);
+                        }
+                        setDraggedSchedule(null);
+                      }}
+                      className={`h-[92px] border p-1.5 align-top transition-all ${
+                        saturdayClosed
+                          ? 'bg-slate-100'
+                          : isOver
+                          ? 'border-2 border-dashed border-emerald-500 bg-emerald-100/70 scale-[1.02] shadow-inner'
+                          : sports
+                          ? 'bg-blue-50'
+                          : ''
+                      }`}
+                    >
+                      {saturdayClosed ? (
+                        <div className="flex h-full flex-col items-center justify-center font-semibold text-slate-400">
+                          <span>Half day</span>
+                          <span className="text-[10px] font-normal">School closed</span>
+                        </div>
+                      ) : schedule ? (
+                        <div
+                          draggable={true}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', schedule.id);
+                            setDraggedSchedule(schedule);
                           }}
+                          onDragEnd={() => {
+                            setDraggedSchedule(null);
+                            setDragOverCell(null);
+                          }}
+                          className="h-full w-full cursor-grab active:cursor-grabbing group"
                         >
-                          <div className="flex items-center justify-between">
-                            <span className={`block font-bold text-xs ${sports ? 'text-blue-700' : 'text-slate-900'}`}>
-                              {sports ? '⚽ ' : ''}{schedule.subject}
+                          <button
+                            type="button"
+                            className={`h-full w-full rounded-lg p-1.5 text-left transition cursor-pointer ${
+                              draggedSchedule?.id === schedule.id
+                                ? 'opacity-40 scale-95 border-2 border-dashed border-emerald-400 bg-emerald-50'
+                                : 'hover:bg-emerald-50 hover:shadow-sm'
+                            }`}
+                            onClick={() => {
+                              setSelectedPeriod(schedule);
+                              setSelectedTeacherId('');
+                              setPeriodDetailOpen(true);
+                            }}
+                          >
+                            <div className="flex items-center justify-between">
+                              <span className={`block font-bold text-xs ${sports ? 'text-blue-700' : 'text-slate-900'}`}>
+                                {sports ? '⚽ ' : ''}{schedule.subject}
+                              </span>
+                              <span className="opacity-0 group-hover:opacity-100 text-[10px] text-slate-400 transition-opacity">⋮⋮</span>
+                            </div>
+                            <span className="mt-1 block text-[11px] font-medium text-emerald-700 truncate">
+                              {schedule.teacher?.name || 'Teacher not assigned'}
                             </span>
-                            <span className="opacity-0 group-hover:opacity-100 text-[10px] text-slate-400 transition-opacity">⋮⋮</span>
-                          </div>
-                          <span className="mt-1 block text-[11px] font-medium text-emerald-700 truncate">
-                            {schedule.teacher?.name || 'Teacher not assigned'}
-                          </span>
-                          <span className="mt-1 block text-[10px] text-slate-500 font-mono">
-                            {computedSlots[period] ? `${computedSlots[period].startTime}–${computedSlots[period].endTime}` : `${schedule.startTime}–${schedule.endTime}`}
-                          </span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-[11px] text-slate-400 border-2 border-dashed border-transparent hover:border-emerald-300 rounded-lg transition-colors">
-                        Free / drop here
-                      </div>
-                    )}
-                  </td>];
-                  if (shortBreakActive && period === shortBreakPeriod) cells.push(<td key={`${day}-break`} className="border border-amber-200 bg-amber-50 text-center font-semibold text-amber-700"><span className="[writing-mode:vertical-rl] rotate-180">Short Break</span></td>);
-                  if (lunchBreakActive && period === lunchBreakPeriod) cells.push(day === 'Saturday'
-                    ? <td key={`${day}-lunch`} className="border border-slate-300 bg-slate-200 text-center font-semibold text-slate-600"><span className="[writing-mode:vertical-rl] rotate-180">Half Day Ends</span></td>
-                    : <td key={`${day}-lunch`} className="border border-orange-200 bg-orange-50 text-center font-semibold text-orange-700"><span className="[writing-mode:vertical-rl] rotate-180">Lunch Break</span></td>);
-                  return cells;
-                })}
-              </tr>)}</tbody>
-            </table>
-          </div>
-          <div className="flex flex-wrap gap-4 border-t bg-slate-50 px-4 py-3 text-[11px] text-slate-600">
-            <span><b>6</b> working days</span>
-            <span><b>8</b> periods Monday–Friday</span>
-            <span><b>4</b> periods Saturday</span>
-            {shortBreakActive && <span className="text-amber-700 font-semibold">■ Short break (P{shortBreakPeriod})</span>}
-            {lunchBreakActive && <span className="text-orange-700 font-semibold">■ Lunch break (P{lunchBreakPeriod})</span>}
-            <span className="text-blue-700">■ Sports / Physical Education</span>
-          </div>
-        </CardContent>
-      </Card>}
-    </div>;
-  }
+                            <span className="mt-1 block text-[10px] text-slate-500 font-mono">
+                              {computedSlots[period] ? `${computedSlots[period].startTime}–${computedSlots[period].endTime}` : `${schedule.startTime}–${schedule.endTime}`}
+                            </span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex h-full items-center justify-center text-[11px] text-slate-400 border-2 border-dashed border-transparent hover:border-emerald-300 rounded-lg transition-colors">
+                          Free / drop here
+                        </div>
+                      )}
+                    </td>];
+                    if (shortBreakActive && period === shortBreakPeriod) cells.push(<td key={`${day}-break`} className="border border-amber-200 bg-amber-50 text-center font-semibold text-amber-700"><span className="[writing-mode:vertical-rl] rotate-180">Short Break</span></td>);
+                    if (lunchBreakActive && period === lunchBreakPeriod) cells.push(day === 'Saturday'
+                      ? <td key={`${day}-lunch`} className="border border-slate-300 bg-slate-200 text-center font-semibold text-slate-600"><span className="[writing-mode:vertical-rl] rotate-180">Half Day Ends</span></td>
+                      : <td key={`${day}-lunch`} className="border border-orange-200 bg-orange-50 text-center font-semibold text-orange-700"><span className="[writing-mode:vertical-rl] rotate-180">Lunch Break</span></td>);
+                    return cells;
+                  })}
+                </tr>)}</tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap gap-4 border-t bg-slate-50 px-4 py-3 text-[11px] text-slate-600">
+              <span><b>6</b> working days</span>
+              <span><b>8</b> periods Monday–Friday</span>
+              <span><b>4</b> periods Saturday</span>
+              {shortBreakActive && <span className="text-amber-700 font-semibold">■ Short break (P{shortBreakPeriod})</span>}
+              {lunchBreakActive && <span className="text-orange-700 font-semibold">■ Lunch break (P{lunchBreakPeriod})</span>}
+              <span className="text-blue-700">■ Sports / Physical Education</span>
+            </div>
+          </CardContent>
+        </Card>}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-6">
       {moduleHeader}
-      {workspaceTab === 'studio' && <TimetableGovernancePanel schoolId={schoolId} onChanged={onRefreshAll} />}
-      {/* Header with calendar picker and day selector */}
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-2xl font-bold text-emerald-800">Class View</h2>
-            <p className="text-sm text-muted-foreground">Inspect subjects and allotted teachers for one grade and section</p>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
-            <Button
-              onClick={() => { setCreationWizardOpen(true); setWizardStep(1); }}
-              className="h-11 justify-center rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 font-bold text-white shadow-lg shadow-emerald-200 hover:from-emerald-700 hover:via-teal-700 hover:to-cyan-700 px-5 gap-2"
-            >
-              <Sparkles className="w-4 h-4 text-white" />
-              <span className="whitespace-nowrap font-bold text-sm">Create Timetable</span>
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => setDeactivateModalOpen(true)}
-              className="h-11 justify-center rounded-xl border-red-200 bg-white px-4 text-red-700 shadow-sm hover:bg-red-50"
-            >
-              <Trash2 className="mr-2 h-4 w-4 text-red-600" />
-              <span className="whitespace-nowrap">Deactivate / Clear Data</span>
-            </Button>
-          <Button
-            variant="outline"
-            onClick={() => setCalendarOpen(!calendarOpen)}
-            className="h-11 gap-2 rounded-xl border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700"
-          >
-            <CalendarDays className="w-4 h-4" />
-            {selectedDate
-              ? selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-              : `${selectedDay} — Pick a date`}
-            <ChevronRight className={`w-3 h-3 transition-transform ${calendarOpen ? 'rotate-90' : ''}`} />
-          </Button>
-          </div>
-        </div>
-
-      {bulkImportOpen && <div className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-50">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-white px-4 py-3 shadow-sm md:px-8">
-          <div className="min-w-0"><h1 className="truncate text-lg font-bold text-slate-900 md:text-2xl">Timetable Bulk Import & Draft Studio</h1><p className="hidden text-sm text-muted-foreground sm:block">Import linked scheduling data, validate it, generate a draft, review, approve and publish.</p></div>
-          <Button type="button" variant="outline" onClick={() => setBulkImportOpen(false)} className="shrink-0 rounded-xl"><X className="mr-0 h-4 w-4 sm:mr-2"/><span className="hidden sm:inline">Back to Academic Calendar</span></Button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain"><div className="w-full p-3 sm:p-5 md:p-8"><BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} /></div></div>
-      </div>}
-
-      <Dialog open={aiGradeSelectOpen} onOpenChange={setAiGradeSelectOpen}>
-        <DialogContent className="!w-[calc(100vw-1.5rem)] sm:!w-[92vw] !max-w-3xl max-h-[92dvh] flex flex-col overflow-hidden rounded-2xl p-0 bg-white border border-slate-200/90 shadow-2xl">
-          <div className="h-1 bg-gradient-to-r from-emerald-500 to-teal-500 shrink-0" />
-          <div className="px-5 sm:px-6 pt-4 pb-3 border-b bg-white shrink-0">
-            <DialogHeader>
-              <DialogTitle className="text-base sm:text-lg font-bold text-slate-900">
-                {timetableSetupAction === 'timings' ? 'Edit Class Timetable Timings' : 'Set Timetable Timings'}
-              </DialogTitle>
-              <DialogDescription className="text-xs text-slate-500">
-                {timetableSetupAction === 'timings' ? 'Update saved period times without changing subjects or assigned teachers' : 'Confirm or edit these settings before creating the timetable'} for {aiGradeSection ? `${aiGradeSection.grade} Section ${aiGradeSection.section}` : 'the selected class'}.
-              </DialogDescription>
-            </DialogHeader>
-          </div>
-          <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-5">
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <div className="space-y-1.5"><Label className="text-xs font-semibold text-slate-700">School Level</Label><Select value={timetableSetup.schoolLevel} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, schoolLevel: value, endTime: value === 'primary' ? '15:00' : value === 'middle' ? '16:00' : '17:00' }))}><SelectTrigger className="h-10 rounded-xl"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="primary">Primary School</SelectItem><SelectItem value="middle">Middle School</SelectItem><SelectItem value="high">High School</SelectItem></SelectContent></Select></div>
-              <div className="space-y-1.5"><Label className="text-xs font-semibold text-slate-700">Class Starts</Label><Input type="time" value={timetableSetup.startTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, startTime: e.target.value }))} className="h-10 rounded-xl" /></div>
-              <div className="space-y-1.5"><Label className="text-xs font-semibold text-slate-700">Class Ends</Label><Input type="time" value={timetableSetup.endTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, endTime: e.target.value }))} className="h-10 rounded-xl" /></div>
-              <div className="space-y-1.5"><Label className="text-xs font-semibold text-slate-700">Periods per Full Day</Label><Input type="number" min={4} max={10} value={timetableSetup.periodsPerDay} onChange={(e) => setTimetableSetup((current) => ({ ...current, periodsPerDay: Number(e.target.value) }))} className="h-10 rounded-xl" /></div>
-              <div className="space-y-1.5"><Label className="text-xs font-semibold text-slate-700">Working Days</Label><Select value={String(timetableSetup.workingDays)} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, workingDays: Number(value) }))}><SelectTrigger className="h-10 rounded-xl"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="5">Monday–Friday (5 days)</SelectItem><SelectItem value="6">Monday–Saturday (6 days)</SelectItem></SelectContent></Select></div>
-              <div className="space-y-1.5"><Label className="text-xs font-semibold text-slate-700">Saturday Periods</Label><Input type="number" min={1} max={8} disabled={timetableSetup.workingDays === 5} value={timetableSetup.saturdayPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, saturdayPeriods: Number(e.target.value) }))} className="h-10 rounded-xl" /></div>
-              <div className="space-y-1.5 sm:col-span-2"><Label className="text-xs font-semibold text-slate-700">Sports Periods / Week</Label><Input type="number" min={1} max={6} value={timetableSetup.sportsPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, sportsPeriods: Number(e.target.value) }))} className="h-10 rounded-xl" /></div>
-            </div>
-
-            {/* Breaks ON/OFF section */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-              {/* Short Break Toggle Card */}
-              <div className={`rounded-2xl border-2 p-4 transition-all space-y-3 ${
-                timetableSetup.breakEnabled !== false ? 'border-amber-400 bg-amber-50/40' : 'border-slate-200 bg-slate-50/70 opacity-80'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Coffee className={`w-4 h-4 ${timetableSetup.breakEnabled !== false ? 'text-amber-600' : 'text-slate-400'}`} />
-                    <span className="text-xs font-bold text-slate-800">Short Break (Recess)</span>
-                  </div>
-                  <div className="flex items-center rounded-lg bg-slate-200/80 p-0.5 border">
-                    <button
-                      type="button"
-                      onClick={() => setTimetableSetup(c => ({ ...c, breakEnabled: true, breakMinutes: c.breakMinutes || 15, breakAfter: c.breakAfter || 2 }))}
-                      className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all ${
-                        timetableSetup.breakEnabled !== false ? 'bg-amber-500 text-white shadow-2xs' : 'text-slate-600'
-                      }`}
-                    >
-                      ON
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTimetableSetup(c => ({ ...c, breakEnabled: false, breakMinutes: 0 }))}
-                      className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all ${
-                        timetableSetup.breakEnabled === false ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-600'
-                      }`}
-                    >
-                      OFF
-                    </button>
-                  </div>
-                </div>
-                {timetableSetup.breakEnabled !== false ? (
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div className="space-y-1"><Label className="text-[11px] font-semibold text-slate-600">After Period</Label><Input type="number" min={1} max={7} value={timetableSetup.breakAfter || 2} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakAfter: Number(e.target.value) }))} className="h-9 rounded-xl bg-white text-xs" /></div>
-                    <div className="space-y-1"><Label className="text-[11px] font-semibold text-slate-600">Duration (min)</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes || 15} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakMinutes: Number(e.target.value) }))} className="h-9 rounded-xl bg-white text-xs" /></div>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-400 py-1">Short break turned off</p>
-                )}
+      {workspaceTab === 'import' && (
+        <BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} />
+      )}
+      {workspaceTab === 'workload' && (
+        <WorkloadAnalyticsSection teachers={teachers} schedules={sharedData} onRefresh={() => { if (onRefreshAll) void onRefreshAll(); }} />
+      )}
+      {workspaceTab === 'teachers' && (
+        <TeachersSection teachers={teachers} schedules={sharedData} selectedDay={selectedDay} onRefresh={onRefreshTeachers} schoolId={schoolId} />
+      )}
+      {workspaceTab === 'classes' && renderClassView()}
+      {(workspaceTab === 'studio' || workspaceTab === 'calendar') && (
+        <>
+          {workspaceTab === 'studio' && <TimetableGovernancePanel schoolId={schoolId} onChanged={onRefreshAll} />}
+          {/* Header with calendar picker and day selector */}
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-2xl font-bold text-emerald-800">{workspaceTab === 'studio' ? 'Timetable Studio' : 'Weekly / Monthly View'}</h2>
+                <p className="text-sm text-muted-foreground">{workspaceTab === 'studio' ? 'Create, configure, and manage master timetable datasets' : 'View and analyze schedules across all days'}</p>
               </div>
-
-              {/* Lunch Break Toggle Card */}
-              <div className={`rounded-2xl border-2 p-4 transition-all space-y-3 ${
-                timetableSetup.lunchEnabled !== false ? 'border-orange-400 bg-orange-50/40' : 'border-slate-200 bg-slate-50/70 opacity-80'
-              }`}>
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Timer className={`w-4 h-4 ${timetableSetup.lunchEnabled !== false ? 'text-orange-600' : 'text-slate-400'}`} />
-                    <span className="text-xs font-bold text-slate-800">Lunch Break</span>
-                  </div>
-                  <div className="flex items-center rounded-lg bg-slate-200/80 p-0.5 border">
-                    <button
-                      type="button"
-                      onClick={() => setTimetableSetup(c => ({ ...c, lunchEnabled: true, lunchMinutes: c.lunchMinutes || 45, lunchAfter: c.lunchAfter || 4 }))}
-                      className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all ${
-                        timetableSetup.lunchEnabled !== false ? 'bg-orange-500 text-white shadow-2xs' : 'text-slate-600'
-                      }`}
-                    >
-                      ON
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setTimetableSetup(c => ({ ...c, lunchEnabled: false, lunchMinutes: 0 }))}
-                      className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all ${
-                        timetableSetup.lunchEnabled === false ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-600'
-                      }`}
-                    >
-                      OFF
-                    </button>
-                  </div>
-                </div>
-                {timetableSetup.lunchEnabled !== false ? (
-                  <div className="grid grid-cols-2 gap-3 pt-1">
-                    <div className="space-y-1"><Label className="text-[11px] font-semibold text-slate-600">After Period</Label><Input type="number" min={2} max={7} value={timetableSetup.lunchAfter || 4} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchAfter: Number(e.target.value) }))} className="h-9 rounded-xl bg-white text-xs" /></div>
-                    <div className="space-y-1"><Label className="text-[11px] font-semibold text-slate-600">Duration (min)</Label><Input type="number" min={15} max={90} value={timetableSetup.lunchMinutes || 45} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchMinutes: Number(e.target.value) }))} className="h-9 rounded-xl bg-white text-xs" /></div>
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-slate-400 py-1">Lunch break turned off</p>
-                )}
+              <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:w-auto">
+                <Button
+                  type="button"
+                  onClick={() => { setCreationWizardOpen(true); setWizardStep(1); }}
+                  className="h-11 justify-center rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 font-bold text-white shadow-lg shadow-emerald-200 hover:from-emerald-700 hover:via-teal-700 hover:to-cyan-700 px-5 gap-2 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-white" />
+                  <span className="whitespace-nowrap font-bold text-sm">Create Timetable</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDeactivateModalOpen(true)}
+                  className="h-11 justify-center rounded-xl border-red-200 bg-white px-4 text-red-700 shadow-sm hover:bg-red-50 cursor-pointer"
+                >
+                  <Trash2 className="mr-2 h-4 w-4 text-red-600" />
+                  <span className="whitespace-nowrap">Deactivate / Clear Data</span>
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setCalendarOpen(!calendarOpen)}
+                  className="h-11 gap-2 rounded-xl border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 cursor-pointer"
+                >
+                  <CalendarDays className="w-4 h-4" />
+                  {selectedDate
+                    ? selectedDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                    : `${selectedDay} — Pick a date`}
+                  <ChevronRight className={`w-3 h-3 transition-transform ${calendarOpen ? 'rotate-90' : ''}`} />
+                </Button>
               </div>
             </div>
-            <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-3 text-xs text-blue-800">
-              <b>Suggested:</b> Primary 9:30 AM–3:00 PM &bull; Middle 9:30 AM–4:00 PM &bull; High School 9:30 AM–5:00 PM.
-            </div>
-          </div>
-          <div className="flex justify-end gap-2 px-5 sm:px-6 py-3.5 border-t bg-slate-50/60 shrink-0">
-            <Button variant="outline" onClick={() => setAiGradeSelectOpen(false)} className="rounded-xl">Cancel</Button>
-            <Button disabled={!aiGradeSection || aiGenerating} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl" onClick={() => { if (timetableSetupAction === 'timings') void handleApplyTimings(); else { setAiGradeSelectOpen(false); if (aiGradeSection) void handleAiGenerateTimetable(aiGradeSection.grade, aiGradeSection.section, timetableSetup); } }}>
-              <Sparkles className="mr-2 h-4 w-4"/>{timetableSetupAction === 'timings' ? 'Apply New Timings' : 'Create Timetable'}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* AI Timetable Generator Progress */}
       {aiGenerating && (
@@ -3144,6 +3048,182 @@ function AcademicCalendarSection({
           </div>
         </div>
       )}
+        </>
+      )}
+
+      {bulkImportOpen && (
+        <div className="fixed inset-0 z-[100] flex flex-col overflow-hidden bg-slate-50">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b bg-white px-4 py-3 shadow-sm md:px-8">
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-bold text-slate-900 md:text-2xl">Timetable Bulk Import & Draft Studio</h1>
+              <p className="hidden text-sm text-muted-foreground sm:block">Import linked scheduling data, validate it, generate a draft, review, approve and publish.</p>
+            </div>
+            <Button type="button" variant="outline" onClick={() => setBulkImportOpen(false)} className="shrink-0 rounded-xl">
+              <X className="mr-0 h-4 w-4 sm:mr-2"/>
+              <span className="hidden sm:inline">Back to Academic Calendar</span>
+            </Button>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <div className="w-full p-3 sm:p-5 md:p-8">
+              <BulkTeacherImportSection schoolId={schoolId} onCompleted={async () => { if (onRefreshAll) await onRefreshAll(); }} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Timings / Set Timetable Timings Dialog */}
+      <Dialog open={aiGradeSelectOpen} onOpenChange={setAiGradeSelectOpen}>
+        <DialogContent className="!w-[calc(100vw-1.5rem)] sm:!w-[92vw] !max-w-3xl max-h-[92dvh] flex flex-col overflow-hidden rounded-2xl p-0 bg-white border border-slate-200/90 shadow-2xl">
+          <div className="h-1 bg-gradient-to-r from-emerald-500 to-teal-500 shrink-0" />
+          <div className="px-5 sm:px-6 pt-4 pb-3 border-b bg-white shrink-0">
+            <DialogHeader>
+              <DialogTitle className="text-base sm:text-lg font-bold text-slate-900">
+                {timetableSetupAction === 'timings' ? 'Edit Class Timetable Timings' : 'Set Timetable Timings'}
+              </DialogTitle>
+              <DialogDescription className="text-xs text-slate-500">
+                {timetableSetupAction === 'timings' ? 'Update saved period times without changing subjects or assigned teachers' : 'Confirm or edit these settings before creating the timetable'} for {aiGradeSection ? `${aiGradeSection.grade} Section ${aiGradeSection.section}` : 'the selected class'}.
+              </DialogDescription>
+            </DialogHeader>
+          </div>
+          <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-6 space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">School Level</Label>
+                <Select value={timetableSetup.schoolLevel} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, schoolLevel: value, endTime: value === 'primary' ? '13:30' : value === 'middle' ? '14:30' : '15:30' }))}>
+                  <SelectTrigger className="h-10 rounded-xl"><SelectValue/></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="primary">Primary School (Grades 1–5)</SelectItem>
+                    <SelectItem value="middle">Middle School (Grades 6–8)</SelectItem>
+                    <SelectItem value="high">High School (Grades 9–12)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Class Starts</Label>
+                <Input type="time" value={timetableSetup.startTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, startTime: e.target.value }))} className="h-10 rounded-xl" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Class Ends</Label>
+                <Input type="time" value={timetableSetup.endTime} onChange={(e) => setTimetableSetup((current) => ({ ...current, endTime: e.target.value }))} className="h-10 rounded-xl" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Periods per Day</Label>
+                <Input type="number" min={4} max={12} value={timetableSetup.periodsPerDay} onChange={(e) => setTimetableSetup((current) => ({ ...current, periodsPerDay: Number(e.target.value) }))} className="h-10 rounded-xl" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Working Days</Label>
+                <Select value={String(timetableSetup.workingDays)} onValueChange={(value) => setTimetableSetup((current) => ({ ...current, workingDays: Number(value) }))}>
+                  <SelectTrigger className="h-10 rounded-xl"><SelectValue/></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="5">Monday–Friday (5 days)</SelectItem>
+                    <SelectItem value="6">Monday–Saturday (6 days)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-slate-700">Saturday Periods</Label>
+                <Input type="number" min={1} max={8} disabled={timetableSetup.workingDays === 5} value={timetableSetup.saturdayPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, saturdayPeriods: Number(e.target.value) }))} className="h-10 rounded-xl" />
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label className="text-xs font-semibold text-slate-700">Sports Periods / Week</Label>
+                <Input type="number" min={1} max={6} value={timetableSetup.sportsPeriods} onChange={(e) => setTimetableSetup((current) => ({ ...current, sportsPeriods: Number(e.target.value) }))} className="h-10 rounded-xl" />
+              </div>
+            </div>
+
+            {/* Breaks ON/OFF section */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              {/* Short Break Toggle Card */}
+              <div className={`rounded-2xl border-2 p-4 transition-all space-y-3 ${
+                timetableSetup.breakEnabled !== false ? 'border-amber-400 bg-amber-50/40' : 'border-slate-200 bg-slate-50/70 opacity-80'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Coffee className={`w-4 h-4 ${timetableSetup.breakEnabled !== false ? 'text-amber-600' : 'text-slate-400'}`} />
+                    <span className="text-xs font-bold text-slate-800">Short Break (Recess)</span>
+                  </div>
+                  <div className="flex items-center rounded-lg bg-slate-200/80 p-0.5 border">
+                    <button
+                      type="button"
+                      onClick={() => setTimetableSetup(c => ({ ...c, breakEnabled: true, breakMinutes: c.breakMinutes || 15, breakAfter: c.breakAfter || 2 }))}
+                      className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all ${
+                        timetableSetup.breakEnabled !== false ? 'bg-amber-500 text-white shadow-2xs' : 'text-slate-600'
+                      }`}
+                    >
+                      ON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTimetableSetup(c => ({ ...c, breakEnabled: false, breakMinutes: 0 }))}
+                      className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all ${
+                        timetableSetup.breakEnabled === false ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-600'
+                      }`}
+                    >
+                      OFF
+                    </button>
+                  </div>
+                </div>
+                {timetableSetup.breakEnabled !== false ? (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1"><Label className="text-[11px] font-semibold text-slate-600">After Period</Label><Input type="number" min={1} max={7} value={timetableSetup.breakAfter || 2} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakAfter: Number(e.target.value) }))} className="h-9 rounded-xl bg-white text-xs" /></div>
+                    <div className="space-y-1"><Label className="text-[11px] font-semibold text-slate-600">Duration (min)</Label><Input type="number" min={5} max={30} value={timetableSetup.breakMinutes || 15} onChange={(e) => setTimetableSetup((current) => ({ ...current, breakMinutes: Number(e.target.value) }))} className="h-9 rounded-xl bg-white text-xs" /></div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 py-1">Short break turned off</p>
+                )}
+              </div>
+
+              {/* Lunch Break Toggle Card */}
+              <div className={`rounded-2xl border-2 p-4 transition-all space-y-3 ${
+                timetableSetup.lunchEnabled !== false ? 'border-orange-400 bg-orange-50/40' : 'border-slate-200 bg-slate-50/70 opacity-80'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Timer className={`w-4 h-4 ${timetableSetup.lunchEnabled !== false ? 'text-orange-600' : 'text-slate-400'}`} />
+                    <span className="text-xs font-bold text-slate-800">Lunch Break</span>
+                  </div>
+                  <div className="flex items-center rounded-lg bg-slate-200/80 p-0.5 border">
+                    <button
+                      type="button"
+                      onClick={() => setTimetableSetup(c => ({ ...c, lunchEnabled: true, lunchMinutes: c.lunchMinutes || 45, lunchAfter: c.lunchAfter || 4 }))}
+                      className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all ${
+                        timetableSetup.lunchEnabled !== false ? 'bg-orange-500 text-white shadow-2xs' : 'text-slate-600'
+                      }`}
+                    >
+                      ON
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTimetableSetup(c => ({ ...c, lunchEnabled: false, lunchMinutes: 0 }))}
+                      className={`px-2.5 py-0.5 text-xs font-bold rounded-md transition-all ${
+                        timetableSetup.lunchEnabled === false ? 'bg-slate-700 text-white shadow-2xs' : 'text-slate-600'
+                      }`}
+                    >
+                      OFF
+                    </button>
+                  </div>
+                </div>
+                {timetableSetup.lunchEnabled !== false ? (
+                  <div className="grid grid-cols-2 gap-3 pt-1">
+                    <div className="space-y-1"><Label className="text-[11px] font-semibold text-slate-600">After Period</Label><Input type="number" min={2} max={7} value={timetableSetup.lunchAfter || 4} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchAfter: Number(e.target.value) }))} className="h-9 rounded-xl bg-white text-xs" /></div>
+                    <div className="space-y-1"><Label className="text-[11px] font-semibold text-slate-600">Duration (min)</Label><Input type="number" min={15} max={90} value={timetableSetup.lunchMinutes || 45} onChange={(e) => setTimetableSetup((current) => ({ ...current, lunchMinutes: Number(e.target.value) }))} className="h-9 rounded-xl bg-white text-xs" /></div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-400 py-1">Lunch break turned off</p>
+                )}
+              </div>
+            </div>
+            <div className="rounded-xl border border-blue-200 bg-blue-50/80 p-3 text-xs text-blue-800">
+              <b>Suggested:</b> Primary 8:30 AM–1:30 PM &bull; Middle 8:00 AM–2:30 PM &bull; High School 8:00 AM–3:30 PM.
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 px-5 sm:px-6 py-3.5 border-t bg-slate-50/60 shrink-0">
+            <Button variant="outline" onClick={() => setAiGradeSelectOpen(false)} className="rounded-xl cursor-pointer">Cancel</Button>
+            <Button disabled={!aiGradeSection || aiGenerating} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl cursor-pointer" onClick={() => { if (timetableSetupAction === 'timings') void handleApplyTimings(); else { setAiGradeSelectOpen(false); if (aiGradeSection) void handleAiGenerateTimetable(aiGradeSection.grade, aiGradeSection.section, timetableSetup); } }}>
+              <Sparkles className="mr-2 h-4 w-4"/>{timetableSetupAction === 'timings' ? 'Apply New Timings' : 'Create Timetable'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Grade Popup - Scrollable with all periods */}
       <Dialog open={gradePopupOpen} onOpenChange={setGradePopupOpen}>
