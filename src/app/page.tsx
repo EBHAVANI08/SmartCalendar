@@ -9376,12 +9376,22 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
 // ─── Main App Component ───
 export default function AISmartCalendar() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<TabType>(() => {
+  const getTabFromPath = (): TabType => {
     if (typeof window === 'undefined') return 'dashboard';
-    const tabParam = new URLSearchParams(window.location.search).get('tab') as TabType;
+    const path = window.location.pathname.replace(/^\/+/, '').split('/')[0];
+    const queryTab = new URLSearchParams(window.location.search).get('tab') as TabType;
+    if (path === 'calendar') return 'calendar';
+    if (path === 'substitutions') return 'substitutions';
+    if (path === 'teachers') return 'teachers';
+    if (path === 'analytics') return 'analytics';
+    if (path === 'teacher-portal' || path === 'portal') return 'teacher-portal';
+    if (path === 'dashboard' || path === '') return 'dashboard';
     const validTabs: TabType[] = ['dashboard', 'calendar', 'substitutions', 'teachers', 'analytics', 'teacher-portal'];
-    return validTabs.includes(tabParam) ? tabParam : 'dashboard';
-  });
+    if (queryTab && validTabs.includes(queryTab)) return queryTab;
+    return 'dashboard';
+  };
+
+  const [activeTab, setActiveTab] = useState<TabType>(getTabFromPath);
   const [stats, setStats] = useState<Stats | null>(null);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -9615,14 +9625,16 @@ export default function AISmartCalendar() {
     (tab: TabType) => {
       setActiveTab(tab);
       if (typeof window !== 'undefined') {
+        const pathName = tab === 'dashboard' ? '/dashboard' : `/${tab}`;
         const url = new URL(window.location.href);
-        url.searchParams.set('tab', tab);
+        url.pathname = pathName;
+        url.searchParams.delete('tab');
         if (tab !== 'calendar') {
           url.searchParams.delete('timetable');
           url.searchParams.delete('grade');
           url.searchParams.delete('section');
         }
-        window.history.pushState({ tab }, '', url.toString());
+        window.history.pushState({ tab }, '', url.pathname + (url.search ? url.search : ''));
       }
       if (tab === 'calendar') {
         fetchSchedules(selectedDay);
@@ -9641,13 +9653,9 @@ export default function AISmartCalendar() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const handlePopState = () => {
-      const searchParams = new URLSearchParams(window.location.search);
-      const tabParam = searchParams.get('tab') as TabType;
-      const validTabs: TabType[] = ['dashboard', 'calendar', 'substitutions', 'teachers', 'analytics', 'teacher-portal'];
-      if (tabParam && validTabs.includes(tabParam)) {
-        setActiveTab(tabParam);
-      }
-      const dayParam = searchParams.get('day');
+      const tab = getTabFromPath();
+      setActiveTab(tab);
+      const dayParam = new URLSearchParams(window.location.search).get('day');
       if (dayParam && DAYS.includes(dayParam)) {
         setSelectedDay(dayParam);
       }
