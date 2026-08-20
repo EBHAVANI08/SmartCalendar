@@ -1839,7 +1839,13 @@ function AcademicCalendarSection({
 }) {
   const { toast } = useToast();
   const [gradePopupOpen, setGradePopupOpen] = useState(false);
-  const [selectedGrade, setSelectedGrade] = useState<{ grade: string; section: string } | null>(null);
+  const [selectedGrade, setSelectedGrade] = useState<{ grade: string; section: string } | null>(() => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    const g = params.get('grade');
+    const s = params.get('section');
+    return g && s ? { grade: g, section: s } : null;
+  });
   const [periodDetailOpen, setPeriodDetailOpen] = useState(false);
   const [selectedPeriod, setSelectedPeriod] = useState<Schedule | null>(null);
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
@@ -1858,16 +1864,16 @@ function AcademicCalendarSection({
     schoolLevel: 'high',
     startTime: '09:30',
     endTime: '17:00',
-    periodsPerDay: 8,
-    workingDays: 6,
-    saturdayPeriods: 4,
+    periodsPerDay: '8',
+    workingDays: '6',
+    saturdayPeriods: '4',
     breakEnabled: true,
-    breakAfter: 2,
-    breakMinutes: 15,
+    breakAfter: '2',
+    breakMinutes: '15',
     lunchEnabled: true,
-    lunchAfter: 4,
-    lunchMinutes: 45,
-    sportsPeriods: 2,
+    lunchAfter: '4',
+    lunchMinutes: '45',
+    periodsPerWeek: '44',
   });
   const [bulkImportOpen, setBulkImportOpen] = useState(false);
 
@@ -1878,6 +1884,8 @@ function AcademicCalendarSection({
   const [creationWizardOpen, setCreationWizardOpen] = useState(false);
   const [wizardStep, setWizardStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [wizardCompletedSteps, setWizardCompletedSteps] = useState<Set<number>>(new Set());
+  const [sameTimingsAllGrades, setSameTimingsAllGrades] = useState(true);
+  const [selectedLevels, setSelectedLevels] = useState<string[]>(['high']);
   const [excelPasteText, setExcelPasteText] = useState('');
   const [previewRows, setPreviewRows] = useState<Array<{ grade: string; section: string; subject: string; teacherName: string; periodsWeek: number; roomNo: string }>>([]);
   const [previewModeTab, setPreviewModeTab] = useState<'classes' | 'teachers'>('classes');
@@ -1973,11 +1981,30 @@ function AcademicCalendarSection({
     return ['studio', 'classes', 'calendar', 'workload', 'teachers', 'import'].includes(value || '') ? value as 'studio' | 'classes' | 'calendar' | 'workload' | 'teachers' | 'import' : 'studio';
   });
   const selectWorkspace = (tab: typeof workspaceTab) => {
-    setWorkspaceTab(tab); const url = new URL(window.location.href); url.searchParams.set('timetable', tab); window.history.pushState({}, '', url);
+    setWorkspaceTab(tab);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', 'calendar');
+      url.searchParams.set('timetable', tab);
+      window.history.pushState({}, '', url.toString());
+    }
   };
+
   useEffect(() => {
-    const sync = () => { const value = new URLSearchParams(window.location.search).get('timetable'); if (['studio', 'classes', 'calendar', 'workload', 'teachers', 'import'].includes(value || '')) setWorkspaceTab(value as typeof workspaceTab); };
-    window.addEventListener('popstate', sync); return () => window.removeEventListener('popstate', sync);
+    const sync = () => {
+      const params = new URLSearchParams(window.location.search);
+      const value = params.get('timetable');
+      if (['studio', 'classes', 'calendar', 'workload', 'teachers', 'import'].includes(value || '')) {
+        setWorkspaceTab(value as typeof workspaceTab);
+      }
+      const g = params.get('grade');
+      const s = params.get('section');
+      if (g && s) {
+        setSelectedGrade({ grade: g, section: s });
+      }
+    };
+    window.addEventListener('popstate', sync);
+    return () => window.removeEventListener('popstate', sync);
   }, []);
 
   const parseExcelPasteData = (text: string) => {
@@ -2450,14 +2477,27 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
       <div className="flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm lg:flex-row lg:items-center lg:justify-between">
         <div><h2 className="text-xl font-bold text-slate-900">Class Timetable</h2><p className="text-sm text-muted-foreground">Six working days: eight periods Monday–Friday and four periods on Saturday.</p></div>
         <div className="flex flex-col gap-2 sm:flex-row">
-          <Select value={activeClass ? `${activeClass.grade}|${activeClass.section}` : undefined} onValueChange={(value) => { const [grade, section] = value.split('|'); setSelectedGrade({ grade, section }); }}>
+          <Select
+            value={activeClass ? `${activeClass.grade}|${activeClass.section}` : undefined}
+            onValueChange={(value) => {
+              const [grade, section] = value.split('|');
+              setSelectedGrade({ grade, section });
+              if (typeof window !== 'undefined') {
+                const url = new URL(window.location.href);
+                url.searchParams.set('tab', 'calendar');
+                url.searchParams.set('timetable', 'classes');
+                url.searchParams.set('grade', grade);
+                url.searchParams.set('section', section);
+                window.history.pushState({}, '', url.toString());
+              }
+            }}
+          >
             <SelectTrigger className="h-11 min-w-[230px] rounded-xl"><SelectValue placeholder="Choose grade and section"/></SelectTrigger>
             <SelectContent>{classOptions.map((item) => <SelectItem key={`${item.grade}|${item.section}`} value={`${item.grade}|${item.section}`}>{item.grade} · Section {item.section}</SelectItem>)}</SelectContent>
           </Select>
-          <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { const targetClass = activeClass || classOptions[0]; if (!targetClass) { toast({ title: 'No Class Selected', description: 'Please import or select a grade and section first.', variant: 'destructive' }); return; } // Pre-compute start/end efficiently with O(n) reduce instead of sort
+          <Button variant="outline" className="h-11 rounded-xl border-emerald-200 text-emerald-700" onClick={() => { const targetClass = activeClass || classOptions[0]; if (!targetClass) { toast({ title: 'No Class Selected', description: 'Please import or select a grade and section first.', variant: 'destructive' }); return; }
             const first = classSchedule.find((item) => item.period === 1);
             const last = classSchedule.length > 0 ? classSchedule.reduce((max, s) => s.period > max.period ? s : max, classSchedule[0]) : null;
-            // Batch all state updates together so React renders only once
             setAiGradeSection(targetClass);
             setTimetableSetupAction('timings');
             setTimetableSetup((current) => ({ ...current, startTime: first?.startTime || current.startTime || '09:30', endTime: last?.endTime || current.endTime || '17:00' }));
@@ -9335,13 +9375,22 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
 // ─── Main App Component ───
 export default function AISmartCalendar() {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<TabType>('dashboard');
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    if (typeof window === 'undefined') return 'dashboard';
+    const tabParam = new URLSearchParams(window.location.search).get('tab') as TabType;
+    const validTabs: TabType[] = ['dashboard', 'calendar', 'substitutions', 'teachers', 'analytics', 'teacher-portal'];
+    return validTabs.includes(tabParam) ? tabParam : 'dashboard';
+  });
   const [stats, setStats] = useState<Stats | null>(null);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [allSchedules, setAllSchedules] = useState<Schedule[]>([]);
   const [substitutions, setSubstitutions] = useState<Substitution[]>([]);
-  const [selectedDay, setSelectedDay] = useState('Monday');
+  const [selectedDay, setSelectedDay] = useState(() => {
+    if (typeof window === 'undefined') return 'Monday';
+    const dayParam = new URLSearchParams(window.location.search).get('day');
+    return dayParam && DAYS.includes(dayParam) ? dayParam : 'Monday';
+  });
   const [loading, setLoading] = useState(true);
   const [assigningTeacher, setAssigningTeacher] = useState(false);
   const [autoAssigning, setAutoAssigning] = useState(false);
@@ -9564,6 +9613,16 @@ export default function AISmartCalendar() {
   const navigateToTab = useCallback(
     (tab: TabType) => {
       setActiveTab(tab);
+      if (typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.set('tab', tab);
+        if (tab !== 'calendar') {
+          url.searchParams.delete('timetable');
+          url.searchParams.delete('grade');
+          url.searchParams.delete('section');
+        }
+        window.history.pushState({ tab }, '', url.toString());
+      }
       if (tab === 'calendar') {
         fetchSchedules(selectedDay);
         fetchAllSchedules();
@@ -9577,6 +9636,24 @@ export default function AISmartCalendar() {
     },
     [fetchSchedules, fetchSubstitutions, fetchTeachers, fetchAllSchedules, selectedDay]
   );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handlePopState = () => {
+      const searchParams = new URLSearchParams(window.location.search);
+      const tabParam = searchParams.get('tab') as TabType;
+      const validTabs: TabType[] = ['dashboard', 'calendar', 'substitutions', 'teachers', 'analytics', 'teacher-portal'];
+      if (tabParam && validTabs.includes(tabParam)) {
+        setActiveTab(tabParam);
+      }
+      const dayParam = searchParams.get('day');
+      if (dayParam && DAYS.includes(dayParam)) {
+        setSelectedDay(dayParam);
+      }
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const tabs: { id: TabType; label: string; icon: React.ReactNode }[] = [
     { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> },
