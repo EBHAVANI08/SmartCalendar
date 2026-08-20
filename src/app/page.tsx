@@ -33,6 +33,7 @@ interface Teacher {
   phone?: string;
   subject: string;
   grades: string;
+  schoolId?: string;
   schedules: Schedule[];
 }
 
