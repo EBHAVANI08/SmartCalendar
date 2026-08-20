@@ -2041,20 +2041,51 @@ function AcademicCalendarSection({
   };
 
   const loadSampleExcelData = () => {
-    const sample = `Grade 10\tA\tMathematics\tDr. Rajesh Sharma\t6\tRoom 101
-Grade 10\tA\tPhysics\tProf. Ananya Verma\t5\tLab 1
-Grade 10\tA\tChemistry\tDr. Suresh Kumar\t4\tLab 2
-Grade 10\tA\tEnglish\tMs. Priya Nair\t5\tRoom 101
-Grade 10\tA\tComputer Science\tMr. Vikram Mehta\t4\tComp Lab 3
-Grade 9\tA\tMathematics\tDr. Rajesh Sharma\t5\tRoom 201
-Grade 9\tA\tBiology\tMs. Kavita Singh\t4\tBio Lab
-Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
-    parseExcelPasteData(sample);
+    const activeLevels = timetableSetup.schoolLevel
+      ? timetableSetup.schoolLevel.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+      : ['high'];
+
+    const sampleRows: string[] = [];
+    if (activeLevels.includes('primary')) {
+      sampleRows.push(
+        'Grade 3\tA\tMathematics\tDr. Rajesh Sharma\t6\tRoom 101',
+        'Grade 3\tA\tEnglish\tMs. Priya Nair\t5\tRoom 101',
+        'Grade 3\tA\tEnvironmental Science\tMs. Kavita Singh\t4\tRoom 101',
+        'Grade 3\tA\tHindi / Regional\tProf. Ananya Verma\t4\tRoom 101',
+        'Grade 3\tA\tArt & Craft\tMr. Vikram Mehta\t3\tArt Studio'
+      );
+    }
+    if (activeLevels.includes('middle')) {
+      sampleRows.push(
+        'Grade 7\tA\tMathematics\tDr. Rajesh Sharma\t6\tRoom 201',
+        'Grade 7\tA\tGeneral Science\tDr. Suresh Kumar\t5\tLab 2',
+        'Grade 7\tA\tSocial Studies\tProf. Ananya Verma\t4\tRoom 201',
+        'Grade 7\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201',
+        'Grade 7\tA\tComputer Basics\tMr. Vikram Mehta\t4\tComp Lab 3'
+      );
+    }
+    if (activeLevels.includes('high') || sampleRows.length === 0) {
+      sampleRows.push(
+        'Grade 10\tA\tMathematics\tDr. Rajesh Sharma\t6\tRoom 101',
+        'Grade 10\tA\tPhysics\tProf. Ananya Verma\t5\tLab 1',
+        'Grade 10\tA\tChemistry\tDr. Suresh Kumar\t4\tLab 2',
+        'Grade 10\tA\tEnglish\tMs. Priya Nair\t5\tRoom 101',
+        'Grade 10\tA\tComputer Science\tMr. Vikram Mehta\t4\tComp Lab 3',
+        'Grade 9\tA\tMathematics\tDr. Rajesh Sharma\t5\tRoom 201',
+        'Grade 9\tA\tBiology\tMs. Kavita Singh\t4\tBio Lab',
+        'Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201'
+      );
+    }
+    parseExcelPasteData(sampleRows.join('\n'));
   };
 
   const handleAiGenerateTimetable = async (grade?: string, section?: string, setup = timetableSetup) => {
-    const targetGrade = grade || 'Grade 10';
-    const targetSection = section || 'A';
+    const activeLevels = setup.schoolLevel
+      ? setup.schoolLevel.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+      : ['high'];
+    const defaultGrade = activeLevels.includes('middle') ? 'Grade 7' : activeLevels.includes('primary') ? 'Grade 3' : 'Grade 10';
+    const targetGrade = grade || (previewRows[0]?.grade) || defaultGrade;
+    const targetSection = section || (previewRows[0]?.section) || 'A';
     setAiGradeSection({ grade: targetGrade, section: targetSection });
     setAiGenerating(true);
     setAiGenerateResult(null);
@@ -2420,9 +2451,15 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
 
     const formatSlotTime = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 
-    const numPeriods = Math.min(10, Math.max(4, Number(timetableSetup.periodsPerDay) || 8));
-    const startMins = parseSlotTime(timetableSetup.startTime, 9 * 60 + 30); // 09:30
-    const endMins = parseSlotTime(timetableSetup.endTime, 17 * 60); // 17:00
+    const currentGradeNumber = Number(activeClass?.grade?.replace(/\D/g, '') || 0);
+    const activeLevel = currentGradeNumber <= 5 ? 'primary' : currentGradeNumber <= 8 ? 'middle' : 'high';
+    const effectiveStartTime = ((timetableSetup as any).differentSlots && (timetableSetup as any)[`${activeLevel}Start`]) || timetableSetup.startTime || '09:30';
+    const effectiveEndTime = ((timetableSetup as any).differentSlots && (timetableSetup as any)[`${activeLevel}End`]) || timetableSetup.endTime || '17:00';
+    const effectivePeriods = ((timetableSetup as any).differentSlots && Number((timetableSetup as any)[`${activeLevel}Periods`])) || Number(timetableSetup.periodsPerDay) || 8;
+
+    const numPeriods = Math.min(10, Math.max(4, effectivePeriods));
+    const startMins = parseSlotTime(effectiveStartTime, 9 * 60 + 30); // 09:30
+    const endMins = parseSlotTime(effectiveEndTime, 17 * 60); // 17:00
     const shortBreakActive = timetableSetup.breakEnabled !== false && Number(timetableSetup.breakMinutes) > 0;
     const shortBreakMins = shortBreakActive ? Number(timetableSetup.breakMinutes) || 15 : 0;
     const shortBreakPeriod = Number(timetableSetup.breakAfter) || 2;
@@ -3450,11 +3487,11 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                 { id: 'high',    label: 'High School',    sub: 'Grades 9–12', icon: <Layers className="w-5 h-5" /> },
               ];
               const selectedLevels: string[] = timetableSetup.schoolLevel
-                ? timetableSetup.schoolLevel.split(',').map(s => s.trim()).filter(Boolean)
-                : [];
+                ? timetableSetup.schoolLevel.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
+                : ['middle'];
               const toggleLevel = (id: string) => {
                 const next = selectedLevels.includes(id)
-                  ? selectedLevels.filter(l => l !== id)
+                  ? (selectedLevels.length > 1 ? selectedLevels.filter(l => l !== id) : selectedLevels)
                   : [...selectedLevels, id];
                 setTimetableSetup(c => ({ ...c, schoolLevel: next.join(',') }));
               };
@@ -3480,9 +3517,9 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                             key={l.id}
                             type="button"
                             onClick={() => toggleLevel(l.id)}
-                            className={`flex sm:flex-col items-center justify-between sm:justify-center gap-3 sm:gap-2 rounded-2xl border-2 p-4 transition-all duration-200 text-left sm:text-center ${
+                            className={`flex sm:flex-col items-center justify-between sm:justify-center gap-3 sm:gap-2 rounded-2xl border-2 p-4 transition-all duration-200 text-left sm:text-center cursor-pointer ${
                               active
-                                ? 'border-emerald-500 bg-gradient-to-b from-emerald-50/80 to-teal-50/40 text-emerald-900 shadow-md shadow-emerald-500/10'
+                                ? 'border-emerald-500 bg-gradient-to-b from-emerald-50/80 to-teal-50/40 text-emerald-900 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-500/20'
                                 : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50/50'
                             }`}
                           >
@@ -3516,10 +3553,10 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                       <button
                         type="button"
                         onClick={() => setDiffSlots(false)}
-                        className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 px-4 text-sm font-semibold transition-all ${
+                        className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 px-4 text-sm font-semibold transition-all cursor-pointer ${
                           !diffSlots
-                            ? 'border-emerald-500 bg-white text-emerald-800 shadow-sm'
-                            : 'border-slate-200 bg-white/60 text-slate-500 hover:border-slate-300'
+                            ? 'border-emerald-500 bg-white text-emerald-800 shadow-sm ring-2 ring-emerald-500/20'
+                            : 'border-slate-200 bg-white/60 text-slate-500 hover:border-slate-300 hover:bg-white'
                         }`}
                       >
                         <CheckCircle2 className={`w-4 h-4 ${!diffSlots ? 'text-emerald-600' : 'text-slate-300'}`} />
@@ -3528,10 +3565,10 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                       <button
                         type="button"
                         onClick={() => setDiffSlots(true)}
-                        className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 px-4 text-sm font-semibold transition-all ${
+                        className={`flex items-center justify-center gap-2 rounded-xl border-2 py-3 px-4 text-sm font-semibold transition-all cursor-pointer ${
                           diffSlots
-                            ? 'border-blue-500 bg-white text-blue-800 shadow-sm'
-                            : 'border-slate-200 bg-white/60 text-slate-500 hover:border-slate-300'
+                            ? 'border-blue-500 bg-white text-blue-800 shadow-sm ring-2 ring-blue-500/20'
+                            : 'border-slate-200 bg-white/60 text-slate-500 hover:border-slate-300 hover:bg-white'
                         }`}
                       >
                         <Layers className={`w-4 h-4 ${diffSlots ? 'text-blue-600' : 'text-slate-300'}`} />
@@ -3586,19 +3623,22 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                         <span className="text-xs text-slate-400">Configure separate timing per level</span>
                       </div>
                       <div className="space-y-3">
-                        {(selectedLevels.length ? selectedLevels : ['primary','middle','high']).map(lvl => {
-                          const key = `${lvl}Start`;
+                        {(selectedLevels.length ? selectedLevels : ['middle']).map(lvl => {
+                          const keyStart = `${lvl}Start`;
                           const keyEnd = `${lvl}End`;
+                          const keyPeriods = `${lvl}Periods`;
+                          const keyDays = `${lvl}Days`;
                           const setup = timetableSetup as any;
+                          const lvlLabel = lvl === 'primary' ? 'Primary School (Grades 1–5)' : lvl === 'middle' ? 'Middle School (Grades 6–8)' : 'High School (Grades 9–12)';
                           return (
                             <div key={lvl} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-                              <p className="text-xs font-bold text-slate-800 capitalize mb-3 flex items-center gap-1.5">
-                                <GraduationCap className="w-4 h-4 text-emerald-600" /> {lvl.charAt(0).toUpperCase() + lvl.slice(1)} School
+                              <p className="text-xs font-bold text-slate-800 mb-3 flex items-center gap-1.5">
+                                <GraduationCap className="w-4 h-4 text-emerald-600" /> {lvlLabel}
                               </p>
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                 <div className="space-y-1">
                                   <Label className="text-xs font-medium text-slate-600">Starts</Label>
-                                  <Input type="time" value={setup[key] || timetableSetup.startTime} onChange={e => setTimetableSetup(c => ({ ...c, [key]: e.target.value } as any))} className="h-10 text-sm bg-white" />
+                                  <Input type="time" value={setup[keyStart] || timetableSetup.startTime} onChange={e => setTimetableSetup(c => ({ ...c, [keyStart]: e.target.value } as any))} className="h-10 text-sm bg-white" />
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-xs font-medium text-slate-600">Ends</Label>
@@ -3606,13 +3646,13 @@ Grade 9\tA\tEnglish\tMs. Priya Nair\t5\tRoom 201`;
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-xs font-medium text-slate-600">Periods/Day</Label>
-                                  <Input type="number" min={4} max={12} value={timetableSetup.periodsPerDay} onChange={e => setTimetableSetup(c => ({ ...c, periodsPerDay: Number(e.target.value) }))} className="h-10 text-sm bg-white" />
+                                  <Input type="number" min={4} max={12} value={setup[keyPeriods] || timetableSetup.periodsPerDay} onChange={e => setTimetableSetup(c => ({ ...c, [keyPeriods]: Number(e.target.value) } as any))} className="h-10 text-sm bg-white" />
                                 </div>
                                 <div className="space-y-1">
                                   <Label className="text-xs font-medium text-slate-600">Working Days</Label>
-                                  <Select value={String(timetableSetup.workingDays)} onValueChange={v => setTimetableSetup(c => ({ ...c, workingDays: Number(v) }))}>
+                                  <Select value={String(setup[keyDays] || timetableSetup.workingDays)} onValueChange={v => setTimetableSetup(c => ({ ...c, [keyDays]: Number(v) } as any))}>
                                     <SelectTrigger className="h-10 bg-white"><SelectValue /></SelectTrigger>
-                                    <SelectContent><SelectItem value="5">Mon–Fri</SelectItem><SelectItem value="6">Mon–Sat</SelectItem></SelectContent>
+                                    <SelectContent><SelectItem value="5">5 Days (Mon–Fri)</SelectItem><SelectItem value="6">6 Days (Mon–Sat)</SelectItem></SelectContent>
                                   </Select>
                                 </div>
                               </div>

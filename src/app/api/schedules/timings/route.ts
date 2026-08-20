@@ -6,7 +6,13 @@ export async function PATCH(request: Request) {
     const { grade, section, schoolId, setup = {} } = await request.json();
     if (!grade || !section) return NextResponse.json({ error: 'Grade and section are required.' }, { status: 400 });
 
-    const periods = Math.min(10, Math.max(4, Number(setup.periodsPerDay) || 8));
+    const currentGradeNumber = Number(String(grade).replace(/\D/g, '') || 0);
+    const activeLevel = currentGradeNumber <= 5 ? 'primary' : currentGradeNumber <= 8 ? 'middle' : 'high';
+    const effectiveStartTime = (setup.differentSlots && setup[`${activeLevel}Start`]) || setup.startTime || '09:30';
+    const effectiveEndTime = (setup.differentSlots && setup[`${activeLevel}End`]) || setup.endTime || '17:00';
+    const effectivePeriods = (setup.differentSlots && Number(setup[`${activeLevel}Periods`])) || Number(setup.periodsPerDay) || 8;
+
+    const periods = Math.min(10, Math.max(4, effectivePeriods));
     const breakAfter = Math.min(periods - 1, Math.max(1, Number(setup.breakAfter) || 2));
     const lunchAfter = Math.min(periods - 1, Math.max(breakAfter + 1, Number(setup.lunchAfter) || 4));
     const breakEnabled = setup.breakEnabled !== false && Number(setup.breakMinutes) > 0;
@@ -29,12 +35,12 @@ export async function PATCH(request: Request) {
 
     const formatTime = (value: number) => `${String(Math.floor(value / 60)).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
 
-    const start = parseTime(setup.startTime, 570);
-    const end = parseTime(setup.endTime, setup.schoolLevel === 'primary' ? 900 : 1020);
+    const start = parseTime(effectiveStartTime, 570);
+    const end = parseTime(effectiveEndTime, setup.schoolLevel === 'primary' ? 900 : 1020);
 
     const teachingMinutes = end - start - breakMinutes - lunchMinutes;
     if (teachingMinutes <= 0) {
-      return NextResponse.json({ error: `End time (${setup.endTime || '17:00'}) must be after start time (${setup.startTime || '09:30'}) with enough time for breaks.` }, { status: 400 });
+      return NextResponse.json({ error: `End time (${effectiveEndTime}) must be after start time (${effectiveStartTime}) with enough time for breaks.` }, { status: 400 });
     }
 
     const periodMinutes = Math.floor(teachingMinutes / periods);
