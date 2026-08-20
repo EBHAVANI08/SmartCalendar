@@ -3482,13 +3482,40 @@ function AcademicCalendarSection({
             {/* ── STEP 1: Timings & Periods ── */}
             {wizardStep === 1 && (() => {
               const LEVELS = [
-                { id: 'primary', label: 'Primary School', sub: 'Grades 1–5', icon: <GraduationCap className="w-5 h-5" /> },
-                { id: 'middle',  label: 'Middle School',  sub: 'Grades 6–8', icon: <BookOpen className="w-5 h-5" /> },
-                { id: 'high',    label: 'High School',    sub: 'Grades 9–12', icon: <Layers className="w-5 h-5" /> },
+                {
+                  id: 'primary',
+                  label: 'Primary School',
+                  sub: 'Grades 1–5',
+                  grades: ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5'],
+                  icon: <GraduationCap className="w-5 h-5" />,
+                  defaultStart: '08:30',
+                  defaultEnd: '13:30',
+                  defaultPeriods: 6,
+                },
+                {
+                  id: 'middle',
+                  label: 'Middle School',
+                  sub: 'Grades 6–8',
+                  grades: ['Grade 6', 'Grade 7', 'Grade 8'],
+                  icon: <BookOpen className="w-5 h-5" />,
+                  defaultStart: '08:00',
+                  defaultEnd: '14:30',
+                  defaultPeriods: 7,
+                },
+                {
+                  id: 'high',
+                  label: 'High School',
+                  sub: 'Grades 9–12',
+                  grades: ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'],
+                  icon: <Layers className="w-5 h-5" />,
+                  defaultStart: '08:00',
+                  defaultEnd: '15:30',
+                  defaultPeriods: 8,
+                },
               ];
               const selectedLevels: string[] = timetableSetup.schoolLevel
                 ? timetableSetup.schoolLevel.split(',').map(s => s.trim().toLowerCase()).filter(Boolean)
-                : ['middle'];
+                : ['primary', 'middle', 'high'];
               const toggleLevel = (id: string) => {
                 const next = selectedLevels.includes(id)
                   ? (selectedLevels.length > 1 ? selectedLevels.filter(l => l !== id) : selectedLevels)
@@ -3497,6 +3524,10 @@ function AcademicCalendarSection({
               };
               const diffSlots = !!(timetableSetup as any).differentSlots;
               const setDiffSlots = (v: boolean) => setTimetableSetup(c => ({ ...c, differentSlots: v } as any));
+
+              // Strict educational hierarchy order: Primary -> Middle -> High
+              const orderedSelectedLevels = ['primary', 'middle', 'high'].filter(id => selectedLevels.includes(id));
+              const levelsToRender = orderedSelectedLevels.length ? orderedSelectedLevels : ['primary', 'middle', 'high'];
 
               return (
                 <div className="space-y-6 max-w-5xl mx-auto">
@@ -3517,26 +3548,50 @@ function AcademicCalendarSection({
                             key={l.id}
                             type="button"
                             onClick={() => toggleLevel(l.id)}
-                            className={`flex sm:flex-col items-center justify-between sm:justify-center gap-3 sm:gap-2 rounded-2xl border-2 p-4 transition-all duration-200 text-left sm:text-center cursor-pointer ${
+                            className={`flex flex-col items-start sm:items-center justify-between gap-3 rounded-2xl border-2 p-4 transition-all duration-200 text-left sm:text-center cursor-pointer ${
                               active
-                                ? 'border-emerald-500 bg-gradient-to-b from-emerald-50/80 to-teal-50/40 text-emerald-900 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-500/20'
+                                ? 'border-emerald-500 bg-gradient-to-b from-emerald-50/90 to-teal-50/40 text-emerald-900 shadow-md shadow-emerald-500/10 ring-2 ring-emerald-500/20'
                                 : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50/50'
                             }`}
                           >
-                            <div className="flex items-center sm:flex-col gap-3 sm:gap-2">
-                              <span className={`p-2.5 rounded-xl transition-colors ${active ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
+                            <div className="flex items-center sm:flex-col gap-3 sm:gap-2 w-full">
+                              <span className={`p-2.5 rounded-xl transition-colors shrink-0 ${active ? 'bg-emerald-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500'}`}>
                                 {l.icon}
                               </span>
-                              <div>
+                              <div className="flex-1">
                                 <p className="font-bold text-sm text-slate-900">{l.label}</p>
-                                <p className="text-xs text-slate-400">{l.sub}</p>
+                                <p className="text-xs font-semibold text-emerald-700 mt-0.5">{l.sub}</p>
                               </div>
+                              {active ? (
+                                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 sm:hidden" />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0 sm:hidden opacity-40" />
+                              )}
                             </div>
-                            {active ? (
-                              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                            ) : (
-                              <div className="w-5 h-5 rounded-full border-2 border-slate-300 shrink-0 hidden sm:block opacity-40" />
-                            )}
+                            {/* Explicit Grade Chips */}
+                            <div className="flex flex-wrap items-center justify-center gap-1 mt-1 w-full">
+                              {l.grades.map(g => (
+                                <span
+                                  key={g}
+                                  className={`text-[10px] font-medium px-2 py-0.5 rounded-md border ${
+                                    active
+                                      ? 'bg-white/90 border-emerald-300 text-emerald-800 shadow-2xs'
+                                      : 'bg-slate-100 border-slate-200 text-slate-500'
+                                  }`}
+                                >
+                                  {g}
+                                </span>
+                              ))}
+                            </div>
+                            <div className="hidden sm:flex items-center justify-center w-full pt-1">
+                              {active ? (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Selected
+                                </span>
+                              ) : (
+                                <span className="text-[11px] text-slate-400">Click to include</span>
+                              )}
+                            </div>
                           </button>
                         );
                       })}
@@ -3582,7 +3637,10 @@ function AcademicCalendarSection({
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
                       <div className="flex items-center gap-2">
                         <Clock className="w-4 h-4 text-emerald-600" />
-                        <p className="text-sm font-bold text-slate-800">School Timings — All Grades</p>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">School Timings — All Grades</p>
+                          <p className="text-xs text-slate-400">All selected school levels share these standard timings</p>
+                        </div>
                       </div>
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="space-y-1.5">
@@ -3619,40 +3677,65 @@ function AcademicCalendarSection({
                     <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 space-y-4">
                       <div className="flex items-center gap-2">
                         <Layers className="w-4 h-4 text-blue-600" />
-                        <p className="text-sm font-bold text-slate-800">Time Slots per Level</p>
-                        <span className="text-xs text-slate-400">Configure separate timing per level</span>
+                        <div>
+                          <p className="text-sm font-bold text-slate-800">Time Slots per School Level</p>
+                          <p className="text-xs text-slate-400">Configure separate timing slots, periods, and working days for Primary, Middle, and High School</p>
+                        </div>
                       </div>
-                      <div className="space-y-3">
-                        {(selectedLevels.length ? selectedLevels : ['middle']).map(lvl => {
-                          const keyStart = `${lvl}Start`;
-                          const keyEnd = `${lvl}End`;
-                          const keyPeriods = `${lvl}Periods`;
-                          const keyDays = `${lvl}Days`;
+                      <div className="space-y-4">
+                        {levelsToRender.map(lvlId => {
+                          const levelObj = LEVELS.find(l => l.id === lvlId) || LEVELS[0];
+                          const keyStart = `${lvlId}Start`;
+                          const keyEnd = `${lvlId}End`;
+                          const keyPeriods = `${lvlId}Periods`;
+                          const keyDays = `${lvlId}Days`;
                           const setup = timetableSetup as any;
-                          const lvlLabel = lvl === 'primary' ? 'Primary School (Grades 1–5)' : lvl === 'middle' ? 'Middle School (Grades 6–8)' : 'High School (Grades 9–12)';
+                          const currentStart = setup[keyStart] || levelObj.defaultStart || timetableSetup.startTime || '08:00';
+                          const currentEnd = setup[keyEnd] || levelObj.defaultEnd || timetableSetup.endTime || '14:30';
+                          const currentPeriods = setup[keyPeriods] || levelObj.defaultPeriods || timetableSetup.periodsPerDay || 7;
+                          const currentDays = setup[keyDays] || timetableSetup.workingDays || 6;
+
                           return (
-                            <div key={lvl} className="rounded-xl border border-slate-200 bg-slate-50/50 p-4">
-                              <p className="text-xs font-bold text-slate-800 mb-3 flex items-center gap-1.5">
-                                <GraduationCap className="w-4 h-4 text-emerald-600" /> {lvlLabel}
-                              </p>
+                            <div key={lvlId} className="rounded-2xl border border-slate-200 bg-gradient-to-r from-slate-50/90 to-emerald-50/20 p-4 sm:p-5 space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b pb-2.5">
+                                <div className="flex items-center gap-2.5">
+                                  <div className="p-2 rounded-xl bg-emerald-100 text-emerald-800">
+                                    {levelObj.icon}
+                                  </div>
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-900">{levelObj.label}</p>
+                                    <p className="text-xs text-emerald-700 font-medium">{levelObj.sub}</p>
+                                  </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {levelObj.grades.map(g => (
+                                    <Badge key={g} variant="outline" className="text-[10px] bg-white border-emerald-300 text-emerald-800 font-semibold">
+                                      {g}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              </div>
                               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                                 <div className="space-y-1">
-                                  <Label className="text-xs font-medium text-slate-600">Starts</Label>
-                                  <Input type="time" value={setup[keyStart] || timetableSetup.startTime} onChange={e => setTimetableSetup(c => ({ ...c, [keyStart]: e.target.value } as any))} className="h-10 text-sm bg-white" />
+                                  <Label className="text-xs font-semibold text-slate-700">Starts</Label>
+                                  <Input type="time" value={currentStart} onChange={e => setTimetableSetup(c => ({ ...c, [keyStart]: e.target.value } as any))} className="h-10 text-sm bg-white" />
                                 </div>
                                 <div className="space-y-1">
-                                  <Label className="text-xs font-medium text-slate-600">Ends</Label>
-                                  <Input type="time" value={setup[keyEnd] || timetableSetup.endTime} onChange={e => setTimetableSetup(c => ({ ...c, [keyEnd]: e.target.value } as any))} className="h-10 text-sm bg-white" />
+                                  <Label className="text-xs font-semibold text-slate-700">Ends</Label>
+                                  <Input type="time" value={currentEnd} onChange={e => setTimetableSetup(c => ({ ...c, [keyEnd]: e.target.value } as any))} className="h-10 text-sm bg-white" />
                                 </div>
                                 <div className="space-y-1">
-                                  <Label className="text-xs font-medium text-slate-600">Periods/Day</Label>
-                                  <Input type="number" min={4} max={12} value={setup[keyPeriods] || timetableSetup.periodsPerDay} onChange={e => setTimetableSetup(c => ({ ...c, [keyPeriods]: Number(e.target.value) } as any))} className="h-10 text-sm bg-white" />
+                                  <Label className="text-xs font-semibold text-slate-700">Periods/Day</Label>
+                                  <Input type="number" min={4} max={12} value={currentPeriods} onChange={e => setTimetableSetup(c => ({ ...c, [keyPeriods]: Number(e.target.value) } as any))} className="h-10 text-sm bg-white" />
                                 </div>
                                 <div className="space-y-1">
-                                  <Label className="text-xs font-medium text-slate-600">Working Days</Label>
-                                  <Select value={String(setup[keyDays] || timetableSetup.workingDays)} onValueChange={v => setTimetableSetup(c => ({ ...c, [keyDays]: Number(v) } as any))}>
+                                  <Label className="text-xs font-semibold text-slate-700">Working Days</Label>
+                                  <Select value={String(currentDays)} onValueChange={v => setTimetableSetup(c => ({ ...c, [keyDays]: Number(v) } as any))}>
                                     <SelectTrigger className="h-10 bg-white"><SelectValue /></SelectTrigger>
-                                    <SelectContent><SelectItem value="5">5 Days (Mon–Fri)</SelectItem><SelectItem value="6">6 Days (Mon–Sat)</SelectItem></SelectContent>
+                                    <SelectContent>
+                                      <SelectItem value="5">5 Days (Mon–Fri)</SelectItem>
+                                      <SelectItem value="6">6 Days (Mon–Sat)</SelectItem>
+                                    </SelectContent>
                                   </Select>
                                 </div>
                               </div>
