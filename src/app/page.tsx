@@ -1985,9 +1985,16 @@ function AcademicCalendarSection({
     setWorkspaceTab(tab);
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
-      url.searchParams.set('tab', 'calendar');
-      url.searchParams.set('timetable', tab);
-      window.history.pushState({}, '', url.toString());
+      url.pathname = '/calendar';
+      url.searchParams.delete('tab');
+      if (tab === 'studio') {
+        url.searchParams.delete('timetable');
+        url.searchParams.delete('grade');
+        url.searchParams.delete('section');
+      } else {
+        url.searchParams.set('timetable', tab);
+      }
+      window.history.pushState({}, '', url.pathname + (url.search ? url.search : ''));
     }
   };
 
@@ -9457,19 +9464,22 @@ export default function AISmartCalendar() {
   const fetchAllSchedules = useCallback(async () => {
     try {
       const schoolParam = loginUser?.schoolId ? `&schoolId=${loginUser.schoolId}` : '';
-      const allData: Schedule[] = [];
-      for (const day of DAYS) {
-        const res = await fetch(`/api/schedules?day=${day}${schoolParam}`);
-        if (res.ok) {
-          const data = await res.json();
-          allData.push(...data);
-        }
-      }
+      const dayResults = await Promise.all(
+        DAYS.map(async (day) => {
+          try {
+            const res = await fetch(`/api/schedules?day=${day}${schoolParam}`);
+            return res.ok ? await res.json() : [];
+          } catch {
+            return [];
+          }
+        })
+      );
+      const allData: Schedule[] = dayResults.flat();
       setAllSchedules(allData);
     } catch (error) {
       console.error('Error fetching all schedules:', error);
     }
-  }, []);
+  }, [loginUser?.schoolId]);
 
   const fetchSubstitutions = useCallback(async () => {
     try {

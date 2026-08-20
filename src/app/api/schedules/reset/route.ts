@@ -45,25 +45,44 @@ export async function POST(request: Request) {
 
     let deletedTeachersCount = 0;
     if (clearTeachers) {
-      const deletedTeachers = schoolId && schoolId !== 'all'
-        ? await db.teacher.deleteMany({ where: { schoolId } })
-        : await db.teacher.deleteMany({});
-      deletedTeachersCount = deletedTeachers.count;
+      try {
+        if (schoolId && schoolId !== 'all') {
+          const schoolTeachers = await db.teacher.findMany({ where: { schoolId }, select: { id: true } });
+          const teacherIds = schoolTeachers.map((t) => t.id);
+          if (teacherIds.length > 0) {
+            await db.biometricAttendance.deleteMany({ where: { teacherId: { in: teacherIds } } }).catch(() => {});
+            await db.substitution.deleteMany({ where: { OR: [{ absentTeacherId: { in: teacherIds } }, { substituteId: { in: teacherIds } }] } }).catch(() => {});
+            await db.schedule.deleteMany({ where: { teacherId: { in: teacherIds } } }).catch(() => {});
+          }
+          const deletedTeachers = await db.teacher.deleteMany({ where: { schoolId } });
+          deletedTeachersCount = deletedTeachers.count;
+        } else {
+          await db.biometricAttendance.deleteMany({}).catch(() => {});
+          await db.substitution.deleteMany({}).catch(() => {});
+          await db.schedule.deleteMany({}).catch(() => {});
+          const deletedTeachers = await db.teacher.deleteMany({});
+          deletedTeachersCount = deletedTeachers.count;
+        }
+      } catch (err) {
+        console.warn('Teacher deletion warning:', err);
+      }
     }
 
     // Add AuditLog record
     if (schoolId && schoolId !== 'all') {
-      await db.auditLog.create({
-        data: {
-          schoolId,
-          actorId: 'admin',
-          actorRole: 'school',
-          action: 'DEACTIVATE_TIMETABLE',
-          entityType: 'Timetable',
-          entityId: schoolId,
-          reason: reason || 'School timetable deactivated and data reset by user request',
-        },
-      });
+      try {
+        await db.auditLog.create({
+          data: {
+            schoolId,
+            actorId: 'admin',
+            actorRole: 'school',
+            action: 'DEACTIVATE_TIMETABLE',
+            entityType: 'Timetable',
+            entityId: schoolId,
+            reason: reason || 'School timetable deactivated and data reset by user request',
+          },
+        });
+      } catch {}
     }
 
     return NextResponse.json({
