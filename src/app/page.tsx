@@ -1187,6 +1187,31 @@ function DashboardSection({
   const subjectCount = new Set(schedules.map((s) => s.subject)).size;
   const assignedSubs = substitutions.filter((s) => s.status === 'assigned').length;
 
+  const [behavioralInsights, setBehavioralInsights] = useState<Array<{ id: string; title: string; description: string; type: string; severity: string; badge: string }>>([]);
+  const [loadingInsights, setLoadingInsights] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchInsights = async () => {
+      setLoadingInsights(true);
+      try {
+        const res = await fetch(`/api/behavioral/insights?schoolId=${schoolCode ? `sch_${schoolCode.toLowerCase()}` : 'sch_client_pilot_001'}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (isMounted && json.data) {
+            setBehavioralInsights(json.data);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch behavioral insights', err);
+      } finally {
+        if (isMounted) setLoadingInsights(false);
+      }
+    };
+    fetchInsights();
+    return () => { isMounted = false; };
+  }, [schoolCode]);
+
   return (
     <div className="space-y-6">
       {/* Super-admin custom note banner */}
@@ -1390,52 +1415,73 @@ function DashboardSection({
 
       {/* Behavioral Pattern Awareness + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Activity className="w-5 h-5 text-emerald-600" />
-              Behavioral Pattern Awareness
-            </CardTitle>
-            <CardDescription>AI-detected patterns across the school schedule</CardDescription>
+        <Card className="border-slate-200/90 rounded-2xl shadow-sm bg-white overflow-hidden">
+          <CardHeader className="pb-3 px-4 sm:px-6 pt-5">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base sm:text-lg font-bold text-slate-900">
+                <div className="bg-emerald-600 p-2 rounded-xl text-white shadow-xs shrink-0">
+                  <Activity className="w-4 h-4" />
+                </div>
+                <span>Behavioral Pattern Awareness</span>
+              </CardTitle>
+              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 text-[10px] font-bold">
+                Live AI
+              </Badge>
+            </div>
+            <CardDescription className="text-xs text-slate-500 mt-0.5">AI-detected patterns across the school schedule & faculty allocations</CardDescription>
           </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-48">
-              <div className="space-y-3">
-                <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
-                  <AlertTriangle className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">High Substitution Rate on Mondays</p>
-                    <p className="text-xs text-muted-foreground">Monday has 40% more teacher absences compared to other days. Consider scheduling lighter workloads.</p>
+          <CardContent className="px-4 sm:px-6 pb-5">
+            <ScrollArea className="h-52">
+              <div className="space-y-2.5 pr-2">
+                {behavioralInsights.length > 0 ? (
+                  behavioralInsights.map((insight) => {
+                    const isWarning = insight.type === 'warning';
+                    const isSuccess = insight.type === 'success';
+                    return (
+                      <div
+                        key={insight.id}
+                        className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${
+                          isWarning
+                            ? 'bg-amber-50/70 border-amber-200/80 text-amber-950'
+                            : isSuccess
+                            ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-950'
+                            : 'bg-blue-50/70 border-blue-200/80 text-blue-950'
+                        }`}
+                      >
+                        <div className="mt-0.5 shrink-0">
+                          {isWarning ? (
+                            <AlertTriangle className="w-4 h-4 text-amber-600" />
+                          ) : isSuccess ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                          ) : (
+                            <Brain className="w-4 h-4 text-blue-600" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-bold truncate">{insight.title}</p>
+                            {insight.badge && (
+                              <span className="text-[9px] font-semibold px-2 py-0.5 rounded-full bg-white/90 border border-black/10 shrink-0">
+                                {insight.badge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5 leading-relaxed">{insight.description}</p>
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : loadingInsights ? (
+                  <div className="py-8 text-center text-xs text-slate-400">Analyzing live schedule patterns...</div>
+                ) : (
+                  <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-800">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-bold">Schedule Balanced</p>
+                      <p className="text-[11px] text-slate-600 mt-0.5">No critical behavioral anomalies or imbalances detected in timetable allocations.</p>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-amber-50 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">Period 6 Engagement Drop</p>
-                    <p className="text-xs text-muted-foreground">After-lunch periods (12:45-13:30) show 25% lower student engagement. Recommend interactive activities.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-teal-50 rounded-lg">
-                  <CheckCircle2 className="w-5 h-5 text-teal-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">Math Teachers Optimally Distributed</p>
-                    <p className="text-xs text-muted-foreground">Math periods are well-distributed across the week with no conflicts detected.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-red-50 rounded-lg">
-                  <AlertCircle className="w-5 h-5 text-red-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">Empty Periods in Grade 7-8</p>
-                    <p className="text-xs text-muted-foreground">Several periods in Grades 7 and 8 have no teachers assigned. Use AI auto-assign to fill them.</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-3 p-3 bg-emerald-50 rounded-lg">
-                  <Brain className="w-5 h-5 text-emerald-500 mt-0.5 shrink-0" />
-                  <div>
-                    <p className="text-sm font-medium">PE Scheduling Conflict Resolved</p>
-                    <p className="text-xs text-muted-foreground">AI detected and resolved 3 double-booking conflicts in PE scheduling for Grades 5-6.</p>
-                  </div>
-                </div>
+                )}
               </div>
             </ScrollArea>
           </CardContent>
