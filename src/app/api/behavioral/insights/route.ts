@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
         include: { teacher: true },
       }),
       db.substitution.findMany({
-        where: { schoolId },
+        where: { absentTeacher: { schoolId } },
         include: { absentTeacher: true, substitute: true },
         take: 50,
       }),
@@ -21,7 +21,15 @@ export async function GET(req: NextRequest) {
       }),
     ]);
 
-    const insights = [];
+    const insights: Array<{
+      id: string;
+      type: string;
+      title: string;
+      description: string;
+      severity: string;
+      icon: string;
+      badge: string;
+    }> = [];
 
     // 1. Analyze empty periods
     const emptySchedules = schedules.filter(s => !s.teacherId);
