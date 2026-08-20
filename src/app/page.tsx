@@ -9621,9 +9621,40 @@ export default function AISmartCalendar() {
   const [selectedTeacher, setSelectedTeacher] = useState<Teacher | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loginUser, setLoginUser] = useState<LoginUser | null>(null);
+  const [authHydrated, setAuthHydrated] = useState(false);
   const [teacherLoginOpen, setTeacherLoginOpen] = useState(false);
   const [loginTeacherId, setLoginTeacherId] = useState('');
   const [featureFlags, setFeatureFlags] = useState<SchoolFeatureFlags | null>(null);
+
+  // Restore authenticated session from localStorage on initial page load / refresh
+  useEffect(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const savedSession = localStorage.getItem('smart_calendar_auth_session');
+        if (savedSession) {
+          const parsed = JSON.parse(savedSession);
+          if (parsed && parsed.isLoggedIn && parsed.user) {
+            setLoginUser(parsed.user);
+            setUserMode(parsed.role || 'admin');
+            if (parsed.selectedTeacher) {
+              setSelectedTeacher(parsed.selectedTeacher);
+            }
+            setIsLoggedIn(true);
+            if (parsed.user.schoolId) {
+              fetch(`/api/school/feature-flags?schoolId=${parsed.user.schoolId}`)
+                .then(r => r.ok ? r.json() : null)
+                .then(d => { if (d?.flags) setFeatureFlags(d.flags); })
+                .catch(() => {});
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Error restoring auth session from localStorage:', err);
+    } finally {
+      setAuthHydrated(true);
+    }
+  }, []);
 
   const fetchStats = useCallback(async () => {
     try {
@@ -9893,13 +9924,11 @@ export default function AISmartCalendar() {
     setIsLoggedIn(true);
     setLoginUser(user);
 
+    let teacherObj: Teacher | null = null;
     if (role === 'superadmin') {
       setUserMode('superadmin');
       setActiveTab('dashboard');
-      return;
-    }
-
-    if (role === 'admin') {
+    } else if (role === 'admin') {
       setUserMode('admin');
       setActiveTab('dashboard');
       // Fetch feature flags for this school
@@ -9912,22 +9941,34 @@ export default function AISmartCalendar() {
     } else if (role === 'teacher') {
       // Find the teacher from our loaded teachers list
       const teacher = teachers.find((t) => t.id === user.id);
-      if (teacher) {
-        setSelectedTeacher(teacher);
-      } else {
-        // Create a minimal teacher object from login data
-        setSelectedTeacher({
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          subject: user.subject || '',
-          grades: user.grades || '[]',
-          schedules: [],
-        });
-      }
+      teacherObj = teacher || {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        subject: user.subject || '',
+        grades: user.grades || '[]',
+        schedules: [],
+      };
+      setSelectedTeacher(teacherObj);
       setUserMode('teacher');
       setActiveTab('teacher-portal');
       fetchAllSchedules();
+    }
+
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(
+          'smart_calendar_auth_session',
+          JSON.stringify({
+            isLoggedIn: true,
+            user,
+            role,
+            selectedTeacher: teacherObj,
+          })
+        );
+      }
+    } catch (err) {
+      console.error('Error saving session to localStorage:', err);
     }
   };
 
@@ -9937,16 +9978,44 @@ export default function AISmartCalendar() {
       setSelectedTeacher(teacher);
       setUserMode('teacher');
       setIsLoggedIn(true);
+      const sessionUser: LoginUser = {
+        id: teacher.id,
+        name: teacher.name,
+        email: teacher.email,
+        role: 'teacher',
+        schoolId: teacher.schoolId || loginUser?.schoolId,
+        subject: teacher.subject,
+        grades: teacher.grades,
+      };
+      setLoginUser(sessionUser);
       setActiveTab('teacher-portal');
       setTeacherLoginOpen(false);
       setLoginTeacherId('');
       // Fetch all schedules for teacher portal
       fetchAllSchedules();
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem(
+            'smart_calendar_auth_session',
+            JSON.stringify({
+              isLoggedIn: true,
+              user: sessionUser,
+              role: 'teacher',
+              selectedTeacher: teacher,
+            })
+          );
+        }
+      } catch {}
       toast({ title: 'Welcome!', description: `Signed in as ${teacher.name}` });
     }
   };
 
   const handleLogout = () => {
+    try {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('smart_calendar_auth_session');
+      }
+    } catch {}
     setIsLoggedIn(false);
     setLoginUser(null);
     setUserMode('admin');
@@ -9956,6 +10025,16 @@ export default function AISmartCalendar() {
   };
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Prevent flash while checking session
+  if (!authHydrated) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center gap-3 text-white">
+        <div className="w-10 h-10 border-4 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+        <p className="text-xs text-slate-400 font-medium tracking-wide">Loading AI Smart Calendar...</p>
+      </div>
+    );
+  }
 
   // Show login page if not logged in
   if (!isLoggedIn) {
