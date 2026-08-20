@@ -1271,19 +1271,31 @@ function DashboardSection({
       )}
 
       {/* Hero Header */}
-      <div className="bg-gradient-to-r from-emerald-600 to-teal-600 rounded-2xl p-6 md:p-8 text-white">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="bg-white/20 p-2 rounded-xl">
+      <div className="relative bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 rounded-2xl p-6 md:p-8 text-white overflow-hidden shadow-xl shadow-emerald-500/20">
+        {/* Decorative background elements */}
+        <div className="absolute -top-12 -right-12 w-64 h-64 bg-white/5 rounded-full pointer-events-none" />
+        <div className="absolute -bottom-16 right-8 w-72 h-72 bg-teal-300/10 rounded-full pointer-events-none" />
+        <div className="absolute top-8 right-28 w-20 h-20 bg-white/5 rounded-full pointer-events-none" />
+        <div className="absolute -bottom-4 -left-4 w-48 h-48 bg-emerald-400/10 rounded-full pointer-events-none" />
+        <div className="relative flex items-center gap-4 mb-4">
+          <div className="bg-white/20 backdrop-blur-sm p-3 rounded-2xl border border-white/20 shadow-inner flex-shrink-0">
             <Brain className="w-8 h-8" />
           </div>
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold">{schoolName || 'AI Smart Calendar'}</h1>
-            <p className="text-emerald-100 text-sm md:text-base">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-0.5">
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight">{schoolName || 'AI Smart Calendar'}</h1>
+              {isClientPilot && (
+                <span className="hidden md:inline-flex items-center gap-1 text-[10px] font-semibold bg-white/20 border border-white/30 rounded-full px-2 py-0.5">
+                  <Sparkles className="w-2.5 h-2.5" /> PILOT
+                </span>
+              )}
+            </div>
+            <p className="text-white/70 text-sm md:text-base font-medium">
               {isClientPilot ? 'Your school pilot workspace' : 'Smart School Calendar Platform'}
             </p>
           </div>
         </div>
-        <p className="text-emerald-50 text-sm md:text-base max-w-2xl">
+        <p className="relative text-white/75 text-sm md:text-base max-w-2xl leading-relaxed">
           {isClientPilot
             ? 'Test timetable management, teacher allotment, AI substitutions, and lesson planning with your Grades 3–8 data — then decide if this fits your school.'
             : 'Manage academic schedules, teacher assignments, substitutions, and lesson planning with AI-powered intelligence. Automate teacher assignments and generate comprehensive lesson DNA for substitute teachers.'}
@@ -1292,70 +1304,74 @@ function DashboardSection({
 
       {/* Stats Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="cursor-pointer hover:shadow-lg hover:border-emerald-300 transition-all duration-200" onClick={() => onNavigate('teachers')}>
+        <Card className="cursor-pointer group hover:shadow-xl hover:shadow-emerald-500/10 hover:-translate-y-0.5 transition-all duration-300 border-slate-200/80 overflow-hidden" onClick={() => onNavigate('teachers')}>
+          <div className="h-0.5 bg-gradient-to-r from-emerald-500 to-teal-500" />
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Teachers</p>
-                <p className="text-2xl md:text-3xl font-bold text-emerald-700">{stats?.totalTeachers || 0}</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Teachers</p>
+                <p className="text-2xl md:text-3xl font-bold text-emerald-700 mt-0.5">{stats?.totalTeachers || 0}</p>
               </div>
-              <div className="bg-emerald-100 p-3 rounded-xl">
+              <div className="bg-gradient-to-br from-emerald-100 to-teal-50 p-3 rounded-2xl group-hover:scale-110 transition-transform duration-200">
                 <Users className="w-6 h-6 text-emerald-600" />
               </div>
             </div>
-            <div className="flex items-center mt-2 text-xs text-emerald-600">
-              <ArrowRight className="w-3 h-3 mr-1" /> View all teachers
+            <div className="flex items-center mt-3 text-xs font-medium text-emerald-600">
+              <ArrowRight className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" /> View all teachers
             </div>
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-lg hover:border-amber-300 transition-all duration-200" onClick={() => onNavigate('calendar')}>
+        <Card className="cursor-pointer group hover:shadow-xl hover:shadow-amber-500/10 hover:-translate-y-0.5 transition-all duration-300 border-slate-200/80 overflow-hidden" onClick={() => onNavigate('calendar')}>
+          <div className="h-0.5 bg-gradient-to-r from-amber-400 to-orange-400" />
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Total Students</p>
-                <p className="text-2xl md:text-3xl font-bold text-amber-700">{stats?.totalStudents || 0}</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Total Students</p>
+                <p className="text-2xl md:text-3xl font-bold text-amber-700 mt-0.5">{stats?.totalStudents || 0}</p>
               </div>
-              <div className="bg-amber-100 p-3 rounded-xl">
+              <div className="bg-gradient-to-br from-amber-100 to-orange-50 p-3 rounded-2xl group-hover:scale-110 transition-transform duration-200">
                 <GraduationCap className="w-6 h-6 text-amber-600" />
               </div>
             </div>
-            <div className="flex items-center mt-2 text-xs text-amber-600">
-              <ArrowRight className="w-3 h-3 mr-1" /> View schedules
+            <div className="flex items-center mt-3 text-xs font-medium text-amber-600">
+              <ArrowRight className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" /> View schedules
             </div>
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-lg hover:border-orange-300 transition-all duration-200" onClick={() => onNavigate('substitutions')}>
+        <Card className="cursor-pointer group hover:shadow-xl hover:shadow-orange-500/10 hover:-translate-y-0.5 transition-all duration-300 border-slate-200/80 overflow-hidden" onClick={() => onNavigate('substitutions')}>
+          <div className="h-0.5 bg-gradient-to-r from-orange-400 to-red-400" />
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Today&apos;s Substitutions</p>
-                <p className="text-2xl md:text-3xl font-bold text-orange-700">{stats?.todaySubstitutions || 0}</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Today&apos;s Substitutions</p>
+                <p className="text-2xl md:text-3xl font-bold text-orange-700 mt-0.5">{stats?.todaySubstitutions || 0}</p>
               </div>
-              <div className="bg-orange-100 p-3 rounded-xl">
+              <div className="bg-gradient-to-br from-orange-100 to-red-50 p-3 rounded-2xl group-hover:scale-110 transition-transform duration-200">
                 <RefreshCw className="w-6 h-6 text-orange-600" />
               </div>
             </div>
-            <div className="flex items-center mt-2 text-xs text-orange-600">
-              <ArrowRight className="w-3 h-3 mr-1" /> Manage substitutions
+            <div className="flex items-center mt-3 text-xs font-medium text-orange-600">
+              <ArrowRight className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" /> Manage substitutions
             </div>
           </CardContent>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-lg hover:border-red-300 transition-all duration-200" onClick={() => onNavigate('calendar')}>
+        <Card className="cursor-pointer group hover:shadow-xl hover:shadow-red-500/10 hover:-translate-y-0.5 transition-all duration-300 border-slate-200/80 overflow-hidden" onClick={() => onNavigate('calendar')}>
+          <div className="h-0.5 bg-gradient-to-r from-red-400 to-rose-500" />
           <CardContent className="p-4 md:p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-muted-foreground">Empty Periods</p>
-                <p className="text-2xl md:text-3xl font-bold text-red-700">{stats?.emptyPeriods || 0}</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Empty Periods</p>
+                <p className="text-2xl md:text-3xl font-bold text-red-700 mt-0.5">{stats?.emptyPeriods || 0}</p>
               </div>
-              <div className="bg-red-100 p-3 rounded-xl">
+              <div className="bg-gradient-to-br from-red-100 to-rose-50 p-3 rounded-2xl group-hover:scale-110 transition-transform duration-200">
                 <AlertCircle className="w-6 h-6 text-red-600" />
               </div>
             </div>
-            <div className="flex items-center mt-2 text-xs text-red-600">
-              <ArrowRight className="w-3 h-3 mr-1" /> Assign teachers
+            <div className="flex items-center mt-3 text-xs font-medium text-red-600">
+              <ArrowRight className="w-3 h-3 mr-1 group-hover:translate-x-0.5 transition-transform" /> Assign teachers
             </div>
           </CardContent>
         </Card>
@@ -8606,19 +8622,25 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-slate-900 to-emerald-950 flex items-center justify-center p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen relative bg-gradient-to-br from-gray-950 via-slate-900 to-emerald-950 flex items-center justify-center p-4 overflow-hidden">
+      {/* Animated background blobs */}
+      <div className="absolute top-[-20%] left-[-10%] w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl animate-pulse" />
+      <div className="absolute bottom-[-10%] right-[-5%] w-80 h-80 bg-teal-400/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }} />
+      <div className="absolute top-[30%] right-[10%] w-64 h-64 bg-cyan-500/8 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+      {/* Grid overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px] pointer-events-none" />
+      <div className="relative w-full max-w-md">
         {/* Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-2xl shadow-lg shadow-emerald-500/30 mb-4">
-            <Brain className="w-8 h-8 text-white" />
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-3xl shadow-2xl shadow-emerald-500/30 mb-5 ring-4 ring-emerald-500/20">
+            <Brain className="w-10 h-10 text-white" />
           </div>
-          <h1 className="text-3xl font-bold text-white mb-1">AI Smart Calendar</h1>
-          <p className="text-emerald-300/80 text-sm">Multi-Tenant School Management Platform</p>
+          <h1 className="text-3xl font-bold text-white mb-1 tracking-tight">AI Smart Calendar</h1>
+          <p className="text-emerald-300/70 text-sm font-medium">Multi-Tenant School Management Platform</p>
         </div>
 
         {/* Login Card */}
-        <Card className="bg-gray-900/80 border-gray-700/50 backdrop-blur-xl shadow-2xl">
+        <Card className="bg-gray-900/80 border border-gray-700/50 backdrop-blur-2xl shadow-2xl shadow-black/40">
           <CardContent className="p-6">
             {/* Role Tabs */}
             {!registering && <Tabs value={loginRole} onValueChange={(v) => {
@@ -9114,39 +9136,39 @@ export default function AISmartCalendar() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50/50 flex">
+    <div className="min-h-screen mesh-bg flex">
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* Sidebar */}
-      <aside className={`fixed inset-y-0 left-0 z-50 h-dvh w-64 bg-white border-r shadow-lg transform transition-transform duration-200 ease-in-out lg:sticky lg:top-0 lg:translate-x-0 lg:shadow-none lg:z-auto ${
+      <aside className={`fixed inset-y-0 left-0 z-50 h-dvh w-64 bg-gradient-to-b from-slate-900 via-slate-900 to-emerald-950 border-r border-white/5 shadow-2xl transform transition-transform duration-200 ease-in-out lg:sticky lg:top-0 lg:translate-x-0 lg:z-auto ${
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       }`}>
         <div className="flex flex-col h-full">
           {/* Sidebar Header */}
-          <div className="flex shrink-0 items-center justify-between p-4 border-b">
+          <div className="flex shrink-0 items-center justify-between p-4 border-b border-white/5">
             <div className="flex items-center gap-3">
-              <div className="bg-emerald-600 p-2 rounded-xl">
+              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-2 rounded-xl shadow-lg shadow-emerald-500/30">
                 <Brain className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h1 className="text-sm font-bold text-emerald-800">
+                <h1 className="text-sm font-bold text-white">
                   {loginUser ? loginUser.name : 'AI Smart Calendar'}
                 </h1>
-                <p className="text-[10px] text-muted-foreground">
+                <p className="text-[10px] text-slate-400">
                   {loginUser ? (userMode === 'admin' ? 'School Administrator' : `${loginUser.subject || ''} Specialist`) : 'School Management'}
                 </p>
               </div>
             </div>
-            <Button variant="ghost" size="icon" className="lg:hidden h-8 w-8" onClick={() => setSidebarOpen(false)}>
+            <Button variant="ghost" size="icon" className="lg:hidden h-8 w-8 text-slate-400 hover:text-white hover:bg-white/10" onClick={() => setSidebarOpen(false)}>
               <X className="w-4 h-4" />
             </Button>
           </div>
 
           {/* Navigation */}
-          <nav className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 space-y-1">
+          <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 space-y-0.5">
             {(userMode === 'admin' ? tabs : teacherTabs).map((tab) => (
               <button
                 key={tab.id}
@@ -9154,10 +9176,10 @@ export default function AISmartCalendar() {
                   navigateToTab(tab.id);
                   setSidebarOpen(false);
                 }}
-                className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
+                className={`flex items-center gap-3 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-150 ${
                   activeTab === tab.id
-                    ? 'bg-emerald-100 text-emerald-800 shadow-sm'
-                    : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                    ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/10 text-emerald-300 border border-emerald-500/20 shadow-sm'
+                    : 'text-slate-400 hover:bg-white/5 hover:text-white'
                 }`}
               >
                 {tab.icon}
@@ -9167,31 +9189,31 @@ export default function AISmartCalendar() {
           </nav>
 
           {/* Sidebar Footer */}
-          <div className="shrink-0 bg-white p-3 border-t space-y-2 shadow-[0_-4px_12px_rgba(0,0,0,0.04)]">
+          <div className="shrink-0 p-3 border-t border-white/5 space-y-2">
             {/* Logged-in user info */}
             {loginUser && (
-              <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-lg mb-2">
-                <div className={`p-1.5 rounded-full ${userMode === 'admin' ? 'bg-amber-100' : 'bg-emerald-100'}`}>
-                  {userMode === 'admin' ? <ShieldCheck className="w-3.5 h-3.5 text-amber-600" /> : <GraduationCap className="w-3.5 h-3.5 text-emerald-600" />}
+              <div className="flex items-center gap-2 p-2.5 bg-white/5 border border-white/10 rounded-xl mb-2">
+                <div className={`p-1.5 rounded-full ${userMode === 'admin' ? 'bg-amber-500/20' : 'bg-emerald-500/20'}`}>
+                  {userMode === 'admin' ? <ShieldCheck className="w-3.5 h-3.5 text-amber-400" /> : <GraduationCap className="w-3.5 h-3.5 text-emerald-400" />}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-xs font-medium truncate">{loginUser.name}</p>
-                  <p className="text-[9px] text-muted-foreground truncate">{loginUser.email}</p>
+                  <p className="text-xs font-semibold text-white truncate">{loginUser.name}</p>
+                  <p className="text-[9px] text-slate-400 truncate">{loginUser.email}</p>
                 </div>
               </div>
             )}
-            <Separator />
+            <Separator className="bg-slate-800" />
             <Button
               onClick={handleLogout}
               variant="ghost"
               size="sm"
-              className="w-full text-xs justify-start text-muted-foreground hover:text-red-700 hover:bg-red-50"
+              className="w-full text-xs justify-start text-slate-500 hover:text-red-400 hover:bg-red-950/30"
             >
               <LogOut className="w-3.5 h-3.5 mr-2" />
-              Logout
+              Sign Out
             </Button>
-            <div className="text-center">
-              <p className="text-[10px] text-muted-foreground">AI Smart Calendar &copy; {new Date().getFullYear()}</p>
+            <div className="text-center pt-1">
+              <p className="text-[10px] text-slate-700">AI Smart Calendar &copy; {new Date().getFullYear()}</p>
             </div>
           </div>
         </div>
@@ -9200,16 +9222,16 @@ export default function AISmartCalendar() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Top bar for mobile */}
-        <header className="sticky top-0 z-30 bg-white border-b shadow-sm lg:hidden">
+        <header className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-slate-200/80 shadow-sm lg:hidden">
           <div className="flex items-center justify-between h-14 px-4">
             <Button variant="ghost" size="icon" onClick={() => setSidebarOpen(true)}>
               <Menu className="w-5 h-5" />
             </Button>
             <div className="flex items-center gap-2">
-              <div className="bg-emerald-600 p-1.5 rounded-lg">
+              <div className="bg-gradient-to-br from-emerald-500 to-teal-600 p-1.5 rounded-lg shadow-sm">
                 <Brain className="w-4 h-4 text-white" />
               </div>
-              <span className="text-sm font-bold text-emerald-800">
+              <span className="text-sm font-bold bg-gradient-to-r from-emerald-700 to-teal-600 bg-clip-text text-transparent">
               {loginUser ? loginUser.name : 'AI Smart Calendar'}
             </span>
             </div>
@@ -9222,9 +9244,12 @@ export default function AISmartCalendar() {
         {/* Main Content */}
         <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 w-full">
         {loading ? (
-          <div className="flex items-center justify-center py-20">
-            <RefreshCw className="w-8 h-8 text-emerald-600 animate-spin" />
-            <span className="ml-3 text-muted-foreground">Loading...</span>
+          <div className="flex flex-col items-center justify-center py-20 gap-4">
+            <div className="relative w-12 h-12">
+              <div className="w-12 h-12 rounded-full border-4 border-emerald-100" />
+              <div className="absolute inset-0 w-12 h-12 rounded-full border-4 border-t-transparent border-emerald-500 animate-spin" />
+            </div>
+            <p className="text-sm font-medium text-muted-foreground animate-pulse">Loading your dashboard...</p>
           </div>
         ) : (
           <>
