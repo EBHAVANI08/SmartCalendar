@@ -1768,14 +1768,200 @@ function BulkTeacherImportSection({ schoolId, onCompleted }: { schoolId?: string
     } catch (error) { toast({ title: 'Import failed', description: error instanceof Error ? error.message : 'Could not process file', variant: 'destructive' }); }
     finally { setBusy(false); }
   };
-  return <div className="space-y-4 min-w-0">
-    <div><h2 className="text-2xl font-bold text-emerald-800 flex items-center gap-2"><FileSpreadsheet className="w-6 h-6" />Timetable Bulk Import Studio</h2><p className="text-sm text-muted-foreground">Import flexible teacher allotments or a complete linked timetable workbook.</p></div>
-    <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1"><Button type="button" onClick={() => { setImportKind('teacher'); setPreview(null); setCompletePreview(null); setFile(null); }} className={importKind === 'teacher' ? 'bg-white text-emerald-700 shadow-sm hover:bg-white' : 'bg-transparent text-slate-600 shadow-none hover:bg-white/60'}><Users className="mr-2 h-4 w-4"/>Flexible Teacher Import</Button><Button type="button" onClick={() => { setImportKind('complete'); setPreview(null); setCompletePreview(null); setFile(null); }} className={importKind === 'complete' ? 'bg-white text-purple-700 shadow-sm hover:bg-white' : 'bg-transparent text-slate-600 shadow-none hover:bg-white/60'}><Layers className="mr-2 h-4 w-4"/>Complete Timetable Setup</Button></div>
-    <div className="grid grid-cols-3 gap-2 md:grid-cols-6">{['Import','Validate','Draft','Review','Approve','Publish'].map((step, index) => <div key={step} className={`rounded-lg border p-2 text-center text-xs font-medium ${index < 2 ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-white text-slate-500'}`}><span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-current/10">{index + 1}</span>{step}</div>)}</div>
-    <Card><CardHeader><CardTitle className="text-lg">1. {importKind === 'complete' ? 'Upload complete timetable configuration' : 'Upload teacher allotment'}</CardTitle><CardDescription>{importKind === 'complete' ? 'Linked sheets: Teachers, Classes, SubjectRequirements, TeacherAssignments, Availability, Rooms, FixedPeriods and BellSchedule.' : 'Required information: Teacher Name, Subject and Eligible Grades. Employee ID and Email are recommended.'}</CardDescription></CardHeader><CardContent className="space-y-4">
-      <div className="border-2 border-dashed border-emerald-200 rounded-xl p-5 md:p-8 text-center bg-emerald-50/30"><Upload className="w-10 h-10 mx-auto text-emerald-600 mb-3"/><Input type="file" accept={importKind === 'complete' ? '.xlsx' : '.xlsx,.xls,.pdf'} onChange={(event) => { setFile(event.target.files?.[0] || null); setPreview(null); setCompletePreview(null); }} className="w-full max-w-xl mx-auto bg-white"/><p className="text-xs text-muted-foreground mt-2">{importKind === 'complete' ? 'Upload the multi-sheet workbook containing Teachers, Classes, Requirements and Assignments.' : 'Any common Excel layout or searchable PDF; headings are detected automatically.'}</p></div>
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap"><Button disabled={!file || busy || !schoolId} onClick={() => upload(false)} className="bg-emerald-600 hover:bg-emerald-700">{busy ? <RefreshCw className="w-4 h-4 mr-2 animate-spin"/> : <Eye className="w-4 h-4 mr-2"/>}Validate & Preview</Button></div>
-    </CardContent></Card>
+
+  const downloadTemplate = (type: 'teacher' | 'complete', format: 'xlsx' | 'csv' = 'xlsx') => {
+    const url = `/api/timetable/import/template?type=${type}&format=${format}`;
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = type === 'teacher'
+      ? (format === 'csv' ? 'Teacher_Allotment_Template.csv' : 'Teacher_Allotment_Template.xlsx')
+      : 'Complete_Timetable_Setup_Template.xlsx';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    toast({
+      title: 'Template Download Started',
+      description: `Downloading sample ${type === 'teacher' ? 'Teacher Allotment' : 'Complete Timetable'} template (${format.toUpperCase()}).`,
+    });
+  };
+
+  return (
+    <div className="space-y-4 min-w-0">
+      <div>
+        <h2 className="text-2xl font-bold text-emerald-800 flex items-center gap-2">
+          <FileSpreadsheet className="w-6 h-6" />Timetable Bulk Import Studio
+        </h2>
+        <p className="text-sm text-muted-foreground">Import flexible teacher allotments or a complete linked timetable workbook.</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 rounded-xl bg-slate-100 p-1">
+        <Button
+          type="button"
+          onClick={() => { setImportKind('teacher'); setPreview(null); setCompletePreview(null); setFile(null); }}
+          className={importKind === 'teacher' ? 'bg-white text-emerald-700 shadow-sm hover:bg-white cursor-pointer font-bold' : 'bg-transparent text-slate-600 shadow-none hover:bg-white/60 cursor-pointer'}
+        >
+          <Users className="mr-2 h-4 w-4"/>Flexible Teacher Import
+        </Button>
+        <Button
+          type="button"
+          onClick={() => { setImportKind('complete'); setPreview(null); setCompletePreview(null); setFile(null); }}
+          className={importKind === 'complete' ? 'bg-white text-purple-700 shadow-sm hover:bg-white cursor-pointer font-bold' : 'bg-transparent text-slate-600 shadow-none hover:bg-white/60 cursor-pointer'}
+        >
+          <Layers className="mr-2 h-4 w-4"/>Complete Timetable Setup
+        </Button>
+      </div>
+
+      {/* ── STEP INDICATOR ── */}
+      <div className="grid grid-cols-3 gap-2 md:grid-cols-6">
+        {['Import','Validate','Draft','Review','Approve','Publish'].map((step, index) => (
+          <div key={step} className={`rounded-lg border p-2 text-center text-xs font-medium ${index < 2 ? 'border-emerald-200 bg-emerald-50 text-emerald-700 font-bold' : 'border-slate-200 bg-white text-slate-500'}`}>
+            <span className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-current/10">{index + 1}</span>{step}
+          </div>
+        ))}
+      </div>
+
+      {/* ── DOWNLOAD SAMPLE TEMPLATE BANNER ── */}
+      <Card className="border-2 border-dashed border-emerald-300/80 bg-gradient-to-r from-emerald-50/70 via-teal-50/40 to-blue-50/40 shadow-xs">
+        <CardContent className="p-4 sm:p-5">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1.5 rounded-lg bg-emerald-600 text-white shadow-2xs">
+                  <Download className="w-4 h-4" />
+                </span>
+                <p className="text-sm font-bold text-slate-900">
+                  {importKind === 'teacher' ? 'Download Sample Teacher Allotment Sheet' : 'Download Complete Multi-Sheet Workbook Template'}
+                </p>
+                <Badge className="bg-emerald-100 text-emerald-800 border border-emerald-300 text-[10px] font-semibold">
+                  Official Format
+                </Badge>
+              </div>
+              <p className="text-xs text-slate-600">
+                {importKind === 'teacher'
+                  ? 'Download this ready-to-use template with sample teachers, subjects, and grade mappings (Grades 1–12), then fill in your school data and upload.'
+                  : 'Download the complete workbook with 9 pre-formatted linked sheets (Teachers, Classes, SubjectRequirements, Assignments, Availability, Rooms, BellSchedule).'}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+              {importKind === 'teacher' ? (
+                <>
+                  <Button
+                    type="button"
+                    onClick={() => downloadTemplate('teacher', 'xlsx')}
+                    className="h-10 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs shadow-md shadow-emerald-500/10 cursor-pointer gap-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    Download Excel (.xlsx)
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => downloadTemplate('teacher', 'csv')}
+                    className="h-10 rounded-xl border-slate-300 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs cursor-pointer gap-2"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                    Download CSV (.csv)
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={() => downloadTemplate('complete', 'xlsx')}
+                  className="h-10 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs shadow-md shadow-purple-500/10 cursor-pointer gap-2"
+                >
+                  <Download className="w-4 h-4" />
+                  Download Multi-Sheet Workbook (.xlsx)
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Sample Format Preview Columns Guide */}
+          <div className="mt-4 pt-3.5 border-t border-emerald-200/60">
+            <p className="text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <span>Expected Columns / Headers:</span>
+            </p>
+            {importKind === 'teacher' ? (
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  { name: 'Employee ID', req: true, eg: 'EMP001' },
+                  { name: 'Teacher Name', req: true, eg: 'Mr. Rajesh Sharma' },
+                  { name: 'Primary Subject', req: true, eg: 'Mathematics' },
+                  { name: 'Eligible Grades', req: true, eg: 'Grade 1, Grade 2, Grade 3' },
+                  { name: 'Email', req: false, eg: 'rajesh@school.edu' },
+                  { name: 'Phone', req: false, eg: '+91 98765 43210' },
+                  { name: 'Max Daily Periods', req: false, eg: '6' },
+                ].map((col) => (
+                  <span
+                    key={col.name}
+                    className={`inline-flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-lg border font-medium ${
+                      col.req
+                        ? 'bg-white border-emerald-300 text-emerald-900 shadow-2xs font-semibold'
+                        : 'bg-white/60 border-slate-200 text-slate-600'
+                    }`}
+                  >
+                    <span>{col.name}</span>
+                    {col.req && <span className="text-[9px] text-emerald-600 font-bold bg-emerald-100 px-1 py-0.2 rounded">Required</span>}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  '1. Teachers',
+                  '2. Classes',
+                  '3. SubjectRequirements',
+                  '4. TeacherAssignments',
+                  '5. Availability',
+                  '6. Rooms',
+                  '7. SubjectRoomRequirements',
+                  '8. FixedPeriods',
+                  '9. BellSchedule',
+                ].map((sheet) => (
+                  <span key={sheet} className="text-[11px] px-2.5 py-1 rounded-lg bg-white border border-purple-200 text-purple-900 font-semibold shadow-2xs">
+                    📄 {sheet}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── UPLOAD CARD ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg">
+            1. {importKind === 'complete' ? 'Upload complete timetable configuration' : 'Upload teacher allotment'}
+          </CardTitle>
+          <CardDescription>
+            {importKind === 'complete'
+              ? 'Upload your filled multi-sheet workbook (.xlsx) containing Teachers, Classes, Requirements and Assignments.'
+              : 'Upload your filled Excel (.xlsx / .xls), CSV, or searchable PDF containing Teacher Name, Subject, and Eligible Grades.'}
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="border-2 border-dashed border-emerald-200 rounded-xl p-5 md:p-8 text-center bg-emerald-50/30">
+            <Upload className="w-10 h-10 mx-auto text-emerald-600 mb-3"/>
+            <Input
+              type="file"
+              accept={importKind === 'complete' ? '.xlsx' : '.xlsx,.xls,.csv,.pdf'}
+              onChange={(event) => { setFile(event.target.files?.[0] || null); setPreview(null); setCompletePreview(null); }}
+              className="w-full max-w-xl mx-auto bg-white cursor-pointer"
+            />
+            <p className="text-xs text-muted-foreground mt-2">
+              {importKind === 'complete'
+                ? 'Upload the multi-sheet workbook containing Teachers, Classes, Requirements and Assignments.'
+                : 'Supports Excel (.xlsx, .xls), CSV (.csv), or searchable PDF; headings are detected automatically.'}
+            </p>
+          </div>
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <Button disabled={!file || busy || !schoolId} onClick={() => upload(false)} className="bg-emerald-600 hover:bg-emerald-700 font-bold cursor-pointer">
+              {busy ? <RefreshCw className="w-4 h-4 mr-2 animate-spin"/> : <Eye className="w-4 h-4 mr-2"/>}Validate & Preview
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
     {preview && <Card><CardHeader><CardTitle className="flex items-center justify-between">2. Review <Badge variant={preview.blocking ? 'destructive' : 'default'}>{preview.summary.valid}/{preview.summary.detected} valid</Badge></CardTitle>{preview.layout === 'grade-section-matrix' && <CardDescription>Detected grade-section matrix: {preview.classesDetected} classes and {preview.allotmentsDetected} teacher-subject allotments. Import will create a Monday-Friday timetable for every detected grade and section.</CardDescription>}</CardHeader><CardContent className="space-y-4">
       {preview.issues.length > 0 && <ScrollArea className="h-28 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{preview.issues.map((issue, index) => <p key={index}>Row {issue.row} - {issue.field}: {issue.message}</p>)}</ScrollArea>}
       <div className="max-h-[38dvh] overflow-auto rounded-lg border"><table className="w-full min-w-[760px] text-sm"><thead className="sticky top-0 bg-white shadow-sm"><tr className="border-b text-left"><th className="p-2">Employee ID</th><th className="p-2">Teacher</th><th className="p-2">Subject</th><th className="p-2">Eligible Grades</th><th className="p-2">Email</th></tr></thead><tbody>{preview.rows.map((row, index) => <tr key={index} className="border-b"><td className="p-2">{row.employeeId}</td><td className="p-2 font-medium">{row.name}</td><td className="p-2">{row.subject}</td><td className="p-2">{row.grades.join(', ')}</td><td className="p-2 text-xs">{row.email}</td></tr>)}</tbody></table></div>
@@ -1787,7 +1973,8 @@ function BulkTeacherImportSection({ schoolId, onCompleted }: { schoolId?: string
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center"><Label className="shrink-0">Preview grade & section</Label><Select value={resultClass} onValueChange={setResultClass}><SelectTrigger className="w-full sm:w-[260px]"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All grades and sections</SelectItem>{[...new Set(generatedSchedules.map((item) => `${item.grade}|${item.section}`))].sort().map((key) => { const [grade, section] = key.split('|'); return <SelectItem key={key} value={key}>{grade} - Section {section}</SelectItem>; })}</SelectContent></Select></div>
       <div className="max-h-[48dvh] overflow-auto rounded-xl border"><table className="w-full min-w-[900px] text-sm"><thead className="sticky top-0 z-10 bg-slate-100"><tr className="text-left"><th className="p-3">Grade</th><th className="p-3">Section</th><th className="p-3">Day</th><th className="p-3">Period</th><th className="p-3">Subject</th><th className="p-3">Allotted Teacher</th><th className="p-3">Room</th><th className="p-3">Status</th></tr></thead><tbody>{generatedSchedules.filter((item) => resultClass === 'all' || `${item.grade}|${item.section}` === resultClass).map((item) => <tr key={item.id} className="border-t hover:bg-slate-50"><td className="p-3 font-medium">{item.grade}</td><td className="p-3">{item.section}</td><td className="p-3">{item.day}</td><td className="p-3">P{item.period}</td><td className="p-3 font-medium text-blue-700">{item.subject}</td><td className="p-3">{item.teacher?.name || <span className="text-amber-700">Not allotted</span>}</td><td className="p-3">{item.roomId || '-'}</td><td className="p-3"><Badge className={item.teacherId ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>{item.teacherId ? 'Allotted' : 'Needs teacher'}</Badge></td></tr>)}</tbody></table></div>
     </CardContent></Card>}
-  </div>;
+    </div>
+  );
 }
 
 function TimetableGovernancePanel({ schoolId, onChanged }: { schoolId?: string; onChanged?: () => Promise<void> }) {

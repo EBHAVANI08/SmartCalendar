@@ -30,25 +30,68 @@ const headers: Record<(typeof TIMETABLE_SHEETS)[number], string[]> = {
 };
 
 const samples: Record<string, unknown[][]> = {
-  Teachers: [['T001', 'Anita Verma', 'anita@example.edu', 'Mathematics', 'Physics', '6,7,8,9,10', 30, 6, 3]],
-  Classes: [['G06-A', '6', 'A', 38, 'T001', 'R-601']],
-  SubjectRequirements: [['G06-A', 'Mathematics', 7, 0, 2, 0, 'Morning']],
-  TeacherAssignments: [['T001', 'G06-A', 'Mathematics', 1, 7]],
-  Availability: [['T001', 'Wednesday', 1, 'Unavailable', 'Part-time restriction']],
-  Rooms: [['R-601', 'Grade 6-A', 'Classroom', 45, 'Monday-Saturday', 'Main']],
-  SubjectRoomRequirements: [['Computer Science', 'Computer Lab', 'Yes']],
-  FixedPeriods: [['G06-A', 'Monday', 1, 'Assembly', '', 'AUD-1', 'Yes']],
-  BellSchedule: [['Monday', 1, '08:00', '08:45', 'Teaching']],
+  Teachers: [
+    ['T001', 'Rajesh Sharma', 'rajesh.sharma@example.edu', 'Mathematics', 'Physics', '1,2,3,4,5', 30, 6, 3],
+    ['T002', 'Priya Verma', 'priya.verma@example.edu', 'English', 'Social Studies', '1,2,3,4,5', 30, 6, 3],
+    ['T003', 'Dr. Ananya Sen', 'ananya.sen@example.edu', 'Science', 'Biology', '6,7,8', 30, 6, 3],
+    ['T004', 'Vikram Rao', 'vikram.rao@example.edu', 'Social Science', 'History', '6,7,8', 30, 6, 3],
+    ['T005', 'Neha Gupta', 'neha.gupta@example.edu', 'Hindi', 'Sanskrit', '9,10,11,12', 30, 6, 3],
+    ['T006', 'Amit Patel', 'amit.patel@example.edu', 'Physical Education', 'Sports', '1,2,3,4,5,6,7,8,9,10,11,12', 30, 6, 3],
+  ],
+  Classes: [
+    ['G01-A', 'Grade 1', 'A', 30, 'T001', 'R-101'],
+    ['G06-A', 'Grade 6', 'A', 38, 'T003', 'R-601'],
+    ['G10-A', 'Grade 10', 'A', 40, 'T005', 'R-1001'],
+  ],
+  SubjectRequirements: [
+    ['G01-A', 'Mathematics', 6, 1, 2, 0, 'Morning'],
+    ['G01-A', 'English', 6, 1, 2, 0, 'Morning'],
+    ['G06-A', 'Science', 6, 1, 2, 0, 'Morning'],
+    ['G06-A', 'Social Science', 5, 1, 1, 0, 'Afternoon'],
+    ['G10-A', 'Hindi', 5, 1, 1, 0, 'Morning'],
+  ],
+  TeacherAssignments: [
+    ['T001', 'G01-A', 'Mathematics', 1, 6],
+    ['T002', 'G01-A', 'English', 1, 6],
+    ['T003', 'G06-A', 'Science', 1, 6],
+    ['T004', 'G06-A', 'Social Science', 1, 5],
+    ['T005', 'G10-A', 'Hindi', 1, 5],
+  ],
+  Availability: [
+    ['T001', 'Wednesday', 1, 'Unavailable', 'Part-time restriction'],
+  ],
+  Rooms: [
+    ['R-101', 'Primary 1-A', 'Classroom', 35, 'Monday-Saturday', 'Primary Wing'],
+    ['R-601', 'Middle 6-A', 'Classroom', 45, 'Monday-Saturday', 'Middle Wing'],
+    ['R-1001', 'High 10-A', 'Classroom', 45, 'Monday-Saturday', 'High Wing'],
+    ['LAB-1', 'Science Lab', 'Laboratory', 40, 'Monday-Saturday', 'Main Wing'],
+  ],
+  SubjectRoomRequirements: [
+    ['Science', 'Laboratory', 'No'],
+    ['Computer Science', 'Computer Lab', 'Yes'],
+  ],
+  FixedPeriods: [
+    ['G01-A', 'Monday', 1, 'Morning Assembly', '', 'AUD-1', 'Yes'],
+    ['G06-A', 'Monday', 1, 'Morning Assembly', '', 'AUD-1', 'Yes'],
+    ['G10-A', 'Monday', 1, 'Morning Assembly', '', 'AUD-1', 'Yes'],
+  ],
+  BellSchedule: [
+    ['Monday', 1, '08:00', '08:45', 'Teaching'],
+    ['Monday', 2, '08:45', '09:30', 'Teaching'],
+    ['Monday', 3, '09:45', '10:30', 'Teaching'],
+    ['Monday', 4, '10:30', '11:15', 'Teaching'],
+  ],
 };
 
 export function createTimetableTemplate(): Buffer {
   const workbook = XLSX.utils.book_new();
   const instructions = XLSX.utils.aoa_to_sheet([
-    ['Smart Calendar timetable import'],
-    ['Complete the required sheets: Teachers, Classes, SubjectRequirements, TeacherAssignments.'],
-    ['Optional sheets: Availability, Rooms, SubjectRoomRequirements, FixedPeriods, BellSchedule.'],
-    ['Use stable Employee ID, Class Code, and Room Code values to link sheets.'],
-    ['Imports are always applied to a draft timetable version; published data is never overwritten.'],
+    ['Smart Calendar Timetable Master Import Workbook'],
+    ['Instructions:'],
+    ['1. Complete the required sheets: Teachers, Classes, SubjectRequirements, TeacherAssignments.'],
+    ['2. Optional sheets: Availability, Rooms, SubjectRoomRequirements, FixedPeriods, BellSchedule.'],
+    ['3. Use matching Employee ID, Class Code, and Room Code values across linked sheets.'],
+    ['4. Save and upload this workbook (.xlsx) directly into the Timetable Bulk Import Studio.'],
   ]);
   XLSX.utils.book_append_sheet(workbook, instructions, 'Instructions');
   for (const name of TIMETABLE_SHEETS) {
@@ -57,6 +100,43 @@ export function createTimetableTemplate(): Buffer {
     sheet['!cols'] = headers[name].map((h) => ({ wch: Math.max(14, h.length + 2) }));
     XLSX.utils.book_append_sheet(workbook, sheet, name);
   }
+  return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+}
+
+export function createTeacherAllotmentTemplate(format: 'xlsx' | 'csv' = 'xlsx'): Buffer | string {
+  const teacherHeaders = ['Employee ID', 'Teacher Name', 'Email', 'Primary Subject', 'Eligible Grades', 'Phone', 'Max Daily Periods'];
+  const teacherSampleData = [
+    ['EMP001', 'Mr. Rajesh Sharma', 'rajesh.sharma@school.edu', 'Mathematics', 'Grade 1, Grade 2, Grade 3, Grade 4, Grade 5', '+91 98765 43210', 6],
+    ['EMP002', 'Ms. Priya Verma', 'priya.verma@school.edu', 'English', 'Grade 1, Grade 2, Grade 3, Grade 4, Grade 5', '+91 98765 43211', 6],
+    ['EMP003', 'Dr. Ananya Sen', 'ananya.sen@school.edu', 'Science', 'Grade 6, Grade 7, Grade 8', '+91 98765 43212', 6],
+    ['EMP004', 'Mr. Vikram Rao', 'vikram.rao@school.edu', 'Social Science', 'Grade 6, Grade 7, Grade 8', '+91 98765 43213', 6],
+    ['EMP005', 'Ms. Neha Gupta', 'neha.gupta@school.edu', 'Hindi', 'Grade 9, Grade 10, Grade 11, Grade 12', '+91 98765 43214', 6],
+    ['EMP006', 'Mr. Amit Patel', 'amit.patel@school.edu', 'Physical Education', 'Grade 1 to Grade 12', '+91 98765 43215', 6],
+    ['EMP007', 'Mr. Suresh Kumar', 'suresh.kumar@school.edu', 'Computer Science', 'Grade 6 to Grade 12', '+91 98765 43216', 6],
+    ['EMP008', 'Ms. Meenakshi Iyer', 'meenakshi.iyer@school.edu', 'Art & Music', 'Grade 1 to Grade 8', '+91 98765 43217', 6],
+  ];
+
+  if (format === 'csv') {
+    const csvRows = [
+      teacherHeaders.join(','),
+      ...teacherSampleData.map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(',')),
+    ];
+    return csvRows.join('\r\n');
+  }
+
+  const workbook = XLSX.utils.book_new();
+  const sheet = XLSX.utils.aoa_to_sheet([teacherHeaders, ...teacherSampleData]);
+  sheet['!freeze'] = { xSplit: 0, ySplit: 1 };
+  sheet['!cols'] = [
+    { wch: 15 },
+    { wch: 24 },
+    { wch: 30 },
+    { wch: 22 },
+    { wch: 48 },
+    { wch: 18 },
+    { wch: 18 },
+  ];
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Teacher Allotments');
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 }
 
