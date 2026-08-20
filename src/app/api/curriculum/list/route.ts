@@ -63,28 +63,28 @@ const HARDCODED_CURRICULUMS = [
 export async function GET() {
   try {
     const curriculums = await db.curriculum.findMany({
-      include: {
-        subjects: {
-          include: { subject: true },
-          orderBy: { subject: { name: 'asc' } },
-        },
-      },
       orderBy: { name: 'asc' },
     });
 
     if (curriculums.length > 0) {
-      const mapped = curriculums.map(c => ({
-        id: c.id,
-        name: c.name,
-        code: c.code,
-        description: c.description,
-        country: c.country,
-        framework: c.framework,
-        isActive: c.isActive,
-        subjectAreas: [...new Set(c.subjects.map(cs => cs.subject.name))],
-        subjectCount: c.subjects.length,
-        gradeLevels: [...new Set(c.subjects.map(cs => cs.gradeLevel))].sort((a, b) => a - b),
-      }));
+      const mapped = curriculums.map(c => {
+        let subs: string[] = [];
+        let grds: string[] = [];
+        try { subs = JSON.parse(c.subjects || '[]'); } catch { subs = []; }
+        try { grds = JSON.parse(c.grades || '[]'); } catch { grds = []; }
+        return {
+          id: c.id,
+          name: c.name,
+          code: c.board,
+          description: c.description || '',
+          country: 'International',
+          framework: c.name,
+          isActive: true,
+          subjectAreas: subs,
+          subjectCount: subs.length,
+          gradeLevels: grds,
+        };
+      });
       return NextResponse.json({ success: true, data: mapped });
     }
 
@@ -114,7 +114,7 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { code, name, description, country, framework } = body;
+    const { code, name, description, subjects, grades } = body;
 
     if (!code || !name) {
       return NextResponse.json(
@@ -123,22 +123,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const existing = await db.curriculum.findUnique({ where: { code } });
-    if (existing) {
-      return NextResponse.json(
-        { success: false, error: 'Curriculum with this code already exists' },
-        { status: 409 },
-      );
-    }
-
     const curriculum = await db.curriculum.create({
       data: {
         name,
-        code,
+        board: code,
         description: description || '',
-        country: country || null,
-        framework: framework || null,
-        isActive: true,
+        subjects: Array.isArray(subjects) ? JSON.stringify(subjects) : (subjects || '[]'),
+        grades: Array.isArray(grades) ? JSON.stringify(grades) : (grades || '[]'),
       },
     });
 

@@ -167,7 +167,7 @@ Return ONLY a JSON object with this structure:
     }
 
     // Save to database
-    const savedTopics = [];
+    const savedTopics: any[] = [];
     for (const topicData of allTopics) {
       const saved = await db.curriculumTopic.create({
         data: {

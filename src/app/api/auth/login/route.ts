@@ -1,5 +1,23 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
+
+async function verifyPassword(provided: string, stored: string, onPlainMatchUpgrade?: (newHash: string) => Promise<void>): Promise<boolean> {
+  if (!stored) return true;
+  if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
+    return await bcrypt.compare(provided, stored);
+  }
+  if (provided === stored) {
+    if (onPlainMatchUpgrade) {
+      try {
+        const hashed = await bcrypt.hash(provided, 10);
+        await onPlainMatchUpgrade(hashed);
+      } catch {}
+    }
+    return true;
+  }
+  return false;
+}
 
 export async function POST(request: Request) {
   let credentials: { email?: string; password?: string; role?: string } = {};
@@ -47,23 +65,30 @@ export async function POST(request: Request) {
       });
 
       if (school) {
-        return NextResponse.json({
-          success: true,
-          user: {
-            id: school.id,
-            name: school.name,
-            email: school.email,
-            role: 'school',
-            schoolId: school.id,
-            schoolCode: school.code,
-          },
+        const isValid = await verifyPassword(password, school.password, async (newHash) => {
+          await db.school.update({ where: { id: school!.id }, data: { password: newHash } });
         });
+
+        if (isValid) {
+          return NextResponse.json({
+            success: true,
+            user: {
+              id: school.id,
+              name: school.name,
+              email: school.email,
+              role: 'school',
+              schoolId: school.id,
+              schoolCode: school.code,
+            },
+          });
+        }
       }
 
       // If demo school or missing school record, auto-create it
       const demoConfig = demoSchoolsMap[cleanEmail];
       if (demoConfig) {
         try {
+          const hashedDemoPass = await bcrypt.hash(password || 'school123', 10);
           school = await db.school.upsert({
             where: { id: demoConfig.id },
             update: { email: cleanEmail, name: demoConfig.name, code: demoConfig.code },
@@ -72,7 +97,7 @@ export async function POST(request: Request) {
               name: demoConfig.name,
               code: demoConfig.code,
               email: cleanEmail,
-              password: password || 'school123',
+              password: hashedDemoPass,
             },
           });
           return NextResponse.json({
@@ -109,11 +134,12 @@ export async function POST(request: Request) {
         });
         if (!admin) {
           try {
+            const hashedAdminPass = await bcrypt.hash(password || 'admin123', 10);
             admin = await db.admin.create({
               data: {
                 name: 'Global Administrator',
                 email: cleanEmail,
-                password: password || 'admin123',
+                password: hashedAdminPass,
                 role: 'admin',
               },
             });
@@ -123,6 +149,10 @@ export async function POST(request: Request) {
               user: { id: 'adm_default', name: 'Global Administrator', email: cleanEmail, role: 'admin' },
             });
           }
+        } else {
+          await verifyPassword(password, admin.password, async (newHash) => {
+            await db.admin.update({ where: { id: admin!.id }, data: { password: newHash } });
+          });
         }
         return NextResponse.json({
           success: true,
@@ -133,12 +163,13 @@ export async function POST(request: Request) {
       // Create new school workspace automatically if user provided email/pass
       try {
         const generatedCode = cleanEmail.split('@')[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
+        const hashedNewSchoolPass = await bcrypt.hash(password, 10);
         const newSchool = await db.school.create({
           data: {
             name: `${cleanEmail.split('@')[0]} School`,
             code: generatedCode || 'SCHOOL1',
             email: cleanEmail,
-            password: password,
+            password: hashedNewSchoolPass,
           },
         });
         return NextResponse.json({
@@ -171,6 +202,10 @@ export async function POST(request: Request) {
       }
 
       if (teacher) {
+        await verifyPassword(password, teacher.password, async (newHash) => {
+          await db.teacher.update({ where: { id: teacher!.id }, data: { password: newHash } });
+        });
+
         return NextResponse.json({
           success: true,
           user: {

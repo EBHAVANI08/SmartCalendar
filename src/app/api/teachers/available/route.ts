@@ -16,8 +16,8 @@ export async function GET(request: NextRequest) {
       },
     });
 
-    const availableTeachers = [];
-    const unavailableTeachers = [];
+    const availableTeachers: any[] = [];
+    const unavailableTeachers: any[] = [];
 
     for (const teacher of teachers) {
       const isSameSubject = !subject || teacher.subject.toLowerCase() === subject.toLowerCase();

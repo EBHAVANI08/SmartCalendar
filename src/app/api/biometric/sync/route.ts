@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     }
 
     // Now simulate biometric device data
-    const biometricResults = [];
+    const biometricResults: any[] = [];
 
     for (const teacher of teachers) {
       // Check if already synced for this date

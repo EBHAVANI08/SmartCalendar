@@ -9,9 +9,8 @@ export async function GET(req: NextRequest) {
     const teacher = await db.teacher.findUnique({
       where: { email },
       select: {
-        id: true, name: true, email: true, employeeId: true,
-        department: true, designation: true, role: true, phone: true, avatar: true,
-        teacherSubjects: { include: { subject: true } },
+        id: true, name: true, email: true, subject: true,
+        grades: true, role: true, phone: true, schoolId: true, availability: true,
       },
     });
 

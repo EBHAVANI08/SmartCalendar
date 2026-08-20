@@ -26,8 +26,8 @@ export async function GET(req: NextRequest) {
         topicsCovered: [sub.todayTopic || 'Covered scheduled topics'],
         studentQuestions: ['No major issues reported'],
         areasOfDifficulty: [],
-        classBehaviorNotes: sub.feedbackNotes || 'Good behavior overall',
-        completionPercentage: sub.completionStatus === 'COMPLETED' ? 100 : 80,
+        classBehaviorNotes: sub.reason || 'Good behavior overall',
+        completionPercentage: sub.status === 'completed' ? 100 : 80,
         subject: sub.subject,
         grade: sub.grade,
         section: sub.section,
@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { assignmentId, classBehaviorNotes, completionPercentage } = body;
+    const { assignmentId, classBehaviorNotes } = body;
 
     if (!assignmentId) {
       return NextResponse.json({ success: false, error: 'assignmentId required' }, { status: 400 });
@@ -54,9 +54,8 @@ export async function POST(req: NextRequest) {
     const sub = await db.substitution.update({
       where: { id: assignmentId },
       data: {
-        feedbackNotes: classBehaviorNotes,
-        completionStatus: completionPercentage === 100 ? 'COMPLETED' : 'PARTIAL',
         status: 'completed',
+        reason: classBehaviorNotes || undefined,
       },
     });
 

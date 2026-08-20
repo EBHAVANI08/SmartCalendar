@@ -102,7 +102,7 @@ export async function POST(request: Request) {
     const yesterdayScheduleEntry = yesterdayPeriod || yesterdayPeriodByGrade || yesterdaySameClass;
 
     // ─── Fetch lesson plan for PREVIOUS day's class ───
-    let yesterdayLessonPlan = null;
+    let yesterdayLessonPlan: any = null;
     try {
       yesterdayLessonPlan = await db.lessonPlan.findFirst({
         where: {

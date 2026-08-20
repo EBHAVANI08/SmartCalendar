@@ -571,7 +571,7 @@ Keep it brief — just topic titles, 2 outcomes each, and 2-3 vocabulary terms p
     });
 
     // Create CurriculumTopic entries for backwards compatibility
-    const savedTopics = [];
+    const savedTopics: any[] = [];
     let seq = 1;
     for (const unit of (curriculum.sectionC as Record<string, unknown>[])) {
       const unitObj = unit as Record<string, unknown>;

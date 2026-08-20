@@ -113,7 +113,26 @@ interface LessonPlan {
 }
 
 type TabType = 'dashboard' | 'calendar' | 'bulk-import' | 'substitutions' | 'teachers' | 'teacher-portal' | 'analytics';
-type UserRole = 'admin' | 'teacher' | null;
+type UserRole = 'admin' | 'teacher' | 'superadmin' | null;
+
+interface SchoolFeatureFlags {
+  aiTimetableEnabled: boolean;
+  manualTimetableEnabled: boolean;
+  bulkImportEnabled: boolean;
+  shortBreakEnabled: boolean;
+  lunchBreakEnabled: boolean;
+  ptPeriodsEnabled: boolean;
+  substitutionEnabled: boolean;
+  autoSubstitutionEnabled: boolean;
+  workloadAnalyticsEnabled: boolean;
+  teacherNotifyEnabled: boolean;
+  maxGrades: number;
+  maxTeachers: number;
+  maxPeriodsPerDay: number;
+  planName: string;
+  customNote?: string | null;
+  trialEndsAt?: string | null;
+}
 
 interface LoginUser {
   id: string;
@@ -8198,6 +8217,333 @@ function LessonPlanLibrarySection({ teachers }: { teachers: Teacher[] }) {
               </div>
             )}
           </ScrollArea>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+// ─── Super Admin Portal ───
+const SA_TOKEN = 'sa_dev_token_2026';
+
+interface SASchool {
+  id: string;
+  name: string;
+  code: string;
+  email: string;
+  createdAt: string;
+  featureFlags: SchoolFeatureFlags | null;
+  _count: { teachers: number; schedules: number };
+}
+
+const FLAG_META: { key: keyof SchoolFeatureFlags; label: string; group: string }[] = [
+  { key: 'aiTimetableEnabled',      label: 'AI Timetable Generation',    group: 'Timetable' },
+  { key: 'manualTimetableEnabled',  label: 'Manual Timetable Builder',   group: 'Timetable' },
+  { key: 'bulkImportEnabled',       label: 'Bulk Import (CSV/PDF)',       group: 'Timetable' },
+  { key: 'shortBreakEnabled',       label: 'Short Break Support',        group: 'Breaks' },
+  { key: 'lunchBreakEnabled',       label: 'Lunch Break Support',        group: 'Breaks' },
+  { key: 'ptPeriodsEnabled',        label: 'PT / Sports Periods',        group: 'Breaks' },
+  { key: 'substitutionEnabled',     label: 'Substitution Management',    group: 'Operations' },
+  { key: 'autoSubstitutionEnabled', label: 'Auto Substitution Engine',   group: 'Operations' },
+  { key: 'workloadAnalyticsEnabled',label: 'Workload Analytics',         group: 'Analytics' },
+  { key: 'teacherNotifyEnabled',    label: 'Teacher Notifications',      group: 'Communication' },
+];
+
+const PLAN_COLORS: Record<string, string> = {
+  trial: 'bg-amber-100 text-amber-700 border-amber-200',
+  standard: 'bg-blue-100 text-blue-700 border-blue-200',
+  premium: 'bg-purple-100 text-purple-700 border-purple-200',
+};
+
+function SuperAdminPortal({ user, onLogout }: { user: LoginUser; onLogout: () => void }) {
+  const [schools, setSchools] = useState<SASchool[]>([]);
+  const [loadingSchools, setLoadingSchools] = useState(true);
+  const [selectedSchoolId, setSelectedSchoolId] = useState<string | null>(null);
+  const [flags, setFlags] = useState<Partial<SchoolFeatureFlags>>({});
+  const [savingFlags, setSavingFlags] = useState(false);
+  const [savedMsg, setSavedMsg] = useState('');
+  const [addSchoolOpen, setAddSchoolOpen] = useState(false);
+  const [newSchool, setNewSchool] = useState({ name: '', code: '', email: '', password: '', planName: 'standard' });
+  const [creatingSchool, setCreatingSchool] = useState(false);
+  const [createError, setCreateError] = useState('');
+  const [saView, setSaView] = useState<'schools' | 'flags'>('schools');
+  const { toast } = useToast();
+
+  const loadSchools = async () => {
+    setLoadingSchools(true);
+    try {
+      const res = await fetch(`/api/superadmin/schools?token=${SA_TOKEN}`);
+      if (res.ok) { const d = await res.json(); setSchools(d.schools || []); }
+    } finally { setLoadingSchools(false); }
+  };
+
+  useEffect(() => { loadSchools(); }, []);
+
+  const openFlags = (school: SASchool) => {
+    setSelectedSchoolId(school.id);
+    setFlags(school.featureFlags ?? {
+      aiTimetableEnabled: true, manualTimetableEnabled: true, bulkImportEnabled: true,
+      shortBreakEnabled: true, lunchBreakEnabled: true, ptPeriodsEnabled: true,
+      substitutionEnabled: true, autoSubstitutionEnabled: true, workloadAnalyticsEnabled: true,
+      teacherNotifyEnabled: true, maxGrades: 12, maxTeachers: 200, maxPeriodsPerDay: 10,
+      planName: 'standard',
+    });
+    setSaView('flags');
+  };
+
+  const saveFlags = async () => {
+    if (!selectedSchoolId) return;
+    setSavingFlags(true); setSavedMsg('');
+    try {
+      const res = await fetch(`/api/superadmin/feature-flags?schoolId=${selectedSchoolId}&token=${SA_TOKEN}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(flags),
+      });
+      if (res.ok) { setSavedMsg('Saved!'); await loadSchools(); setTimeout(() => setSavedMsg(''), 2500); }
+    } finally { setSavingFlags(false); }
+  };
+
+  const createSchool = async () => {
+    if (!newSchool.name || !newSchool.code || !newSchool.email || !newSchool.password) {
+      setCreateError('All fields are required'); return;
+    }
+    setCreatingSchool(true); setCreateError('');
+    try {
+      const res = await fetch(`/api/superadmin/schools?token=${SA_TOKEN}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newSchool),
+      });
+      const d = await res.json();
+      if (!res.ok) { setCreateError(d.error || 'Failed to create school'); return; }
+      toast({ title: 'School created', description: `${newSchool.name} is ready.` });
+      setAddSchoolOpen(false);
+      setNewSchool({ name: '', code: '', email: '', password: '', planName: 'standard' });
+      await loadSchools();
+    } finally { setCreatingSchool(false); }
+  };
+
+  const selectedSchool = schools.find(s => s.id === selectedSchoolId);
+  const groups = [...new Set(FLAG_META.map(f => f.group))];
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-900 flex flex-col">
+      {/* Top bar */}
+      <header className="sticky top-0 z-30 border-b border-purple-800/40 bg-slate-950/80 backdrop-blur">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
+          <div className="flex items-center gap-3">
+            <div className="bg-gradient-to-br from-purple-500 to-violet-600 p-1.5 rounded-xl">
+              <ShieldCheck className="w-5 h-5 text-white" />
+            </div>
+            <div>
+              <span className="text-white font-bold text-sm">Super Admin Console</span>
+              <span className="hidden sm:inline text-purple-300/60 text-xs ml-2">AI Smart Calendar Platform</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 text-purple-300/70 text-xs border border-purple-700/40 rounded-lg px-2.5 py-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              {user.name} &bull; {user.email}
+            </div>
+            <Button size="sm" variant="outline" onClick={onLogout} className="text-xs border-purple-700 text-purple-200 hover:bg-purple-900 h-8">
+              <LogOut className="w-3 h-3 mr-1" /> Logout
+            </Button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 max-w-7xl mx-auto px-4 sm:px-6 py-6 w-full">
+        {/* Breadcrumb */}
+        <div className="flex items-center gap-2 text-xs text-purple-300/60 mb-6">
+          <button onClick={() => setSaView('schools')} className={`hover:text-purple-200 ${saView === 'schools' ? 'text-purple-200 font-semibold' : ''}`}>
+            All Schools
+          </button>
+          {saView === 'flags' && selectedSchool && (
+            <>
+              <span>/</span>
+              <span className="text-purple-200 font-semibold">{selectedSchool.name} — Feature Flags</span>
+            </>
+          )}
+        </div>
+
+        {/* ── Schools List ── */}
+        {saView === 'schools' && (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-white">School Accounts</h2>
+                <p className="text-purple-300/60 text-sm">{schools.length} schools registered on the platform</p>
+              </div>
+              <Button onClick={() => setAddSchoolOpen(true)} className="bg-purple-600 hover:bg-purple-700 text-white text-xs h-9 gap-1.5">
+                <Plus className="w-3.5 h-3.5" /> Add School
+              </Button>
+            </div>
+
+            {loadingSchools ? (
+              <div className="flex items-center gap-3 text-purple-300/60 py-12 justify-center">
+                <RefreshCw className="w-5 h-5 animate-spin" /> Loading schools…
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {schools.map(school => (
+                  <div key={school.id} className="rounded-2xl border border-purple-700/30 bg-slate-900/60 p-5 hover:border-purple-500/50 transition-all">
+                    <div className="flex items-start justify-between gap-2 mb-3">
+                      <div className="min-w-0">
+                        <p className="text-white font-semibold truncate">{school.name}</p>
+                        <p className="text-purple-300/60 text-xs truncate">{school.email}</p>
+                      </div>
+                      <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${PLAN_COLORS[school.featureFlags?.planName ?? 'standard'] ?? PLAN_COLORS.standard}`}>
+                        {(school.featureFlags?.planName ?? 'standard').toUpperCase()}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 mb-4">
+                      <div className="bg-slate-800/60 rounded-xl p-2 text-center">
+                        <p className="text-white font-bold text-lg">{school._count.teachers}</p>
+                        <p className="text-purple-300/50 text-[10px]">Teachers</p>
+                      </div>
+                      <div className="bg-slate-800/60 rounded-xl p-2 text-center">
+                        <p className="text-white font-bold text-lg">{school._count.schedules}</p>
+                        <p className="text-purple-300/50 text-[10px]">Periods</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={() => openFlags(school)} size="sm" className="flex-1 bg-purple-700/60 hover:bg-purple-700 text-white text-xs h-8">
+                        <Settings className="w-3 h-3 mr-1" /> Feature Flags
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Feature Flags Editor ── */}
+        {saView === 'flags' && selectedSchool && (
+          <div className="space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-bold text-white">{selectedSchool.name}</h2>
+                <p className="text-purple-300/60 text-sm">Manage enabled features and plan limits</p>
+              </div>
+              <div className="flex items-center gap-2">
+                {savedMsg && <span className="text-emerald-400 text-xs font-medium">{savedMsg}</span>}
+                <Button onClick={saveFlags} disabled={savingFlags} className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-9">
+                  {savingFlags ? <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1" />}
+                  Save Changes
+                </Button>
+              </div>
+            </div>
+
+            {/* Plan */}
+            <div className="rounded-2xl border border-purple-700/30 bg-slate-900/60 p-5">
+              <p className="text-xs font-semibold text-purple-300/70 uppercase tracking-wider mb-3">Plan & Limits</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-300">Plan Name</Label>
+                  <select
+                    value={(flags.planName as string) ?? 'standard'}
+                    onChange={e => setFlags(f => ({ ...f, planName: e.target.value }))}
+                    className="w-full rounded-lg bg-slate-800 border border-purple-700/40 text-white text-xs px-3 py-2"
+                  >
+                    <option value="trial">Trial</option>
+                    <option value="standard">Standard</option>
+                    <option value="premium">Premium</option>
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-300">Max Grades</Label>
+                  <Input type="number" min={1} max={20}
+                    value={(flags.maxGrades as number) ?? 12}
+                    onChange={e => setFlags(f => ({ ...f, maxGrades: parseInt(e.target.value) || 12 }))}
+                    className="bg-slate-800 border-purple-700/40 text-white text-xs h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-300">Max Teachers</Label>
+                  <Input type="number" min={1} max={1000}
+                    value={(flags.maxTeachers as number) ?? 200}
+                    onChange={e => setFlags(f => ({ ...f, maxTeachers: parseInt(e.target.value) || 200 }))}
+                    className="bg-slate-800 border-purple-700/40 text-white text-xs h-9"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs text-gray-300">Max Periods/Day</Label>
+                  <Input type="number" min={1} max={15}
+                    value={(flags.maxPeriodsPerDay as number) ?? 10}
+                    onChange={e => setFlags(f => ({ ...f, maxPeriodsPerDay: parseInt(e.target.value) || 10 }))}
+                    className="bg-slate-800 border-purple-700/40 text-white text-xs h-9"
+                  />
+                </div>
+              </div>
+              <div className="mt-4 space-y-1.5">
+                <Label className="text-xs text-gray-300">Custom Note (shown on school dashboard)</Label>
+                <Input
+                  value={(flags.customNote as string) ?? ''}
+                  onChange={e => setFlags(f => ({ ...f, customNote: e.target.value }))}
+                  placeholder="e.g. Trial expires on 30 Sep 2026. Upgrade to unlock advanced features."
+                  className="bg-slate-800 border-purple-700/40 text-white text-xs h-9"
+                />
+              </div>
+            </div>
+
+            {/* Feature toggle groups */}
+            {groups.map(group => (
+              <div key={group} className="rounded-2xl border border-purple-700/30 bg-slate-900/60 p-5">
+                <p className="text-xs font-semibold text-purple-300/70 uppercase tracking-wider mb-3">{group}</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {FLAG_META.filter(f => f.group === group).map(({ key, label }) => {
+                    const enabled = (flags[key] as boolean) ?? true;
+                    return (
+                      <button
+                        key={key}
+                        onClick={() => setFlags(f => ({ ...f, [key]: !enabled }))}
+                        className={`flex items-center justify-between rounded-xl px-4 py-3 border text-sm font-medium transition-all ${
+                          enabled
+                            ? 'bg-emerald-900/30 border-emerald-600/40 text-emerald-300'
+                            : 'bg-slate-800/60 border-slate-600/40 text-slate-400'
+                        }`}
+                      >
+                        <span>{label}</span>
+                        <div className={`w-9 h-5 rounded-full flex items-center transition-colors relative ${enabled ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                          <div className={`absolute w-3.5 h-3.5 bg-white rounded-full shadow transition-all ${enabled ? 'left-4' : 'left-1'}`} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </main>
+
+      {/* Add School Dialog */}
+      <Dialog open={addSchoolOpen} onOpenChange={setAddSchoolOpen}>
+        <DialogContent className="max-w-md bg-slate-900 border-purple-700/40 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-white">Add New School</DialogTitle>
+            <DialogDescription className="text-purple-300/60">Create a new school account on the platform.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            {createError && <div className="bg-red-900/30 border border-red-500/40 text-red-300 rounded-lg px-3 py-2 text-xs">{createError}</div>}
+            <div className="space-y-1.5"><Label className="text-xs text-gray-300">School Name</Label><Input value={newSchool.name} onChange={e => setNewSchool(s => ({ ...s, name: e.target.value }))} placeholder="Sunrise Public School" className="bg-slate-800 border-purple-700/40 text-white h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-gray-300">School Code (unique)</Label><Input value={newSchool.code} onChange={e => setNewSchool(s => ({ ...s, code: e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, '') }))} placeholder="SUNRISE01" className="bg-slate-800 border-purple-700/40 text-white h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-gray-300">Admin Email</Label><Input type="email" value={newSchool.email} onChange={e => setNewSchool(s => ({ ...s, email: e.target.value }))} placeholder="admin@sunrisepublic.edu" className="bg-slate-800 border-purple-700/40 text-white h-9 text-sm" /></div>
+            <div className="space-y-1.5"><Label className="text-xs text-gray-300">Password</Label><Input type="password" value={newSchool.password} onChange={e => setNewSchool(s => ({ ...s, password: e.target.value }))} placeholder="Minimum 8 characters" className="bg-slate-800 border-purple-700/40 text-white h-9 text-sm" /></div>
+            <div className="space-y-1.5">
+              <Label className="text-xs text-gray-300">Plan</Label>
+              <select value={newSchool.planName} onChange={e => setNewSchool(s => ({ ...s, planName: e.target.value }))} className="w-full rounded-lg bg-slate-800 border border-purple-700/40 text-white text-sm px-3 py-2">
+                <option value="trial">Trial</option>
+                <option value="standard">Standard</option>
+                <option value="premium">Premium</option>
+              </select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddSchoolOpen(false)} className="text-gray-400 hover:text-white">Cancel</Button>
+            <Button onClick={createSchool} disabled={creatingSchool} className="bg-purple-600 hover:bg-purple-700 text-white">
+              {creatingSchool ? <RefreshCw className="w-3.5 h-3.5 mr-1 animate-spin" /> : <Plus className="w-3.5 h-3.5 mr-1" />}
+              Create School
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

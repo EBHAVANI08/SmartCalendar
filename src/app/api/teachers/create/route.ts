@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 
 export async function POST(request: Request) {
   try {
@@ -48,6 +49,8 @@ export async function POST(request: Request) {
       );
     }
 
+    const hashedPassword = await bcrypt.hash(password || 'teacher123', 10);
+
     // Create the teacher
     const teacher = await db.teacher.create({
       data: {
@@ -56,7 +59,7 @@ export async function POST(request: Request) {
         phone: phone || null,
         subject: subject.trim(),
         grades: JSON.stringify(grades),
-        password: password || 'teacher123',
+        password: hashedPassword,
         role: role || 'teacher',
         availability: '[]',
       },

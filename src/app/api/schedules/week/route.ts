@@ -4,32 +4,33 @@ import { db } from '@/lib/db';
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
-    const sectionId = searchParams.get('sectionId');
-    const startDateParam = searchParams.get('startDate');
-
-    if (!sectionId) {
-      return NextResponse.json({ success: false, error: 'Section ID required' }, { status: 400 });
-    }
+    const section = searchParams.get('section') || searchParams.get('sectionId');
+    const grade = searchParams.get('grade');
 
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const weekData: Record<string, any> = {};
 
-    for (let day = 1; day <= 5; day++) {
+    for (const day of dayNames) {
       const schedules = await db.schedule.findMany({
-        where: { sectionId, dayOfWeek: day },
-        include: { subject: true, teacher: true, timeSlot: true },
-        orderBy: { timeSlot: { order: 'asc' } },
+        where: {
+          day,
+          ...(section ? { section } : {}),
+          ...(grade ? { grade } : {}),
+        },
+        include: { teacher: true },
+        orderBy: { period: 'asc' },
       });
 
-      weekData[dayNames[day - 1]] = {
-        dayOfWeek: day,
+      weekData[day] = {
+        day,
         schedules: schedules.map(s => ({
-          timeSlotName: s.timeSlot.name,
-          startTime: s.timeSlot.startTime,
-          endTime: s.timeSlot.endTime,
-          subjectName: s.subject.name,
-          subjectColor: s.subject.color,
-          teacherName: s.teacher.name,
+          period: s.period,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          subjectName: s.subject,
+          teacherName: s.teacher?.name || 'Unassigned',
+          grade: s.grade,
+          section: s.section,
           topic: s.topic,
         })),
       };
@@ -38,6 +39,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ success: true, data: weekData });
   } catch (error) {
     console.error('[SCHEDULES WEEK ERROR]', error);
-    return NextResponse.json({ success: false, error: 'Failed' }, { status: 500 });
+    return NextResponse.json({ success: false, error: 'Failed to fetch weekly schedule' }, { status: 500 });
   }
 }

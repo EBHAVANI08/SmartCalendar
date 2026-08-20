@@ -94,7 +94,7 @@ export async function POST(request: Request) {
       return b.gradeFamiliarity - a.gradeFamiliarity;
     });
 
-    let bestTeacher = null;
+    let bestTeacher: any = null;
 
     if (eligibleTeachers.length > 0) {
       bestTeacher = eligibleTeachers[0].teacher;

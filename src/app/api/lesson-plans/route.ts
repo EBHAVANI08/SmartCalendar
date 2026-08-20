@@ -159,7 +159,7 @@ Return ONLY a JSON object with these exact fields:
         differentiation: JSON.stringify(planContent.differentiation || {}),
         assessment: JSON.stringify(planContent.assessment || {}),
         resources: JSON.stringify(planContent.resources || []),
-        homework: planContent.homework || null,
+        homework: typeof planContent.homework === 'string' ? planContent.homework : planContent.homework ? JSON.stringify(planContent.homework) : null,
         keyVocabulary: JSON.stringify(planContent.keyVocabulary || []),
       },
     });

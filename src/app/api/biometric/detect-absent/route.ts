@@ -103,8 +103,8 @@ export async function POST(request: Request) {
     });
 
     // ── PROCESS EACH AFFECTED TEACHER ──
-    const absentTeachersInfo = [];
-    const newSubstitutionsData = [];
+    const absentTeachersInfo: any[] = [];
+    const newSubstitutionsData: any[] = [];
 
     for (const record of affectedTeachers) {
       const teacher = record.teacher;

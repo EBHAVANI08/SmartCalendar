@@ -53,7 +53,7 @@ export async function POST(request: Request) {
       where: { date: targetDate, status: 'assigned' },
     });
 
-    const availableTeachers = [];
+    const availableTeachers: any[] = [];
 
     for (const teacher of allTeachers) {
       if (teacher.id === absentId) continue;

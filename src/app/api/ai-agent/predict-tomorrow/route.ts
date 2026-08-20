@@ -11,14 +11,15 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const baseDate = body.date || new Date().toISOString().split('T')[0];
 
-    const predictions = await runPredictionEngine(baseDate);
+    const predictionResult = await runPredictionEngine(baseDate);
 
     return NextResponse.json({
       success: true,
       data: {
         baseDate,
-        predictionsCount: predictions.length,
-        predictions,
+        predictionsCount: predictionResult.assessments.length,
+        predictions: predictionResult.assessments,
+        summary: predictionResult,
       },
     });
   } catch (error: any) {

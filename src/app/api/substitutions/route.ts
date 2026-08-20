@@ -119,7 +119,7 @@ export async function POST(request: Request) {
     }
 
     // Create a Substitution entry for each schedule period
-    const substitutions = [];
+    const substitutions: any[] = [];
     for (const sched of teacherSchedules) {
       const sub = await db.substitution.create({
         data: {

@@ -97,7 +97,7 @@ export async function POST(request: Request) {
 
     for (const sub of pendingSubs) {
       const { period, grade, section, subject, absentTeacherId } = sub;
-      const eligibleTeachers = [];
+      const eligibleTeachers: any[] = [];
 
       for (const teacher of allTeachers) {
         // Skip absent teacher
@@ -267,7 +267,7 @@ ${JSON.stringify(aiContext, null, 2)}`;
     }
 
     // ── PHASE 3: Execute Assignments ──
-    const assignments = [];
+    const assignments: any[] = [];
     let assigned = 0;
     let failed = 0;
 

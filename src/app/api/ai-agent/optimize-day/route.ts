@@ -13,11 +13,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Date is required' }, { status: 400 });
     }
 
-    const dayOfWeek = new Date(date + 'T00:00:00').getDay();
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayIndex = new Date(date + 'T00:00:00').getDay();
+    if (dayIndex === 0 || dayIndex === 6) {
       return NextResponse.json({ success: false, error: 'Cannot optimize weekends' }, { status: 400 });
     }
 
+    const dayOfWeek = dayNames[dayIndex];
     const result = await optimizeDaySchedule({ date, dayOfWeek });
 
     return NextResponse.json({

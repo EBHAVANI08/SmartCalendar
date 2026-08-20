@@ -13,7 +13,7 @@ export async function POST(request: NextRequest) {
     const leave = await db.leaveApplication.create({
       data: {
         teacherId,
-        type: type || 'Casual Leave',
+        leaveType: type || 'casual',
         startDate,
         endDate,
         reason: reason || 'Not specified',

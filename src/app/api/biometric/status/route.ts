@@ -13,12 +13,9 @@ export async function GET(req: NextRequest) {
           select: {
             id: true,
             name: true,
-            department: true,
-            designation: true,
-            employeeId: true,
+            subject: true,
             email: true,
             phone: true,
-            avatar: true,
           },
         },
       },
@@ -29,23 +26,20 @@ export async function GET(req: NextRequest) {
       id: r.id,
       teacherId: r.teacherId,
       teacherName: r.teacher.name,
-      employeeId: r.teacher.employeeId,
-      department: r.teacher.department,
-      designation: r.teacher.designation,
+      department: r.teacher.subject,
       date: r.date,
-      checkIn: r.checkIn,
-      checkOut: r.checkOut,
+      checkIn: r.checkInTime,
+      checkOut: r.checkOutTime,
       status: r.status,
-      source: r.source,
-      confidence: r.confidence,
+      source: r.syncSource,
     }));
 
     const summary = {
       total: records.length,
-      present: records.filter(r => r.status === 'PRESENT').length,
-      absent: records.filter(r => r.status === 'ABSENT').length,
-      late: records.filter(r => r.status === 'LATE').length,
-      halfDay: records.filter(r => r.status === 'HALF_DAY').length,
+      present: records.filter(r => r.status.toLowerCase() === 'present').length,
+      absent: records.filter(r => r.status.toLowerCase() === 'absent').length,
+      late: records.filter(r => r.status.toLowerCase() === 'late').length,
+      halfDay: records.filter(r => r.status.toLowerCase() === 'half-day' || r.status.toLowerCase() === 'half_day').length,
     };
 
     // Group by department for easy scanning

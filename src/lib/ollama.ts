@@ -10,8 +10,8 @@ const ZAI = {
         completions: {
           async create(options: Parameters<typeof client.chat.completions.create>[0]) {
             return client.chat.completions.create({
-              model: MODEL,
               ...options,
+              model: options?.model ?? MODEL,
               max_tokens: Math.min((options.max_tokens as number) ?? 4096, 32768),
             });
           },
