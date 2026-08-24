@@ -60,7 +60,12 @@ export async function POST(request: Request) {
     if (role === 'school' || role === 'admin') {
       let school = await db.school.findFirst({
         where: {
-          OR: [{ email: cleanEmail }, { email: email }],
+          OR: [
+            { email: cleanEmail },
+            { email: email },
+            { code: email.toUpperCase() },
+            { code: cleanEmail.toUpperCase() },
+          ],
         },
       });
 
@@ -85,15 +90,14 @@ export async function POST(request: Request) {
       }
 
       // If demo school or missing school record, auto-create it
-      const demoConfig = demoSchoolsMap[cleanEmail];
+      const demoConfig = demoSchoolsMap[cleanEmail] || Object.values(demoSchoolsMap).find(d => d.code === email.toUpperCase());
       if (demoConfig) {
         try {
           const hashedDemoPass = await bcrypt.hash(password || 'school123', 10);
           school = await db.school.upsert({
-            where: { id: demoConfig.id },
-            update: { email: cleanEmail, name: demoConfig.name, code: demoConfig.code },
+            where: { code: demoConfig.code },
+            update: { email: cleanEmail, name: demoConfig.name },
             create: {
-              id: demoConfig.id,
               name: demoConfig.name,
               code: demoConfig.code,
               email: cleanEmail,
@@ -115,11 +119,11 @@ export async function POST(request: Request) {
           return NextResponse.json({
             success: true,
             user: {
-              id: demoConfig.id,
+              id: demoConfig.code,
               name: demoConfig.name,
               email: cleanEmail,
               role: 'school',
-              schoolId: demoConfig.id,
+              schoolId: demoConfig.code,
               schoolCode: demoConfig.code,
             },
           });

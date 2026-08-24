@@ -137,7 +137,7 @@ export async function POST(request: Request) {
             occupied.add(`${teacher.id}|${day}|${period}`); usedClassSubjectDay.add(`${grade}|${section}|${day}|${selected.subject.toLowerCase()}`); const loadKey = `${teacher.id}|${day}`; teacherDayLoad.set(loadKey, (teacherDayLoad.get(loadKey) || 0) + 1); generated++;
           }
         }
-        const inserted = await tx.schedule.createMany({ data: scheduleData, skipDuplicates: true });
+        const inserted = await tx.schedule.createMany({ data: scheduleData });
         const skipped = scheduleData.length - inserted.count;
         return { imported: teachers.length, allotted: Math.max(0, generated - skipped), unallotted: unallocated + skipped, classesCreated: classes.length, layout: 'grade-section-matrix' };
       }

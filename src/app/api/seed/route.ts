@@ -81,13 +81,30 @@ export async function POST() {
       },
     });
 
-    await db.school.create({
+    const dpsSchool = await db.school.create({
       data: {
-        id: 'sch_dps_001',
         name: 'Delhi Public School',
         code: 'DPS2025',
         email: 'info@dpsdelhi.edu',
         password: 'school123',
+        featureFlags: {
+          create: {
+            aiTimetableEnabled: true,
+            manualTimetableEnabled: true,
+            bulkImportEnabled: true,
+            shortBreakEnabled: true,
+            lunchBreakEnabled: true,
+            ptPeriodsEnabled: true,
+            substitutionEnabled: true,
+            autoSubstitutionEnabled: true,
+            workloadAnalyticsEnabled: true,
+            teacherNotifyEnabled: true,
+            maxGrades: 12,
+            maxTeachers: 200,
+            maxPeriodsPerDay: 10,
+            planName: 'premium',
+          }
+        }
       },
     });
 
@@ -337,16 +354,12 @@ export async function POST() {
         phone,
         availability: JSON.stringify([]),
         role: 'teacher',
+        schoolId: dpsSchool.id,
       });
     }
 
-    // Batch insert teachers in chunks of 50
-    for (let i = 0; i < teacherInputData.length; i += 50) {
-      const chunk = teacherInputData.slice(i, i + 50);
-      await db.$transaction(
-        chunk.map((data) => db.teacher.create({ data }))
-      );
-    }
+    // Bulk insert teachers with createMany
+    await db.teacher.createMany({ data: teacherInputData });
 
     // Fetch all teachers to get their IDs
     const teachers = await db.teacher.findMany();
@@ -463,6 +476,7 @@ export async function POST() {
             }
 
             scheduleDataList.push({
+              schoolId: dpsSchool.id,
               grade: gradeName,
               section,
               day,
@@ -481,13 +495,8 @@ export async function POST() {
       }
     }
 
-    // Batch insert schedules in chunks of 100
-    for (let i = 0; i < scheduleDataList.length; i += 100) {
-      const chunk = scheduleDataList.slice(i, i + 100);
-      await db.$transaction(
-        chunk.map((s) => db.schedule.create({ data: s }))
-      );
-    }
+    // Bulk insert schedules with createMany
+    await db.schedule.createMany({ data: scheduleDataList });
 
     // Create students: 12 grades × 5 sections × 10 students = 600 (report 25000)
     const firstNames = ['Aarav', 'Vivaan', 'Aditya', 'Vihaan', 'Arjun', 'Sai', 'Reyansh', 'Krishna', 'Ishaan', 'Shaurya', 'Ananya', 'Diya', 'Myra', 'Sara', 'Aadhya', 'Ishita', 'Saavi', 'Kiara', 'Riya', 'Priya', 'Rohan', 'Aryan', 'Kabir', 'Rahul', 'Amit', 'Sumit', 'Nikhil', 'Varun', 'Dhruv', 'Harsh', 'Pooja', 'Neha', 'Simran', 'Kavya', 'Meera', 'Shreya', 'Tanya', 'Nisha', 'Divya', 'Pallavi', 'Arun', 'Raj', 'Manish', 'Gaurav', 'Deepak', 'Ashok', 'Suresh', 'Vijay', 'Pradeep', 'Mohan'];
@@ -511,13 +520,8 @@ export async function POST() {
       }
     }
 
-    // Batch insert students
-    for (let i = 0; i < studentDataList.length; i += 100) {
-      const chunk = studentDataList.slice(i, i + 100);
-      await db.$transaction(
-        chunk.map((s) => db.student.create({ data: s }))
-      );
-    }
+    // Bulk insert students with createMany
+    await db.student.createMany({ data: studentDataList });
 
     // Create substitutions (20 for today)
     const today = new Date().toISOString().split('T')[0];
@@ -585,11 +589,9 @@ export async function POST() {
       }
     }
 
-    // Batch insert substitutions
+    // Bulk insert substitutions
     if (substitutionDataList.length > 0) {
-      await db.$transaction(
-        substitutionDataList.map((s) => db.substitution.create({ data: s }))
-      );
+      await db.substitution.createMany({ data: substitutionDataList });
     }
 
     // Create curricula - CBSE for all grades
