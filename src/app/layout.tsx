@@ -22,6 +22,7 @@ export const metadata: Metadata = {
   description: "AI Smart Calendar – Intelligent school management system for schedules, substitutions, and lesson planning. Powered by AI.",
   keywords: ["AI Smart Calendar", "School Management", "Academic Calendar", "Teacher Scheduling", "Substitutions", "AI Timetable"],
   authors: [{ name: "AI Smart Calendar" }],
+  manifest: "/manifest.json",
   icons: {
     icon: "https://z-cdn.chatglm.cn/z-ai/static/logo.svg",
   },
