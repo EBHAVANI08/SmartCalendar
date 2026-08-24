@@ -1,3 +1,6 @@
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 import { db } from '@/lib/db';
 import { signJwt } from '@/lib/jwt-auth';
 import { NextResponse } from 'next/server';
@@ -30,7 +33,11 @@ function createLoginResponse(user: any) {
   return response;
 }
 
-async function verifyPassword(provided: string, stored: string, onPlainMatchUpgrade?: (newHash: string) => Promise<void>): Promise<boolean> {
+async function verifyPassword(
+  provided: string,
+  stored: string,
+  onPlainMatchUpgrade?: (newHash: string) => Promise<void>
+): Promise<boolean> {
   if (!stored) return true;
   if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
     return await bcrypt.compare(provided, stored);
@@ -48,37 +55,34 @@ async function verifyPassword(provided: string, stored: string, onPlainMatchUpgr
 }
 
 export async function POST(request: Request) {
-  let credentials: { email?: string; password?: string; role?: string } = {};
-  let rawText = '';
   try {
-    rawText = await request.text();
-    if (rawText) {
-      try {
-        credentials = JSON.parse(rawText);
-      } catch {
-        // Fallback regex extraction for escaped payloads
+    let body: any = {};
+    try {
+      body = await request.json();
+    } catch {
+      const text = await request.text().catch(() => '');
+      if (text) {
+        try {
+          body = JSON.parse(text);
+        } catch {
+          const emailMatch = /"email"\s*:\s*"([^"]+)"/i.exec(text);
+          const passMatch = /"password"\s*:\s*"([^"]+)"/i.exec(text);
+          body = { email: emailMatch?.[1], password: passMatch?.[1] };
+        }
       }
     }
-    let email = credentials.email;
-    let password = credentials.password;
-    let role = credentials.role;
 
-    if (!email || !password || !role) {
-      const emailMatch = /"email"\s*:\s*"([^"]+)"/i.exec(rawText);
-      const passMatch = /"password"\s*:\s*"([^"]+)"/i.exec(rawText);
-      const roleMatch = /"role"\s*:\s*"([^"]+)"/i.exec(rawText);
-      email = email || emailMatch?.[1];
-      password = password || passMatch?.[1];
-      role = role || roleMatch?.[1];
+    const email = (body?.email || '').trim();
+    const password = (body?.password || '').trim();
+
+    if (!email || !password) {
+      return NextResponse.json({ error: 'Email and password are required' }, { status: 400 });
     }
 
-    if (!email || !password || !role) {
-      return NextResponse.json({ error: 'Email, password, and role are required' }, { status: 400 });
-    }
+    const cleanEmail = email.toLowerCase();
 
-    const cleanEmail = email.trim().toLowerCase();
-
-    if (role === 'school') {
+    // ── 1. Check School Tenant Database ──
+    try {
       const school = await db.school.findFirst({
         where: {
           OR: [
@@ -90,114 +94,98 @@ export async function POST(request: Request) {
         },
       });
 
-      if (!school) {
-        return NextResponse.json({ error: 'School account not found for provided email or code' }, { status: 404 });
+      if (school) {
+        const isSchoolPassValid = await verifyPassword(password, school.password, async (newHash) => {
+          await db.school.update({ where: { id: school.id }, data: { password: newHash } }).catch(() => null);
+        });
+
+        if (isSchoolPassValid) {
+          return createLoginResponse({
+            id: school.id,
+            name: school.name,
+            email: school.email,
+            role: 'school',
+            schoolId: school.id,
+            schoolCode: school.code,
+            schoolName: school.name,
+          });
+        }
       }
-
-      const isValid = await verifyPassword(password, school.password, async (newHash) => {
-        await db.school.update({ where: { id: school.id }, data: { password: newHash } });
-      });
-
-      if (!isValid) {
-        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
-      }
-
-      return createLoginResponse({
-        id: school.id,
-        name: school.name,
-        email: school.email,
-        role: 'school',
-        schoolId: school.id,
-        schoolCode: school.code,
-      });
+    } catch (e) {
+      console.error('Error querying school during login:', e);
     }
 
-    if (role === 'admin' || role === 'superadmin') {
+    // ── 2. Check Teacher Faculty Database ──
+    try {
+      const teacher = await db.teacher.findFirst({
+        where: {
+          OR: [{ email: cleanEmail }, { email }],
+        },
+        include: { school: true },
+      });
+
+      if (teacher) {
+        const isTeacherPassValid = await verifyPassword(password, teacher.password, async (newHash) => {
+          await db.teacher.update({ where: { id: teacher.id }, data: { password: newHash } }).catch(() => null);
+        });
+
+        if (isTeacherPassValid) {
+          return createLoginResponse({
+            id: teacher.id,
+            name: teacher.name,
+            email: teacher.email,
+            role: 'teacher',
+            schoolId: teacher.schoolId,
+            schoolCode: teacher.school?.code,
+            schoolName: teacher.school?.name || 'School',
+            subject: teacher.subject,
+            grades: teacher.grades,
+            phone: teacher.phone,
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Error querying teacher during login:', e);
+    }
+
+    // ── 3. Check System Admin Database ──
+    try {
       const admin = await db.admin.findFirst({
         where: {
           OR: [{ email: cleanEmail }, { email }],
         },
       });
 
-      if (!admin) {
-        // Also check if admin is logging in as school administrator
-        const schoolAdmin = await db.school.findFirst({
-          where: {
-            OR: [{ email: cleanEmail }, { email }, { code: email.toUpperCase() }],
-          },
+      if (admin) {
+        const isAdminPassValid = await verifyPassword(password, admin.password, async (newHash) => {
+          await db.admin.update({ where: { id: admin.id }, data: { password: newHash } }).catch(() => null);
         });
 
-        if (schoolAdmin) {
-          const isValidSchoolPass = await verifyPassword(password, schoolAdmin.password, async (newHash) => {
-            await db.school.update({ where: { id: schoolAdmin.id }, data: { password: newHash } });
+        if (isAdminPassValid) {
+          return createLoginResponse({
+            id: admin.id,
+            name: admin.name,
+            email: admin.email,
+            role: admin.isSuperAdmin ? 'superadmin' : 'admin',
           });
-          if (isValidSchoolPass) {
-            return createLoginResponse({
-              id: schoolAdmin.id,
-              name: schoolAdmin.name,
-              email: schoolAdmin.email,
-              role: 'school',
-              schoolId: schoolAdmin.id,
-              schoolCode: schoolAdmin.code,
-            });
-          }
         }
-
-        return NextResponse.json({ error: 'Administrator account not found' }, { status: 404 });
       }
-
-      const isValid = await verifyPassword(password, admin.password, async (newHash) => {
-        await db.admin.update({ where: { id: admin.id }, data: { password: newHash } });
-      });
-
-      if (!isValid) {
-        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
-      }
-
-      return createLoginResponse({
-        id: admin.id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.isSuperAdmin ? 'superadmin' : 'admin',
-      });
+    } catch (e) {
+      console.error('Error querying admin during login:', e);
     }
 
-    if (role === 'teacher') {
-      const teacher = await db.teacher.findFirst({
-        where: {
-          OR: [{ email: cleanEmail }, { email }],
-        },
-        include: { schedules: true, school: true },
-      });
+    // Account matched email check
+    const existingEntity = await db.school
+      .findFirst({ where: { OR: [{ email: cleanEmail }, { code: email.toUpperCase() }] } })
+      .catch(() => null);
 
-      if (!teacher) {
-        return NextResponse.json({ error: 'Teacher account not found with provided email' }, { status: 404 });
-      }
-
-      const isValid = await verifyPassword(password, teacher.password, async (newHash) => {
-        await db.teacher.update({ where: { id: teacher.id }, data: { password: newHash } });
-      });
-
-      if (!isValid) {
-        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
-      }
-
-      return createLoginResponse({
-        id: teacher.id,
-        name: teacher.name,
-        email: teacher.email,
-        role: 'teacher',
-        schoolId: teacher.schoolId,
-        schoolName: teacher.school?.name || 'School',
-        subject: teacher.subject,
-        grades: teacher.grades,
-        phone: teacher.phone,
-      });
+    if (existingEntity) {
+      return NextResponse.json({ error: 'Incorrect password for this account.' }, { status: 401 });
     }
 
-    return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
+    return NextResponse.json({ error: 'No account found matching this email or school code.' }, { status: 404 });
   } catch (error) {
     console.error('Login error:', error);
-    return NextResponse.json({ error: `Login failed: ${String(error)}` }, { status: 500 });
+    return NextResponse.json({ error: 'Authentication service temporarily unavailable. Please try again.' }, { status: 500 });
   }
 }

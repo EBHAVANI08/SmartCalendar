@@ -1,13 +1,12 @@
 export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const schoolId = searchParams.get('schoolId');
-
+    const schoolId = await getTenantSchoolId(request);
     const today = new Date().toISOString().split('T')[0];
     const schoolWhere = schoolId ? { schoolId } : {};
 
@@ -16,21 +15,21 @@ export async function GET(request: Request) {
       db.substitution.count({ where: { date: today } }),
       db.schedule.count({ where: { ...schoolWhere, teacherId: null } }),
       schoolId
-        ? db.classSection.findMany({ where: { schoolId }, select: { studentStrength: true } })
+        ? db.classSection.findMany({ where: { schoolId }, select: { studentStrength: true } }).catch(() => [])
         : Promise.resolve([]),
     ]);
 
-    const totalStudents = classSections.reduce((sum, section) => sum + section.studentStrength, 0);
+    const totalStudents = classSections.reduce((sum, section) => sum + (section?.studentStrength || 0), 0);
 
     const pendingSubstitutions = await db.substitution.count({
       where: { date: today, status: 'pending' },
-    });
+    }).catch(() => 0);
 
     const assignedSubstitutions = await db.substitution.count({
       where: { date: today, status: 'assigned' },
-    });
+    }).catch(() => 0);
 
-    const totalSchedules = await db.schedule.count({ where: schoolWhere });
+    const totalSchedules = await db.schedule.count({ where: schoolWhere }).catch(() => 0);
 
     return NextResponse.json({
       totalTeachers,
@@ -44,6 +43,15 @@ export async function GET(request: Request) {
     });
   } catch (error) {
     console.error('Error fetching stats:', error);
-    return NextResponse.json({ error: 'Failed to fetch stats' }, { status: 500 });
+    return NextResponse.json({
+      totalTeachers: 0,
+      totalStudents: 0,
+      todaySubstitutions: 0,
+      emptyPeriods: 0,
+      pendingSubstitutions: 0,
+      assignedSubstitutions: 0,
+      totalSchedules: 0,
+      filledPeriods: 0,
+    });
   }
 }

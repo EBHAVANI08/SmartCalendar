@@ -38,7 +38,7 @@ export function LandingClient() {
     },
     {
       q: 'Is each school’s data private and isolated?',
-      a: 'Absolutely. Smart Calendar is a true multi-tenant SaaS architecture. Each school operates in an isolated data partition with encrypted credentials, role-based access control, and optional custom subdomains (e.g. yourschool.smartcalendar.app).',
+      a: 'Absolutely. Smart Calendar is a true multi-tenant SaaS architecture running on a single domain. Each school operates in an isolated data partition with encrypted credentials, role-based access control, and auto-detected workspace sessions.',
     },
     {
       q: 'Can we print physical timetables for classroom notice boards?',
@@ -82,12 +82,12 @@ export function LandingClient() {
           </nav>
 
           <div className="flex items-center gap-3">
-            <Link href="/">
+            <Link href="/login">
               <Button variant="ghost" className="text-slate-300 hover:text-white hover:bg-slate-800/60 text-xs sm:text-sm">
                 Sign In
               </Button>
             </Link>
-            <Link href="/">
+            <Link href="/login">
               <Button className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-semibold shadow-lg shadow-emerald-500/20 text-xs sm:text-sm px-4 h-10 rounded-xl border border-emerald-400/20">
                 Launch Workspace <ArrowRight className="w-4 h-4 ml-1.5" />
               </Button>
@@ -112,7 +112,7 @@ export function LandingClient() {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
-          <Link href="/" className="w-full sm:w-auto">
+          <Link href="/login" className="w-full sm:w-auto">
             <Button size="lg" className="w-full sm:w-auto h-13 px-8 text-base font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-2xl shadow-xl shadow-emerald-500/25 border border-emerald-400/20 transition-all hover:scale-[1.02]">
               Start Free School Pilot <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
@@ -271,9 +271,9 @@ export function LandingClient() {
               <div className="w-12 h-12 rounded-2xl bg-teal-500/10 border border-teal-500/20 flex items-center justify-center text-teal-400 mb-5 group-hover:scale-110 transition-transform">
                 <Layers className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-100 mb-2">Multi-Tenant SaaS & Custom Subdomains</h3>
+              <h3 className="text-lg font-bold text-slate-100 mb-2">Single-Domain Multi-Tenant SaaS</h3>
               <p className="text-sm text-slate-400 leading-relaxed">
-                Isolated database partitions for every school branch, custom school code login, and optional branded subdomains (dps.smartcalendar.app).
+                Isolated database partitions for every school branch, automated tenant detection, and centralized management on a single unified domain with zero DNS setup.
               </p>
             </CardContent>
           </Card>
@@ -454,7 +454,7 @@ export function LandingClient() {
                   <li className="flex items-center gap-2"><Check className="w-4 h-4 text-emerald-400 shrink-0" /> Dedicated Account Manager</li>
                 </ul>
               </div>
-              <Link href="/">
+              <Link href="/login">
                 <Button className="w-full h-11 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold shadow-lg shadow-emerald-500/25">
                   Start 14-Day Free Pilot
                 </Button>
@@ -472,13 +472,13 @@ export function LandingClient() {
                 </div>
                 <ul className="space-y-3 text-xs text-slate-300 mb-8">
                   <li className="flex items-center gap-2"><Check className="w-4 h-4 text-teal-400 shrink-0" /> Unlimited Teachers & Campuses</li>
-                  <li className="flex items-center gap-2"><Check className="w-4 h-4 text-teal-400 shrink-0" /> Custom Subdomains & White-Label Theme</li>
+                  <li className="flex items-center gap-2"><Check className="w-4 h-4 text-teal-400 shrink-0" /> Single-Domain Multi-Campus Tenant Isolation</li>
                   <li className="flex items-center gap-2"><Check className="w-4 h-4 text-teal-400 shrink-0" /> SuperAdmin Trust Command Center</li>
                   <li className="flex items-center gap-2"><Check className="w-4 h-4 text-teal-400 shrink-0" /> On-Premise IoT Biometric Bridge Setup</li>
                   <li className="flex items-center gap-2"><Check className="w-4 h-4 text-teal-400 shrink-0" /> 24/7 SLA & Priority Integration</li>
                 </ul>
               </div>
-              <Link href="/">
+              <Link href="/login">
                 <Button variant="outline" className="w-full h-11 rounded-xl border-slate-700 bg-slate-800/80 hover:bg-slate-700 text-white font-semibold">
                   Contact Enterprise Sales
                 </Button>
@@ -532,12 +532,12 @@ export function LandingClient() {
               Join leading educational institutions managing timetables, substitutions, and faculty wellbeing with AI Smart Calendar.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link href="/" className="w-full sm:w-auto">
+              <Link href="/login" className="w-full sm:w-auto">
                 <Button size="lg" className="w-full sm:w-auto h-13 px-8 text-base font-bold bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-2xl shadow-xl shadow-emerald-500/30">
                   Launch School Workspace <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
-              <Link href="/" className="w-full sm:w-auto">
+              <Link href="/login" className="w-full sm:w-auto">
                 <Button size="lg" variant="outline" className="w-full sm:w-auto h-13 px-7 text-base font-semibold border-emerald-500/40 bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 rounded-2xl">
                   Try Demo School (DPS2025)
                 </Button>
@@ -559,9 +559,9 @@ export function LandingClient() {
           </div>
 
           <div className="flex items-center gap-6 text-slate-400">
-            <Link href="/" className="hover:text-emerald-400 transition-colors">School Login</Link>
-            <Link href="/landing#features" className="hover:text-emerald-400 transition-colors">Features</Link>
-            <Link href="/landing#pricing" className="hover:text-emerald-400 transition-colors">Pricing</Link>
+            <Link href="/login" className="hover:text-emerald-400 transition-colors">School Login</Link>
+            <Link href="#features" className="hover:text-emerald-400 transition-colors">Features</Link>
+            <Link href="#pricing" className="hover:text-emerald-400 transition-colors">Pricing</Link>
             <Link href="/brochure" className="hover:text-emerald-400 transition-colors">Brochure</Link>
           </div>
         </div>

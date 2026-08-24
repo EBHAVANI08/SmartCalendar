@@ -6,31 +6,49 @@ export function isObjectId(id?: string | null): boolean {
 }
 
 export async function resolveSchoolId(input?: string | null, fallbackToFirst = true): Promise<string | null> {
-  if (!input || typeof input !== 'string') {
+  try {
+    if (!input || typeof input !== 'string') {
+      if (!fallbackToFirst) return null;
+      const first = await db.school.findFirst({ select: { id: true } });
+      return first?.id || null;
+    }
+    const clean = input.trim();
+    if (isObjectId(clean)) {
+      const existing = await db.school.findUnique({
+        where: { id: clean },
+        select: { id: true },
+      });
+      if (existing) {
+        return existing.id;
+      }
+    }
+    // Lookup by code or email
+    const school = await db.school.findFirst({
+      where: {
+        OR: [
+          { code: clean.toUpperCase() },
+          { email: clean.toLowerCase() },
+          { name: { contains: clean, mode: 'insensitive' } },
+        ],
+      },
+      select: { id: true },
+    });
+    if (school) {
+      return school.id;
+    }
     if (!fallbackToFirst) return null;
     const first = await db.school.findFirst({ select: { id: true } });
     return first?.id || null;
+  } catch (error) {
+    console.error('Error in resolveSchoolId:', error);
+    if (!fallbackToFirst) return null;
+    try {
+      const first = await db.school.findFirst({ select: { id: true } });
+      return first?.id || null;
+    } catch {
+      return null;
+    }
   }
-  const clean = input.trim();
-  if (isObjectId(clean)) {
-    return clean;
-  }
-  // Lookup by code or email
-  const school = await db.school.findFirst({
-    where: {
-      OR: [
-        { code: clean.toUpperCase() },
-        { email: clean.toLowerCase() },
-      ],
-    },
-    select: { id: true },
-  });
-  if (school) {
-    return school.id;
-  }
-  if (!fallbackToFirst) return null;
-  const first = await db.school.findFirst({ select: { id: true } });
-  return first?.id || null;
 }
 
 export async function getTenantSchoolId(request: Request | NextRequest, fallbackToFirst = true): Promise<string | null> {
@@ -46,6 +64,10 @@ export async function getTenantSchoolId(request: Request | NextRequest, fallback
     }
   } catch {}
   if (!fallbackToFirst) return null;
-  const first = await db.school.findFirst({ select: { id: true } });
-  return first?.id || null;
+  try {
+    const first = await db.school.findFirst({ select: { id: true } });
+    return first?.id || null;
+  } catch {
+    return null;
+  }
 }

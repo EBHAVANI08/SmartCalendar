@@ -18,10 +18,10 @@ export async function GET(request: Request) {
       },
       orderBy: { createdAt: 'desc' },
     });
-    return NextResponse.json(substitutions);
+    return NextResponse.json(substitutions || []);
   } catch (error) {
     console.error('Error fetching substitutions:', error);
-    return NextResponse.json({ error: 'Failed to fetch substitutions' }, { status: 500 });
+    return NextResponse.json([]);
   }
 }
 
