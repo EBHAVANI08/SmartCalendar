@@ -1,6 +1,34 @@
 import { db } from '@/lib/db';
+import { signJwt } from '@/lib/jwt-auth';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
+
+function createLoginResponse(user: any) {
+  const token = signJwt({
+    userId: user.id,
+    email: user.email,
+    role: user.role,
+    schoolId: user.schoolId || null,
+    schoolCode: user.schoolCode || null,
+    name: user.name,
+  });
+
+  const response = NextResponse.json({
+    success: true,
+    token,
+    user,
+  });
+
+  response.cookies.set('smart_calendar_token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 7 * 24 * 60 * 60,
+  });
+
+  return response;
+}
 
 async function verifyPassword(provided: string, stored: string, onPlainMatchUpgrade?: (newHash: string) => Promise<void>): Promise<boolean> {
   if (!stored) return true;
@@ -75,16 +103,13 @@ export async function POST(request: Request) {
         });
 
         if (isValid) {
-          return NextResponse.json({
-            success: true,
-            user: {
-              id: school.id,
-              name: school.name,
-              email: school.email,
-              role: 'school',
-              schoolId: school.id,
-              schoolCode: school.code,
-            },
+          return createLoginResponse({
+            id: school.id,
+            name: school.name,
+            email: school.email,
+            role: 'school',
+            schoolId: school.id,
+            schoolCode: school.code,
           });
         }
       }
@@ -104,28 +129,22 @@ export async function POST(request: Request) {
               password: hashedDemoPass,
             },
           });
-          return NextResponse.json({
-            success: true,
-            user: {
-              id: school.id,
-              name: school.name,
-              email: school.email,
-              role: 'school',
-              schoolId: school.id,
-              schoolCode: school.code,
-            },
+          return createLoginResponse({
+            id: school.id,
+            name: school.name,
+            email: school.email,
+            role: 'school',
+            schoolId: school.id,
+            schoolCode: school.code,
           });
         } catch {
-          return NextResponse.json({
-            success: true,
-            user: {
-              id: demoConfig.code,
-              name: demoConfig.name,
-              email: cleanEmail,
-              role: 'school',
-              schoolId: demoConfig.code,
-              schoolCode: demoConfig.code,
-            },
+          return createLoginResponse({
+            id: demoConfig.code,
+            name: demoConfig.name,
+            email: cleanEmail,
+            role: 'school',
+            schoolId: demoConfig.code,
+            schoolCode: demoConfig.code,
           });
         }
       }
@@ -148,9 +167,11 @@ export async function POST(request: Request) {
               },
             });
           } catch {
-            return NextResponse.json({
-              success: true,
-              user: { id: 'adm_default', name: 'Global Administrator', email: cleanEmail, role: 'admin' },
+            return createLoginResponse({
+              id: 'adm_default',
+              name: 'Global Administrator',
+              email: cleanEmail,
+              role: 'admin',
             });
           }
         } else {
@@ -158,9 +179,11 @@ export async function POST(request: Request) {
             await db.admin.update({ where: { id: admin!.id }, data: { password: newHash } });
           });
         }
-        return NextResponse.json({
-          success: true,
-          user: { id: admin.id, name: admin.name, email: admin.email, role: 'admin' },
+        return createLoginResponse({
+          id: admin.id,
+          name: admin.name,
+          email: admin.email,
+          role: 'admin',
         });
       }
 
@@ -176,16 +199,13 @@ export async function POST(request: Request) {
             password: hashedNewSchoolPass,
           },
         });
-        return NextResponse.json({
-          success: true,
-          user: {
-            id: newSchool.id,
-            name: newSchool.name,
-            email: newSchool.email,
-            role: 'school',
-            schoolId: newSchool.id,
-            schoolCode: newSchool.code,
-          },
+        return createLoginResponse({
+          id: newSchool.id,
+          name: newSchool.name,
+          email: newSchool.email,
+          role: 'school',
+          schoolId: newSchool.id,
+          schoolCode: newSchool.code,
         });
       } catch {
         return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
@@ -210,19 +230,16 @@ export async function POST(request: Request) {
           await db.teacher.update({ where: { id: teacher!.id }, data: { password: newHash } });
         });
 
-        return NextResponse.json({
-          success: true,
-          user: {
-            id: teacher.id,
-            name: teacher.name,
-            email: teacher.email,
-            role: 'teacher',
-            schoolId: teacher.schoolId,
-            schoolName: teacher.school?.name || 'School',
-            subject: teacher.subject,
-            grades: teacher.grades,
-            phone: teacher.phone,
-          },
+        return createLoginResponse({
+          id: teacher.id,
+          name: teacher.name,
+          email: teacher.email,
+          role: 'teacher',
+          schoolId: teacher.schoolId,
+          schoolName: teacher.school?.name || 'School',
+          subject: teacher.subject,
+          grades: teacher.grades,
+          phone: teacher.phone,
         });
       }
 

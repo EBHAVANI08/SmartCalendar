@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { dispatchMessage } from '@/lib/notifications/messaging-service';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -83,10 +84,36 @@ export async function PATCH(request: Request) {
       },
     });
 
+    // Automatic WhatsApp / SMS alert dispatch
+    if (updated.substitute) {
+      try {
+        await dispatchMessage({
+          recipientName: updated.substitute.name,
+          recipientPhone: updated.substitute.phone,
+          recipientEmail: updated.substitute.email,
+          teacherId: updated.substitute.id,
+          schoolId: updated.absentTeacher?.schoolId || null,
+          channel: 'whatsapp',
+          template: 'substitution_assigned',
+          parameters: {
+            recipientName: updated.substitute.name,
+            absentTeacherName: updated.absentTeacher?.name,
+            date: updated.date,
+            period: updated.period,
+            grade: updated.grade,
+            section: updated.section,
+            subject: updated.subject,
+          },
+        });
+      } catch (dispatchErr) {
+        console.warn('WhatsApp alert dispatch non-blocking error:', dispatchErr);
+      }
+    }
+
     return NextResponse.json({
       success: true,
       substitution: updated,
-      message: `Assigned ${updated.substitute?.name} as substitute`,
+      message: `Assigned ${updated.substitute?.name} as substitute (WhatsApp alert dispatched)`,
     });
   } catch (error) {
     console.error('Error updating substitution:', error);

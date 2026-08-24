@@ -10,7 +10,7 @@ import {
   Lock, ShieldCheck, Coffee, BarChart3, BookTemplate, Library,
   Download, Copy, Check, Filter, Grid3X3, TrendingUp, TrendingDown,
   ChevronDown, ChevronUp, Layers, Hash, Trash2, XCircle, UserPlus, Upload, FileSpreadsheet,
-  Plus, Save, Settings, CalendarX
+  Plus, Save, Settings, CalendarX, Printer
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -2532,10 +2532,19 @@ function AcademicCalendarSection({
               <p className="text-xs sm:text-sm text-emerald-100">{schoolName || 'School workspace'} · Shared timetable dataset</p>
             </div>
           </div>
-          <div className="mt-3.5 flex flex-wrap gap-2">
+          <div className="mt-3.5 flex flex-wrap items-center gap-2">
             <Badge className="bg-amber-400/20 text-amber-100 text-[10px] sm:text-xs">Status: Draft</Badge>
             <Badge className="bg-white/10 text-white text-[10px] sm:text-xs">Academic Year 2026-27</Badge>
             <Badge className="bg-white/10 text-white text-[10px] sm:text-xs">Version v1</Badge>
+            <a
+              href={`/api/timetable/export/pdf?grade=${encodeURIComponent(selectedGrade?.grade || 'Grade 10')}&section=${encodeURIComponent(selectedGrade?.section || 'A')}&schoolId=${encodeURIComponent(schoolId || 'DPS2025')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500/30 hover:bg-emerald-500/50 text-white px-2.5 py-1 text-[10px] sm:text-xs font-semibold backdrop-blur-sm transition-all border border-emerald-400/30 shadow-xs"
+            >
+              <Printer className="h-3.5 w-3.5" />
+              Print / Export PDF
+            </a>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
