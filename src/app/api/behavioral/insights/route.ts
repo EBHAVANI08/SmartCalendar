@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { resolveSchoolId } from '@/lib/school-helper';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const schoolId = searchParams.get('schoolId') || 'sch_client_pilot_001';
+    const rawSchoolId = searchParams.get('schoolId');
+    const schoolId = (await resolveSchoolId(rawSchoolId)) || '';
 
     const [schedules, substitutions, teachers] = await Promise.all([
       db.schedule.findMany({

@@ -1,19 +1,22 @@
 import { db } from '@/lib/db';
 import { clearSchoolWorkspace } from '@/lib/clear-school-workspace';
+import { resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
-
-const PILOT_SCHOOL_ID = 'sch_client_pilot_001';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
-    const schoolId = typeof body.schoolId === 'string' && body.schoolId.trim() ? body.schoolId.trim() : PILOT_SCHOOL_ID;
+    const schoolId = await resolveSchoolId(body.schoolId);
 
     if (body.confirm !== true) {
       return NextResponse.json(
         { error: 'This permanently deletes all timetable, teacher, and calendar data for the school. Send confirm: true to proceed.' },
         { status: 400 },
       );
+    }
+
+    if (!schoolId) {
+      return NextResponse.json({ error: 'School workspace not found.' }, { status: 404 });
     }
 
     const school = await db.school.findUnique({

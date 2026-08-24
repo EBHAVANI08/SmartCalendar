@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
+import { resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -9,7 +10,8 @@ export async function GET(request: Request) {
     const grade = searchParams.get('grade');
     const section = searchParams.get('section');
     const day = searchParams.get('day');
-    const schoolId = searchParams.get('schoolId');
+    const rawSchoolId = searchParams.get('schoolId');
+    const schoolId = rawSchoolId ? await resolveSchoolId(rawSchoolId) : null;
 
     const where: Record<string, string> = {};
     if (grade) where.grade = grade;

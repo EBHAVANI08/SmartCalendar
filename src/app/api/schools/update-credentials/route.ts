@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
 /**
@@ -24,9 +25,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Provide email, password, and/or name to update' }, { status: 400 });
     }
 
-    const school = schoolId
-      ? await db.school.findUnique({ where: { id: schoolId } })
-      : await db.school.findUnique({ where: { code: code! } });
+    const targetId = schoolId ? await resolveSchoolId(schoolId) : null;
+    const school = targetId
+      ? await db.school.findUnique({ where: { id: targetId } })
+      : code
+      ? await db.school.findUnique({ where: { code } })
+      : null;
 
     if (!school) {
       return NextResponse.json({ error: 'School not found' }, { status: 404 });

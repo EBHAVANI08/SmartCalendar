@@ -1,10 +1,12 @@
 import { db } from '@/lib/db';
+import { resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const schoolId = new URL(request.url).searchParams.get('schoolId');
+  const rawSchoolId = new URL(request.url).searchParams.get('schoolId');
+  const schoolId = await resolveSchoolId(rawSchoolId);
   if (!schoolId) return NextResponse.json({ error: 'schoolId is required' }, { status: 400 });
   const [school, campuses, years, terms, versions] = await Promise.all([
     db.school.findUnique({ where: { id: schoolId }, select: { id: true, name: true, code: true } }),
