@@ -6,10 +6,12 @@ const nextConfig: NextConfig = {
   },
   reactStrictMode: false,
   productionBrowserSourceMaps: false,
-  serverExternalPackages: ['pdf-parse', 'xlsx'],
+  serverExternalPackages: ['pdf-parse', 'xlsx', '@prisma/client', 'prisma'],
   experimental: {
     cpus: 1,
+    workerThreads: false,
   },
+  output: 'standalone',
   async rewrites() {
     return [
       { source: '/dashboard', destination: '/' },
