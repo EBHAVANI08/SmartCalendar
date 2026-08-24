@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const section = searchParams.get('section') || searchParams.get('sectionId');
     const grade = searchParams.get('grade');
+    const schoolId = await getTenantSchoolId(request);
 
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const weekData: Record<string, any> = {};
@@ -14,6 +16,7 @@ export async function GET(request: NextRequest) {
       const schedules = await db.schedule.findMany({
         where: {
           day,
+          ...(schoolId ? { schoolId } : {}),
           ...(section ? { section } : {}),
           ...(grade ? { grade } : {}),
         },

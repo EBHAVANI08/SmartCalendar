@@ -29,7 +29,7 @@ export async function POST(request: Request) {
     }
 
     const cleared = await clearSchoolWorkspace(schoolId, {
-      clearUnassigned: body.clearUnassigned !== false && schoolId === PILOT_SCHOOL_ID,
+      clearUnassigned: body.clearUnassigned === true,
     });
 
     return NextResponse.json({

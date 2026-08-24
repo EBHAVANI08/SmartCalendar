@@ -29,10 +29,11 @@ export interface TeacherWellbeing {
 /**
  * Compute wellbeing metrics for all teachers (rolling 30 days).
  */
-export async function computeAllWellbeingMetrics(baseDate?: string): Promise<TeacherWellbeing[]> {
+export async function computeAllWellbeingMetrics(baseDate?: string, schoolId?: string | null): Promise<TeacherWellbeing[]> {
   const today = baseDate || new Date().toISOString().split('T')[0];
 
   const teachers = await db.teacher.findMany({
+    where: schoolId ? { schoolId } : {},
     include: {
       substituteSubstitutions: true,
       schedules: true,

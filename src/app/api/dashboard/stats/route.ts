@@ -1,10 +1,19 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const schoolId = await getTenantSchoolId(request);
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
+
+    const teacherWhere = schoolId ? { schoolId } : {};
+    const subWhere = schoolId ? { absentTeacher: { schoolId } } : {};
+    const notifWhere = schoolId ? { teacher: { schoolId } } : {};
+    const leaveWhere = schoolId
+      ? { teacher: { schoolId }, status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } }
+      : { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } };
 
     const [
       totalTeachers,
@@ -15,13 +24,13 @@ export async function GET() {
       activeNotifications,
       teachers,
     ] = await Promise.all([
-      db.teacher.count(),
+      db.teacher.count({ where: teacherWhere }),
       db.student.count(),
-      db.leaveApplication.count({ where: { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } } }),
-      db.substitution.count({ where: { status: 'pending' } }),
-      db.substitution.count({ where: { date: todayStr, status: 'completed' } }),
-      db.teacherNotification.count({ where: { isRead: false } }),
-      db.teacher.findMany({ select: { id: true, name: true, email: true, subject: true, role: true }, orderBy: { name: 'asc' } }),
+      db.leaveApplication.count({ where: leaveWhere }),
+      db.substitution.count({ where: { ...subWhere, status: 'pending' } }),
+      db.substitution.count({ where: { ...subWhere, date: todayStr, status: 'completed' } }),
+      db.teacherNotification.count({ where: { ...notifWhere, isRead: false } }),
+      db.teacher.findMany({ where: teacherWhere, select: { id: true, name: true, email: true, subject: true, role: true }, orderBy: { name: 'asc' } }),
     ]);
 
     return NextResponse.json({

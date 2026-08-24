@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
+    const schoolId = await getTenantSchoolId(req);
 
     const records = await db.biometricAttendance.findMany({
-      where: { date },
+      where: {
+        date,
+        ...(schoolId ? { teacher: { schoolId } } : {}),
+      },
       include: {
         teacher: {
           select: {

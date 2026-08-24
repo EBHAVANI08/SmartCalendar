@@ -1,11 +1,16 @@
 export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const schoolId = await getTenantSchoolId(request);
+    const where = schoolId ? { absentTeacher: { schoolId } } : {};
+
     const substitutions = await db.substitution.findMany({
+      where,
       include: {
         absentTeacher: true,
         substitute: true,

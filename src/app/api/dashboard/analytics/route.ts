@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(req: NextRequest) {
   try {
     const date = req.nextUrl.searchParams.get('date') || new Date().toISOString().split('T')[0];
+    const schoolId = await getTenantSchoolId(req);
 
     const substitutions = await db.substitution.findMany({
-      where: { date },
+      where: {
+        date,
+        ...(schoolId ? { absentTeacher: { schoolId } } : {}),
+      },
       include: { absentTeacher: true, substitute: true },
     });
 

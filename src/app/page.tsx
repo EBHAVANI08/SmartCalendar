@@ -1196,7 +1196,7 @@ function DashboardSection({
     const fetchInsights = async () => {
       setLoadingInsights(true);
       try {
-        const res = await fetch(`/api/behavioral/insights?schoolId=${schoolCode ? `sch_${schoolCode.toLowerCase()}` : 'sch_client_pilot_001'}`);
+        const res = await fetch(`/api/behavioral/insights?schoolId=${encodeURIComponent(schoolCode || 'DPS2025')}`);
         if (res.ok) {
           const json = await res.json();
           if (isMounted && json.data) {
@@ -9905,7 +9905,8 @@ export default function AISmartCalendar() {
 
   const fetchSubstitutions = useCallback(async () => {
     try {
-      const res = await fetch('/api/substitutions');
+      const schoolParam = loginUser?.schoolId ? `?schoolId=${loginUser.schoolId}` : '';
+      const res = await fetch(`/api/substitutions${schoolParam}`);
       if (res.ok) {
         const data = await res.json();
         setSubstitutions(data);
@@ -9913,7 +9914,7 @@ export default function AISmartCalendar() {
     } catch (error) {
       console.error('Error fetching substitutions:', error);
     }
-  }, []);
+  }, [loginUser?.schoolId]);
 
   useEffect(() => {
     if (!isLoggedIn) return;

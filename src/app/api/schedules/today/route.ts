@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date');
+    const schoolId = await getTenantSchoolId(request);
 
     if (!date) {
       return NextResponse.json({ success: false, error: 'Date is required' }, { status: 400 });
@@ -14,14 +16,17 @@ export async function GET(request: NextRequest) {
     const dayOfWeek = new Date(date + 'T00:00:00').getDay();
     const dayName = days[dayOfWeek] || 'Monday';
 
+    const scheduleWhere = schoolId ? { schoolId, day: dayName } : { day: dayName };
+    const subWhere = schoolId ? { absentTeacher: { schoolId }, date } : { date };
+
     const schedules = await db.schedule.findMany({
-      where: { day: dayName },
+      where: scheduleWhere,
       include: { teacher: true },
       orderBy: { period: 'asc' },
     });
 
     const substitutions = await db.substitution.findMany({
-      where: { date },
+      where: subWhere,
       include: { absentTeacher: true, substitute: true },
     });
 

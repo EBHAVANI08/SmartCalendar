@@ -1,11 +1,13 @@
 import { db } from '@/lib/db';
+import { resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { name, email, phone, subject, grades, password, role } = body;
+    const { name, email, phone, subject, grades, password, role, schoolId: rawSchoolId } = body;
+    const schoolId = await resolveSchoolId(rawSchoolId);
 
     // Validate required fields
     if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -62,6 +64,7 @@ export async function POST(request: Request) {
         password: hashedPassword,
         role: role || 'teacher',
         availability: '[]',
+        schoolId: schoolId || undefined,
       },
     });
 

@@ -331,7 +331,7 @@ export async function POST() {
 
     // Create teachers (with unique email handling) - batch insert
     const usedEmails = new Set<string>();
-    const teacherInputData: { name: string; email: string; subject: string; grades: string; password: string; phone: string; availability: string; role: string }[] = [];
+    const teacherInputData: { schoolId?: string; name: string; email: string; subject: string; grades: string; password: string; phone: string; availability: string; role: string }[] = [];
     
     for (let idx = 0; idx < teacherNames.length; idx++) {
       const td = teacherNames[idx];
@@ -404,7 +404,7 @@ export async function POST() {
     }
 
     // Generate all schedule entries, then batch-insert
-    const scheduleDataList: { grade: string; section: string; day: string; period: number; subject: string; teacherId: string | null; topic: string | null; startTime: string; endTime: string; roomId: string }[] = [];
+    const scheduleDataList: { schoolId?: string; grade: string; section: string; day: string; period: number; subject: string; teacherId: string | null; topic: string | null; startTime: string; endTime: string; roomId: string }[] = [];
 
     for (const day of days) {
       for (const timeSlot of timeSlots) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(request: NextRequest) {
   try {
@@ -8,8 +9,10 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get('date');
     const periodStr = searchParams.get('timeSlotId');
     const period = periodStr ? parseInt(periodStr) : 1;
+    const schoolId = await getTenantSchoolId(request);
 
     const teachers = await db.teacher.findMany({
+      where: schoolId ? { schoolId } : {},
       include: {
         schedules: true,
         leaveApplications: true,

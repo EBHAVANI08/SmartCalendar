@@ -1,10 +1,12 @@
 import { db } from '@/lib/db';
+import { resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
 export async function PATCH(request: Request) {
   try {
     const { grade, section, schoolId, setup = {} } = await request.json();
     if (!grade || !section) return NextResponse.json({ error: 'Grade and section are required.' }, { status: 400 });
+    const targetSchoolId = schoolId ? await resolveSchoolId(schoolId) : null;
 
     const currentGradeNumber = Number(String(grade).replace(/\D/g, '') || 0);
     const activeLevel = currentGradeNumber <= 5 ? 'primary' : currentGradeNumber <= 8 ? 'middle' : 'high';

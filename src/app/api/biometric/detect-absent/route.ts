@@ -1,11 +1,13 @@
 import { db } from '@/lib/db';
+import { resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
 // AI-powered absence detection — OPTIMIZED with batch queries
 export async function POST(request: Request) {
   try {
-    const { date } = await request.json();
-    const detectDate = date || new Date().toISOString().split('T')[0];
+    const body = await request.json().catch(() => ({}));
+    const detectDate = body.date || new Date().toISOString().split('T')[0];
+    const schoolId = await resolveSchoolId(body.schoolId);
 
     // Get day of week
     const dateObj = new Date(detectDate + 'T00:00:00');
@@ -21,11 +23,13 @@ export async function POST(request: Request) {
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayDay = dayNames[yesterday.getDay()];
 
+    const tenantFilter = schoolId ? { teacher: { schoolId } } : {};
+
     // 1. Get all affected records
     const [absentRecords, lateRecords, halfDayRecords] = await Promise.all([
-      db.biometricAttendance.findMany({ where: { date: detectDate, status: 'absent' }, include: { teacher: true } }),
-      db.biometricAttendance.findMany({ where: { date: detectDate, status: 'late' }, include: { teacher: true } }),
-      db.biometricAttendance.findMany({ where: { date: detectDate, status: 'half-day' }, include: { teacher: true } }),
+      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'absent' }, include: { teacher: true } }),
+      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'late' }, include: { teacher: true } }),
+      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'half-day' }, include: { teacher: true } }),
     ]);
 
     const affectedTeachers = [...absentRecords, ...lateRecords, ...halfDayRecords];

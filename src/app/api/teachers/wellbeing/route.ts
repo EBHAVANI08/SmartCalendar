@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { computeAllWellbeingMetrics, computeFairnessReport } from '@/lib/services/wellbeing-engine';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 /**
  * GET /api/teachers/wellbeing
@@ -8,8 +9,9 @@ import { computeAllWellbeingMetrics, computeFairnessReport } from '@/lib/service
 export async function GET(request: NextRequest) {
   try {
     const date = request.nextUrl.searchParams.get('date') || undefined;
+    const schoolId = await getTenantSchoolId(request);
     const [wellbeing, fairness] = await Promise.all([
-      computeAllWellbeingMetrics(date),
+      computeAllWellbeingMetrics(date, schoolId),
       computeFairnessReport(),
     ]);
 
