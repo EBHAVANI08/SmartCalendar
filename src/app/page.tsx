@@ -9772,7 +9772,14 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
           </CardContent>
         </Card>
 
-        <p className="text-center text-[10px] text-gray-600 mt-6">
+        <div className="flex items-center justify-center gap-4 mt-5 text-xs text-slate-400">
+          <a href="/landing" className="inline-flex items-center gap-1.5 text-emerald-400 hover:text-emerald-300 font-semibold transition-colors py-1 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <span>🌐 Explore Product Website & Features</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </a>
+        </div>
+
+        <p className="text-center text-[10px] text-gray-600 mt-4">
           AI Smart Calendar &copy; {new Date().getFullYear()} &middot; Multi-Tenant Powered
         </p>
       </div>
