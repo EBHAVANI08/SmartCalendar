@@ -23,6 +23,8 @@ export async function GET(request: Request) {
       resolvedToday,
       activeNotifications,
       teachers,
+      totalSchedules,
+      scheduleGrades,
     ] = await Promise.all([
       db.teacher.count({ where: teacherWhere }),
       db.student.count(),
@@ -31,7 +33,11 @@ export async function GET(request: Request) {
       db.substitution.count({ where: { ...subWhere, date: todayStr, status: 'completed' } }),
       db.teacherNotification.count({ where: { ...notifWhere, isRead: false } }),
       db.teacher.findMany({ where: teacherWhere, select: { id: true, name: true, email: true, subject: true, role: true }, orderBy: { name: 'asc' } }),
+      db.schedule.count({ where: schoolId ? { schoolId } : {} }),
+      db.schedule.findMany({ where: schoolId ? { schoolId } : {}, select: { grade: true }, distinct: ['grade'] }),
     ]);
+
+    const distinctGrades = scheduleGrades.map((g) => g.grade).filter(Boolean);
 
     return NextResponse.json({
       success: true,
@@ -42,10 +48,10 @@ export async function GET(request: Request) {
         onLeaveToday: absentToday,
         pendingSubstitutions: pendingSubs,
         resolvedToday,
-        todaySchedules: 8,
+        todaySchedules: totalSchedules,
         aiAutoAssigned: resolvedToday,
         activeNotifications,
-        grades: [],
+        grades: distinctGrades,
         teachers,
         timeSlots: [],
       },

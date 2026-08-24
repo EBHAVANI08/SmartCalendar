@@ -9560,6 +9560,16 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
   const [schoolName, setSchoolName] = useState('');
   const [schoolCode, setSchoolCode] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [dbSchools, setDbSchools] = useState<Array<{ id: string; name: string; code: string; email: string }>>([]);
+
+  useEffect(() => {
+    fetch('/api/schools')
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) setDbSchools(data);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -9746,29 +9756,25 @@ function LoginPage({ onLogin }: { onLogin: (user: LoginUser, role: UserRole) => 
               {registering ? 'Already have an account? Sign in' : 'New school? Create an account'}
             </Button>
 
-            {!registering && <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700/50 space-y-2">
-              <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Select School Demo Login</p>
-              <div className="grid grid-cols-1 gap-2">
-                <Button
-                  type="button"
-                  onClick={() => handleQuickSchool('admin@demo1.edu')}
-                  variant="outline"
-                  className="w-full justify-start text-xs border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 h-9"
-                >
-                  <GraduationCap className="w-3.5 h-3.5 mr-2 text-emerald-400" />
-                  Demo 1 School (Excel Demo Data)
-                </Button>
-                <Button
-                  type="button"
-                  onClick={() => handleQuickSchool('info@dpsdelhi.edu')}
-                  variant="outline"
-                  className="w-full justify-start text-xs border-blue-500/30 bg-blue-500/10 hover:bg-blue-500/20 text-blue-300 h-9"
-                >
-                  <GraduationCap className="w-3.5 h-3.5 mr-2 text-blue-400" />
-                  Delhi Public School (Real Allotment Data)
-                </Button>
+            {!registering && dbSchools.length > 0 && (
+              <div className="mt-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700/50 space-y-2">
+                <p className="text-[10px] text-gray-400 uppercase tracking-wider font-semibold">Registered School Workspaces</p>
+                <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+                  {dbSchools.map((sch) => (
+                    <Button
+                      key={sch.id}
+                      type="button"
+                      onClick={() => handleQuickSchool(sch.email || sch.code)}
+                      variant="outline"
+                      className="w-full justify-start text-xs border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 h-9"
+                    >
+                      <GraduationCap className="w-3.5 h-3.5 mr-2 text-emerald-400 shrink-0" />
+                      <span className="truncate">{sch.name} ({sch.code})</span>
+                    </Button>
+                  ))}
+                </div>
               </div>
-            </div>}
+            )}
           </CardContent>
         </Card>
 

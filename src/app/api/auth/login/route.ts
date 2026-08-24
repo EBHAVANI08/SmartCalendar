@@ -78,15 +78,8 @@ export async function POST(request: Request) {
 
     const cleanEmail = email.trim().toLowerCase();
 
-    // Known Demo Schools configuration
-    const demoSchoolsMap: Record<string, { id: string; name: string; code: string }> = {
-      'admin@demo1.edu': { id: 'sch_demo1_001', name: 'Demo 1 School', code: 'DEMO1' },
-      'info@dpsdelhi.edu': { id: 'sch_dps_001', name: 'Delhi Public School', code: 'DPS2025' },
-      'pilot@client.school': { id: 'sch_client_pilot', name: 'Client Pilot School', code: 'CLIENTPILOT' },
-    };
-
-    if (role === 'school' || role === 'admin') {
-      let school = await db.school.findFirst({
+    if (role === 'school') {
+      const school = await db.school.findFirst({
         where: {
           OR: [
             { email: cleanEmail },
@@ -97,123 +90,80 @@ export async function POST(request: Request) {
         },
       });
 
-      if (school) {
-        const isValid = await verifyPassword(password, school.password, async (newHash) => {
-          await db.school.update({ where: { id: school!.id }, data: { password: newHash } });
-        });
-
-        if (isValid) {
-          return createLoginResponse({
-            id: school.id,
-            name: school.name,
-            email: school.email,
-            role: 'school',
-            schoolId: school.id,
-            schoolCode: school.code,
-          });
-        }
+      if (!school) {
+        return NextResponse.json({ error: 'School account not found for provided email or code' }, { status: 404 });
       }
 
-      // If demo school or missing school record, auto-create it
-      const demoConfig = demoSchoolsMap[cleanEmail] || Object.values(demoSchoolsMap).find(d => d.code === email.toUpperCase());
-      if (demoConfig) {
-        try {
-          const hashedDemoPass = await bcrypt.hash(password || 'school123', 10);
-          school = await db.school.upsert({
-            where: { code: demoConfig.code },
-            update: { email: cleanEmail, name: demoConfig.name },
-            create: {
-              name: demoConfig.name,
-              code: demoConfig.code,
-              email: cleanEmail,
-              password: hashedDemoPass,
-            },
-          });
-          return createLoginResponse({
-            id: school.id,
-            name: school.name,
-            email: school.email,
-            role: 'school',
-            schoolId: school.id,
-            schoolCode: school.code,
-          });
-        } catch {
-          return createLoginResponse({
-            id: demoConfig.code,
-            name: demoConfig.name,
-            email: cleanEmail,
-            role: 'school',
-            schoolId: demoConfig.code,
-            schoolCode: demoConfig.code,
-          });
-        }
+      const isValid = await verifyPassword(password, school.password, async (newHash) => {
+        await db.school.update({ where: { id: school.id }, data: { password: newHash } });
+      });
+
+      if (!isValid) {
+        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
       }
 
-      if (role === 'admin') {
-        let admin = await db.admin.findFirst({
+      return createLoginResponse({
+        id: school.id,
+        name: school.name,
+        email: school.email,
+        role: 'school',
+        schoolId: school.id,
+        schoolCode: school.code,
+      });
+    }
+
+    if (role === 'admin' || role === 'superadmin') {
+      const admin = await db.admin.findFirst({
+        where: {
+          OR: [{ email: cleanEmail }, { email }],
+        },
+      });
+
+      if (!admin) {
+        // Also check if admin is logging in as school administrator
+        const schoolAdmin = await db.school.findFirst({
           where: {
-            OR: [{ email: cleanEmail }, { email }],
+            OR: [{ email: cleanEmail }, { email }, { code: email.toUpperCase() }],
           },
         });
-        if (!admin) {
-          try {
-            const hashedAdminPass = await bcrypt.hash(password || 'admin123', 10);
-            admin = await db.admin.create({
-              data: {
-                name: 'Global Administrator',
-                email: cleanEmail,
-                password: hashedAdminPass,
-                role: 'admin',
-              },
-            });
-          } catch {
+
+        if (schoolAdmin) {
+          const isValidSchoolPass = await verifyPassword(password, schoolAdmin.password, async (newHash) => {
+            await db.school.update({ where: { id: schoolAdmin.id }, data: { password: newHash } });
+          });
+          if (isValidSchoolPass) {
             return createLoginResponse({
-              id: 'adm_default',
-              name: 'Global Administrator',
-              email: cleanEmail,
-              role: 'admin',
+              id: schoolAdmin.id,
+              name: schoolAdmin.name,
+              email: schoolAdmin.email,
+              role: 'school',
+              schoolId: schoolAdmin.id,
+              schoolCode: schoolAdmin.code,
             });
           }
-        } else {
-          await verifyPassword(password, admin.password, async (newHash) => {
-            await db.admin.update({ where: { id: admin!.id }, data: { password: newHash } });
-          });
         }
-        return createLoginResponse({
-          id: admin.id,
-          name: admin.name,
-          email: admin.email,
-          role: 'admin',
-        });
+
+        return NextResponse.json({ error: 'Administrator account not found' }, { status: 404 });
       }
 
-      // Create new school workspace automatically if user provided email/pass
-      try {
-        const generatedCode = cleanEmail.split('@')[0].toUpperCase().replace(/[^A-Z0-9]/g, '');
-        const hashedNewSchoolPass = await bcrypt.hash(password, 10);
-        const newSchool = await db.school.create({
-          data: {
-            name: `${cleanEmail.split('@')[0]} School`,
-            code: generatedCode || 'SCHOOL1',
-            email: cleanEmail,
-            password: hashedNewSchoolPass,
-          },
-        });
-        return createLoginResponse({
-          id: newSchool.id,
-          name: newSchool.name,
-          email: newSchool.email,
-          role: 'school',
-          schoolId: newSchool.id,
-          schoolCode: newSchool.code,
-        });
-      } catch {
-        return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+      const isValid = await verifyPassword(password, admin.password, async (newHash) => {
+        await db.admin.update({ where: { id: admin.id }, data: { password: newHash } });
+      });
+
+      if (!isValid) {
+        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
       }
+
+      return createLoginResponse({
+        id: admin.id,
+        name: admin.name,
+        email: admin.email,
+        role: admin.isSuperAdmin ? 'superadmin' : 'admin',
+      });
     }
 
     if (role === 'teacher') {
-      let teacher = await db.teacher.findFirst({
+      const teacher = await db.teacher.findFirst({
         where: {
           OR: [{ email: cleanEmail }, { email }],
         },
@@ -221,29 +171,28 @@ export async function POST(request: Request) {
       });
 
       if (!teacher) {
-        // Fallback to first available teacher
-        teacher = await db.teacher.findFirst({ include: { schedules: true, school: true } });
+        return NextResponse.json({ error: 'Teacher account not found with provided email' }, { status: 404 });
       }
 
-      if (teacher) {
-        await verifyPassword(password, teacher.password, async (newHash) => {
-          await db.teacher.update({ where: { id: teacher!.id }, data: { password: newHash } });
-        });
+      const isValid = await verifyPassword(password, teacher.password, async (newHash) => {
+        await db.teacher.update({ where: { id: teacher.id }, data: { password: newHash } });
+      });
 
-        return createLoginResponse({
-          id: teacher.id,
-          name: teacher.name,
-          email: teacher.email,
-          role: 'teacher',
-          schoolId: teacher.schoolId,
-          schoolName: teacher.school?.name || 'School',
-          subject: teacher.subject,
-          grades: teacher.grades,
-          phone: teacher.phone,
-        });
+      if (!isValid) {
+        return NextResponse.json({ error: 'Invalid password' }, { status: 401 });
       }
 
-      return NextResponse.json({ error: 'No teacher accounts found in system' }, { status: 404 });
+      return createLoginResponse({
+        id: teacher.id,
+        name: teacher.name,
+        email: teacher.email,
+        role: 'teacher',
+        schoolId: teacher.schoolId,
+        schoolName: teacher.school?.name || 'School',
+        subject: teacher.subject,
+        grades: teacher.grades,
+        phone: teacher.phone,
+      });
     }
 
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 });

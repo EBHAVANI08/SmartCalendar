@@ -62,46 +62,47 @@ const HARDCODED_CURRICULUMS = [
 
 export async function GET() {
   try {
-    const curriculums = await db.curriculum.findMany({
+    let curriculums = await db.curriculum.findMany({
       orderBy: { name: 'asc' },
     });
 
-    if (curriculums.length > 0) {
-      const mapped = curriculums.map(c => {
-        let subs: string[] = [];
-        let grds: string[] = [];
-        try { subs = JSON.parse(c.subjects || '[]'); } catch { subs = []; }
-        try { grds = JSON.parse(c.grades || '[]'); } catch { grds = []; }
-        return {
-          id: c.id,
+    if (curriculums.length === 0) {
+      // Persist standard national/international curriculum definitions to MongoDB Atlas
+      await db.curriculum.createMany({
+        data: HARDCODED_CURRICULUMS.map((c) => ({
           name: c.name,
-          code: c.board,
-          description: c.description || '',
-          country: 'International',
-          framework: c.name,
-          isActive: true,
-          subjectAreas: subs,
-          subjectCount: subs.length,
-          gradeLevels: grds,
-        };
+          board: c.code,
+          description: c.description,
+          subjects: JSON.stringify(c.subjectAreas),
+          grades: JSON.stringify(['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12']),
+        })),
       });
-      return NextResponse.json({ success: true, data: mapped });
+
+      curriculums = await db.curriculum.findMany({
+        orderBy: { name: 'asc' },
+      });
     }
 
-    // No curriculums in DB yet — return hardcoded definitions
-    const data = HARDCODED_CURRICULUMS.map(c => ({
-      id: null,
-      name: c.name,
-      code: c.code,
-      description: c.description,
-      country: c.country,
-      framework: c.framework,
-      isActive: true,
-      subjectAreas: c.subjectAreas,
-      subjectCount: c.subjectAreas.length,
-      gradeLevels: [],
-    }));
-    return NextResponse.json({ success: true, data });
+    const mapped = curriculums.map((c) => {
+      let subs: string[] = [];
+      let grds: string[] = [];
+      try { subs = JSON.parse(c.subjects || '[]'); } catch { subs = []; }
+      try { grds = JSON.parse(c.grades || '[]'); } catch { grds = []; }
+      return {
+        id: c.id,
+        name: c.name,
+        code: c.board,
+        description: c.description || '',
+        country: 'International',
+        framework: c.name,
+        isActive: true,
+        subjectAreas: subs,
+        subjectCount: subs.length,
+        gradeLevels: grds,
+      };
+    });
+
+    return NextResponse.json({ success: true, data: mapped });
   } catch (error) {
     console.error('[CURRICULUM_LIST_GET_ERROR]', error);
     return NextResponse.json(
