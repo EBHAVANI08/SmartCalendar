@@ -90,17 +90,33 @@ export default function RoomsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Rooms & Facilities</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{rooms.length} rooms in your facility</p>
+      {/* ── Enterprise SaaS Rooms & Labs Header ── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-800 to-slate-900 flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-500/20">
+            <Building2 className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
+                Rooms, Laboratories & Facilities
+              </h1>
+              <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
+                Delhi Public School (DPS)
+              </Badge>
+            </div>
+            <p className="text-xs text-[#64748B] font-medium mt-1">
+              Classrooms, science laboratories, computer labs, AV halls & sports facilities &middot; {rooms.length} Total Registered Facilities
+            </p>
+          </div>
         </div>
-        <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={fetchRooms} className="gap-2">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button size="sm" variant="outline" onClick={fetchRooms} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
+            <RefreshCw className={`w-3.5 h-3.5 text-[#2563EB] ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
-          <Button size="sm" className="gap-2 bg-emerald-600 hover:bg-emerald-700" onClick={() => setAddOpen(true)}>
-            <Plus className="w-4 h-4" /> Add Room
+          <Button size="sm" onClick={() => setAddOpen(true)} className="gap-2 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold h-9 shadow-md text-xs px-3.5 border-none">
+            <Plus className="w-4 h-4 text-amber-300" /> Add Room / Facility
           </Button>
         </div>
       </div>

@@ -9,6 +9,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 
 interface AnalyticsData {
@@ -26,7 +27,7 @@ interface AnalyticsData {
   weeklyTrends: { week: string; total: number; aiAssigned: number; manualAssigned: number; sameSubject: number; crossSubject: number }[];
 }
 
-const COLORS = ['#10b981', '#06b6d4', '#8b5cf6', '#f59e0b', '#ef4444', '#3b82f6', '#ec4899', '#84cc16'];
+const COLORS = ['#2563eb', '#1d4ed8', '#4f46e5', '#0284c7', '#0369a1', '#3b82f6', '#6366f1', '#1e40af'];
 
 function MiniBarChart({ data, maxVal }: { data: { label: string; value: number }[]; maxVal: number }) {
   return (
@@ -49,11 +50,11 @@ function MiniBarChart({ data, maxVal }: { data: { label: string; value: number }
 
 function GaugeCard({ label, value, color }: { label: string; value: number; color: string }) {
   const colorMap: Record<string, { ring: string; text: string; bg: string }> = {
-    emerald: { ring: 'stroke-emerald-500', text: 'text-emerald-700', bg: 'bg-emerald-50' },
-    blue:    { ring: 'stroke-blue-500',    text: 'text-blue-700',    bg: 'bg-blue-50' },
-    amber:   { ring: 'stroke-amber-500',   text: 'text-amber-700',   bg: 'bg-amber-50' },
+    emerald: { ring: 'stroke-blue-600', text: 'text-blue-700', bg: 'bg-blue-50' },
+    blue:    { ring: 'stroke-blue-600', text: 'text-blue-700', bg: 'bg-blue-50' },
+    amber:   { ring: 'stroke-amber-500', text: 'text-amber-700', bg: 'bg-amber-50' },
   };
-  const c = colorMap[color] || colorMap.emerald;
+  const c = colorMap[color] || colorMap.blue;
   const r = 40;
   const circ = 2 * Math.PI * r;
   const strokeDashoffset = circ - (value / 100) * circ;
@@ -103,19 +104,34 @@ export default function AnalyticsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Analytics & Business Intelligence</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Real-time operational insights from live database</p>
+      {/* ── Enterprise SaaS Analytics & BI Header ── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-800 to-slate-900 flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-500/20">
+            <BarChart3 className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
+                Analytics & Business Intelligence
+              </h1>
+              <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
+                Delhi Public School (DPS)
+              </Badge>
+            </div>
+            <p className="text-xs text-[#64748B] font-medium mt-1">
+              Operational coverage rate, department breakdown, peak load distribution & teacher wellbeing metrics.
+            </p>
+          </div>
         </div>
-        <div className="flex gap-2.5 items-center">
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} className="text-sm border border-slate-200 rounded-lg px-3 py-2 text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-500" />
-          <Button size="sm" variant="outline" onClick={fetchAnalytics} className="gap-2">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-36 h-9 text-xs font-mono bg-white border-[#E2E8F0]" />
+          <Button size="sm" variant="outline" onClick={fetchAnalytics} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
+            <RefreshCw className={`w-3.5 h-3.5 text-[#2563EB] ${loading ? 'animate-spin' : ''}`} /> Refresh Data
           </Button>
-          <Button size="sm" variant="outline" className="gap-2">
-            <Download className="w-4 h-4" /> Export
+          <Button size="sm" variant="outline" onClick={() => window.print()} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
+            <Download className="w-4 h-4 text-[#2563EB]" /> Export Report
           </Button>
         </div>
       </div>

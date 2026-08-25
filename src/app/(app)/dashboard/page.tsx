@@ -58,14 +58,14 @@ function KpiCard({
   trend?: 'up' | 'down' | null; color: string; sub?: string; href?: string;
 }) {
   const colorMap: Record<string, { bg: string; text: string; border: string; icon: string }> = {
-    emerald: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-100', icon: 'text-emerald-500' },
+    emerald: { bg: 'bg-blue-50',   text: 'text-blue-700',   border: 'border-blue-100',   icon: 'text-blue-500' },
     blue:    { bg: 'bg-blue-50',    text: 'text-blue-700',    border: 'border-blue-100',    icon: 'text-blue-500' },
     amber:   { bg: 'bg-amber-50',   text: 'text-amber-700',   border: 'border-amber-100',   icon: 'text-amber-500' },
     rose:    { bg: 'bg-rose-50',    text: 'text-rose-700',    border: 'border-rose-100',    icon: 'text-rose-500' },
     violet:  { bg: 'bg-violet-50',  text: 'text-violet-700',  border: 'border-violet-100',  icon: 'text-violet-500' },
-    teal:    { bg: 'bg-teal-50',    text: 'text-teal-700',    border: 'border-teal-100',    icon: 'text-teal-500' },
+    teal:    { bg: 'bg-cyan-50',    text: 'text-cyan-700',    border: 'border-cyan-100',    icon: 'text-cyan-500' },
   };
-  const c = colorMap[color] || colorMap.emerald;
+  const c = colorMap[color] || colorMap.blue;
   const Wrapper = href ? Link : 'div';
 
   return (
@@ -87,7 +87,7 @@ function KpiCard({
           {trend && (
             <div className="mt-3 flex items-center gap-1.5 text-xs font-medium">
               {trend === 'up'
-                ? <><TrendingUp className="w-3.5 h-3.5 text-emerald-500" /><span className="text-emerald-600">Improving</span></>
+                ? <><TrendingUp className="w-3.5 h-3.5 text-blue-500" /><span className="text-blue-600">Improving</span></>
                 : <><TrendingDown className="w-3.5 h-3.5 text-rose-500" /><span className="text-rose-600">Needs Attention</span></>}
             </div>
           )}
@@ -100,16 +100,16 @@ function KpiCard({
 /* ── AI Briefing Card ── */
 function AIBriefingCard({ briefing, loading }: { briefing: DailyBriefing | null; loading: boolean }) {
   return (
-    <Card className="border-0 bg-gradient-to-br from-slate-900 via-emerald-950 to-teal-950 text-white overflow-hidden relative">
-      <div className="absolute top-0 right-0 w-40 h-40 bg-emerald-500/10 rounded-full blur-3xl -translate-y-10 translate-x-10 pointer-events-none" />
+    <Card className="border-0 bg-gradient-to-br from-slate-950 via-blue-950 to-slate-900 text-white overflow-hidden relative shadow-lg">
+      <div className="absolute top-0 right-0 w-40 h-40 bg-blue-500/10 rounded-full blur-3xl -translate-y-10 translate-x-10 pointer-events-none" />
       <CardContent className="p-6 relative z-10">
         <div className="flex items-center gap-2.5 mb-4">
-          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center">
-            <Brain className="w-5 h-5 text-emerald-400" />
+          <div className="w-9 h-9 rounded-xl bg-blue-500/20 border border-blue-500/30 flex items-center justify-center">
+            <Brain className="w-5 h-5 text-blue-400" />
           </div>
           <div>
             <h3 className="text-base font-bold">AI Daily Briefing</h3>
-            <p className="text-[11px] text-emerald-300/70">Powered by AI • {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}</p>
+            <p className="text-[11px] text-blue-300/70">Powered by AI • {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}</p>
           </div>
         </div>
 
@@ -137,10 +137,10 @@ function AIBriefingCard({ briefing, loading }: { briefing: DailyBriefing | null;
 
             {briefing.recommendations.length > 0 && (
               <div className="space-y-1.5">
-                <p className="text-[10px] text-emerald-400 uppercase tracking-wider font-semibold">Recommendations</p>
+                <p className="text-[10px] text-blue-400 uppercase tracking-wider font-semibold">Recommendations</p>
                 {briefing.recommendations.slice(0, 2).map((r, i) => (
                   <div key={i} className="flex items-start gap-2 text-xs text-slate-300">
-                    <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-400" />
+                    <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5 text-blue-400" />
                     {r}
                   </div>
                 ))}
@@ -149,13 +149,13 @@ function AIBriefingCard({ briefing, loading }: { briefing: DailyBriefing | null;
 
             {briefing.coverageRate >= 0 && (
               <div className="mt-4 flex items-center gap-3">
-                <div className="flex-1 bg-slate-700 rounded-full h-1.5 overflow-hidden">
+                <div className="flex-1 bg-slate-800 rounded-full h-1.5 overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-emerald-400 to-teal-400 rounded-full transition-all duration-1000"
+                    className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full transition-all duration-1000"
                     style={{ width: `${briefing.coverageRate}%` }}
                   />
                 </div>
-                <span className="text-xs font-semibold text-emerald-300">{briefing.coverageRate}% coverage</span>
+                <span className="text-xs font-semibold text-blue-300">{briefing.coverageRate}% coverage</span>
               </div>
             )}
           </div>
@@ -170,12 +170,11 @@ function AIBriefingCard({ briefing, loading }: { briefing: DailyBriefing | null;
 /* ── Quick Actions ── */
 function QuickActions() {
   const actions = [
-    { label: 'Timetable Studio', icon: CalendarDays, href: '/timetable', color: 'text-emerald-600 bg-emerald-50 border-emerald-100' },
-    { label: 'Manage Substitutions', icon: RefreshCw, href: '/substitutions', color: 'text-amber-600 bg-amber-50 border-amber-100' },
-    { label: 'Faculty Directory', icon: Users, href: '/teachers', color: 'text-blue-600 bg-blue-50 border-blue-100' },
-    { label: 'Analytics & BI', icon: BarChart3, href: '/analytics', color: 'text-violet-600 bg-violet-50 border-violet-100' },
-    { label: 'Biometric Attendance', icon: Fingerprint, href: '/attendance', color: 'text-teal-600 bg-teal-50 border-teal-100' },
-    { label: 'AI Lesson Plans', icon: BookOpen, href: '/lesson-plans', color: 'text-rose-600 bg-rose-50 border-rose-100' },
+    { label: 'Timetable Studio', icon: CalendarDays, href: '/timetable', color: 'text-blue-700 bg-blue-50 border-blue-200' },
+    { label: 'Manage Substitutions', icon: RefreshCw, href: '/substitutions', color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
+    { label: 'Faculty Directory', icon: Users, href: '/teachers', color: 'text-blue-700 bg-blue-50 border-blue-200' },
+    { label: 'Analytics & BI', icon: BarChart3, href: '/analytics', color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
+    { label: 'Biometric Attendance', icon: Fingerprint, href: '/attendance', color: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
   ];
 
   return (
@@ -189,7 +188,7 @@ function QuickActions() {
                 <div className={`w-9 h-9 rounded-xl ${a.color.split(' ').slice(1, 3).join(' ')} flex items-center justify-center`}>
                   <Icon className={`w-4.5 h-4.5 ${a.color.split(' ')[0]}`} />
                 </div>
-                <span className="text-sm font-semibold text-slate-700 leading-tight">{a.label}</span>
+                <span className="text-sm font-bold text-slate-800 leading-tight">{a.label}</span>
               </CardContent>
             </Card>
           </Link>
@@ -309,18 +308,33 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Command Centre</h1>
-          <p className="text-sm text-slate-500 mt-0.5">{today}</p>
+      {/* ── Enterprise SaaS Command Centre Header ── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-800 to-slate-900 flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-500/20">
+            <Brain className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
+                Academic Command Centre
+              </h1>
+              <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
+                Delhi Public School (DPS)
+              </Badge>
+            </div>
+            <p className="text-xs text-[#64748B] font-medium mt-1">
+              Real-time daily operations, live biometric sync, timetable clash detection & AI briefings &middot; {today}
+            </p>
+          </div>
         </div>
+
         <div className="flex items-center gap-2.5">
-          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 px-2.5 py-1 text-xs">
-            <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-2 animate-pulse inline-block" />
-            Live Data
+          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 px-3 py-1.5 text-xs font-extrabold flex items-center gap-2">
+            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+            Live DPS Stream
           </Badge>
-          <Button size="sm" variant="outline" onClick={fetchData} className="gap-2">
+          <Button size="sm" variant="outline" onClick={fetchData} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>

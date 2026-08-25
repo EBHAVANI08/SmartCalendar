@@ -23,6 +23,7 @@ export function AppShell({ children }: AppShellProps) {
   const [user, setUser] = useState<StoredUser | null>(null);
   const [schoolName, setSchoolName] = useState<string>('');
   const [pendingSubs, setPendingSubs] = useState(0);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
@@ -64,6 +65,8 @@ export function AppShell({ children }: AppShellProps) {
         schoolCode={user?.schoolCode}
         userRole={user?.role}
         onLogout={handleLogout}
+        mobileOpen={mobileMenuOpen}
+        onCloseMobile={() => setMobileMenuOpen(false)}
       />
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <TopHeader
@@ -71,9 +74,10 @@ export function AppShell({ children }: AppShellProps) {
           userName={user?.name}
           userRole={user?.role}
           pendingSubstitutions={pendingSubs}
+          onToggleMobile={() => setMobileMenuOpen(!mobileMenuOpen)}
         />
         <main className="flex-1 overflow-y-auto bg-slate-50/80 mesh-bg">
-          <div className="max-w-[1600px] mx-auto p-6 min-h-full">
+          <div className="max-w-[1600px] mx-auto p-3 sm:p-6 min-h-full">
             {children}
           </div>
         </main>

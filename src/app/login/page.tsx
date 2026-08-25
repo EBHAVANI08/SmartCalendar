@@ -196,11 +196,11 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col lg:flex-row overflow-x-hidden font-sans">
       {/* ── Left Hero / Enterprise Showcase Side (Hidden on small screens, shown lg+) ── */}
-      <div className="hidden lg:flex lg:w-1/2 relative bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-12 flex-col justify-between overflow-hidden border-r border-slate-800/60 select-none">
+      <div className="hidden lg:flex lg:w-1/2 relative bg-gradient-to-br from-slate-950 via-slate-900 to-blue-950 p-12 flex-col justify-between overflow-hidden border-r border-slate-800/60 select-none">
         {/* Ambient Glowing Orbs */}
-        <div className="absolute -top-32 -left-32 w-96 h-96 bg-emerald-500/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
-        <div className="absolute top-1/2 -right-32 w-80 h-80 bg-teal-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDelay: '1.5s' }} />
-        <div className="absolute -bottom-32 left-1/4 w-96 h-96 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -top-32 -left-32 w-96 h-96 bg-blue-600/15 rounded-full blur-3xl pointer-events-none animate-pulse" />
+        <div className="absolute top-1/2 -right-32 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none animate-pulse" style={{ animationDelay: '1.5s' }} />
+        <div className="absolute -bottom-32 left-1/4 w-96 h-96 bg-sky-500/10 rounded-full blur-3xl pointer-events-none" />
         
         {/* Subtle Grid Lines */}
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:48px_48px] pointer-events-none" />
@@ -208,13 +208,13 @@ export default function LoginPage() {
         {/* Top Branding */}
         <div className="relative z-10">
           <Link href="/" className="inline-flex items-center gap-3.5 mb-3 group">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-xl shadow-emerald-500/30 ring-2 ring-emerald-400/30 group-hover:scale-105 transition-transform">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 via-indigo-700 to-slate-900 flex items-center justify-center shadow-xl shadow-blue-500/30 ring-2 ring-blue-400/30 group-hover:scale-105 transition-transform">
               <Brain className="w-6 h-6 text-white" />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xl font-bold tracking-tight text-white">Smart Calendar</span>
-                <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30 text-[10px] py-0 px-2 font-mono">
+                <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[10px] py-0 px-2 font-mono">
                   Enterprise Cloud v3.4
                 </Badge>
               </div>
@@ -226,8 +226,8 @@ export default function LoginPage() {
         {/* Middle Feature Showcase */}
         <div className="relative z-10 my-auto py-8">
           <div className="mb-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 text-xs font-semibold mb-3">
-              <Sparkles className="w-3.5 h-3.5" />
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs font-semibold mb-3">
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
               <span>Next-Generation Timetable Intelligence</span>
             </div>
             <h2 className="text-3xl font-extrabold text-white leading-tight tracking-tight">
@@ -249,7 +249,7 @@ export default function LoginPage() {
                   onClick={() => setActiveFeatureIndex(idx)}
                   className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer ${
                     isActive
-                      ? 'bg-slate-900/90 border-emerald-500/40 shadow-xl shadow-emerald-950/40 scale-[1.01]'
+                      ? 'bg-slate-900/90 border-blue-500/40 shadow-xl shadow-blue-950/40 scale-[1.01]'
                       : 'bg-slate-900/40 border-slate-800/60 hover:bg-slate-900/60 opacity-70 hover:opacity-100'
                   }`}
                 >
@@ -283,7 +283,7 @@ export default function LoginPage() {
               { val: '0s', lbl: 'Class Delay' },
             ].map((kpi) => (
               <div key={kpi.lbl} className="text-center p-2 rounded-xl bg-slate-900/50 border border-slate-800/50">
-                <p className="text-base font-extrabold text-emerald-400 font-mono">{kpi.val}</p>
+                <p className="text-base font-extrabold text-blue-400 font-mono">{kpi.val}</p>
                 <p className="text-[10px] text-slate-400 mt-0.5">{kpi.lbl}</p>
               </div>
             ))}
@@ -293,13 +293,13 @@ export default function LoginPage() {
         {/* Bottom Principal Trust Badge & Security Guarantee */}
         <div className="relative z-10 pt-4 border-t border-slate-800/60 flex items-center justify-between text-xs text-slate-400">
           <div className="flex items-center gap-2">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            <ShieldCheck className="w-4 h-4 text-blue-400" />
             <span>256-bit Encrypted Tenant Isolation</span>
           </div>
           <div className="flex items-center gap-3">
-            <Link href="/" className="hover:text-emerald-400 transition-colors">Home</Link>
+            <Link href="/" className="hover:text-blue-400 transition-colors">Home</Link>
             <span>•</span>
-            <Link href="/brochure" className="hover:text-emerald-400 transition-colors">Brochure</Link>
+            <Link href="/brochure" className="hover:text-blue-400 transition-colors">Brochure</Link>
           </div>
         </div>
       </div>
@@ -307,17 +307,17 @@ export default function LoginPage() {
       {/* ── Right Authentication & Onboarding Side ── */}
       <div className="w-full lg:w-1/2 min-h-screen flex items-center justify-center p-4 sm:p-8 lg:p-12 relative overflow-y-auto">
         {/* Background elements for mobile view */}
-        <div className="lg:hidden absolute top-[-10%] left-[-10%] w-72 h-72 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="lg:hidden absolute bottom-[-10%] right-[-10%] w-72 h-72 bg-teal-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="lg:hidden absolute top-[-10%] left-[-10%] w-72 h-72 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="lg:hidden absolute bottom-[-10%] right-[-10%] w-72 h-72 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
 
         <div className="w-full max-w-md space-y-6 relative z-10 py-6">
           {/* Mobile-only logo */}
           <div className="lg:hidden text-center mb-6">
-            <Link href="/" className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl shadow-xl shadow-emerald-500/30 mb-3 ring-2 ring-emerald-400/30">
+            <Link href="/" className="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-xl shadow-blue-500/30 mb-3 ring-2 ring-blue-400/30">
               <Brain className="w-8 h-8 text-white" />
             </Link>
             <h1 className="text-2xl font-bold text-white tracking-tight">AI Smart Calendar</h1>
-            <p className="text-xs text-emerald-400/80 font-medium">Multi-Tenant School Management</p>
+            <p className="text-xs text-blue-400/80 font-medium">Multi-Tenant School Management</p>
           </div>
 
           {/* Main Auth Card Container */}
@@ -329,7 +329,7 @@ export default function LoginPage() {
                 onClick={() => { setRegistering(false); setError(''); }}
                 className={`py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                   !registering
-                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/50'
+                    ? 'bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white shadow-lg shadow-blue-950/50'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                 }`}
               >
@@ -341,7 +341,7 @@ export default function LoginPage() {
                 onClick={() => { setRegistering(true); setError(''); }}
                 className={`py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
                   registering
-                    ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-950/50'
+                    ? 'bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white shadow-lg shadow-blue-950/50'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
                 }`}
               >
@@ -357,7 +357,7 @@ export default function LoginPage() {
                   <div className="space-y-1.5">
                     <Label className="text-slate-300 text-xs font-medium flex items-center justify-between">
                       <span>Work Email or School Code</span>
-                      <span className="text-[10px] text-emerald-400 font-mono">Auto-Detects School</span>
+                      <span className="text-[10px] text-blue-400 font-mono font-bold">Auto-Detects School</span>
                     </Label>
                     <div className="relative">
                       <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
@@ -366,7 +366,7 @@ export default function LoginPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="e.g. pilot@client.school or priya@dps.edu"
-                        className="pl-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-emerald-500/20 h-11 rounded-xl text-sm transition-all"
+                        className="pl-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20 h-11 rounded-xl text-sm transition-all"
                         required
                       />
                     </div>
@@ -378,7 +378,7 @@ export default function LoginPage() {
                       <button
                         type="button"
                         onClick={() => { setForgotEmail(email); setForgotOpen(true); }}
-                        className="text-[11px] text-emerald-400 hover:text-emerald-300 hover:underline transition-colors"
+                        className="text-[11px] text-blue-400 hover:text-blue-300 hover:underline transition-colors font-medium"
                       >
                         Forgot password?
                       </button>
@@ -390,7 +390,7 @@ export default function LoginPage() {
                         value={password}
                         onChange={(e) => setPassword(e.target.value)}
                         placeholder="Enter your account password"
-                        className="pl-10 pr-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 focus:ring-emerald-500/20 h-11 rounded-xl text-sm transition-all"
+                        className="pl-10 pr-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20 h-11 rounded-xl text-sm transition-all"
                         required
                       />
                       <button
@@ -411,12 +411,12 @@ export default function LoginPage() {
                         type="checkbox"
                         checked={rememberMe}
                         onChange={(e) => setRememberMe(e.target.checked)}
-                        className="rounded border-slate-700 bg-slate-950 text-emerald-500 focus:ring-emerald-500/20 w-4 h-4"
+                        className="rounded border-slate-700 bg-slate-950 text-blue-600 focus:ring-blue-500/20 w-4 h-4"
                       />
                       <span>Remember my login</span>
                     </label>
                     <span className="text-[11px] text-slate-500 flex items-center gap-1">
-                      <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" /> Auto-Tenant
+                      <ShieldCheck className="w-3.5 h-3.5 text-blue-400" /> Auto-Tenant
                     </span>
                   </div>
 
@@ -432,7 +432,7 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     disabled={loading || !email || !password}
-                    className="w-full h-11 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-950/50 transition-all text-sm flex items-center justify-center gap-2"
+                    className="w-full h-11 bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:to-slate-950 text-white font-bold rounded-xl shadow-lg shadow-blue-950/50 transition-all text-sm flex items-center justify-center gap-2 border border-blue-400/20"
                   >
                     {loading ? (
                       <>
@@ -450,8 +450,8 @@ export default function LoginPage() {
               ) : (
                 /* ── Registration Mode ── */
                 <form onSubmit={handleSubmit} className="space-y-4">
-                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3">
-                    <p className="font-bold text-xs text-emerald-300 flex items-center gap-1.5">
+                  <div className="rounded-xl border border-blue-500/20 bg-blue-500/10 p-3">
+                    <p className="font-bold text-xs text-blue-300 flex items-center gap-1.5">
                       <GraduationCap className="w-4 h-4" />
                       Create New School Workspace
                     </p>
@@ -472,7 +472,7 @@ export default function LoginPage() {
                           }
                         }}
                         placeholder="e.g. Cambridge International School"
-                        className="bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 h-10 rounded-xl text-sm"
+                        className="bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 h-10 rounded-xl text-sm"
                         required
                       />
                     </div>
@@ -484,7 +484,7 @@ export default function LoginPage() {
                           value={schoolCode}
                           onChange={(e) => setSchoolCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
                           placeholder="e.g. CIS_DELHI"
-                          className="bg-slate-950/60 border-slate-800 text-slate-100 font-mono text-xs focus:border-emerald-500 h-10 rounded-xl"
+                          className="bg-slate-950/60 border-slate-800 text-slate-100 font-mono text-xs focus:border-blue-500 h-10 rounded-xl"
                           required
                         />
                       </div>
@@ -512,7 +512,7 @@ export default function LoginPage() {
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
                         placeholder="principal@yourschool.edu"
-                        className="bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 h-10 rounded-xl text-sm"
+                        className="bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 h-10 rounded-xl text-sm"
                         required
                       />
                     </div>
@@ -532,7 +532,7 @@ export default function LoginPage() {
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                           placeholder="Min. 8 characters"
-                          className="pr-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 h-10 rounded-xl text-sm"
+                          className="pr-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 h-10 rounded-xl text-sm"
                           required
                         />
                         <button
@@ -554,7 +554,7 @@ export default function LoginPage() {
                                 ? 'bg-amber-500 w-2/4'
                                 : passwordStrength <= 75
                                 ? 'bg-blue-500 w-3/4'
-                                : 'bg-emerald-500 w-full'
+                                : 'bg-blue-600 w-full'
                             }`}
                           />
                         </div>
@@ -569,7 +569,7 @@ export default function LoginPage() {
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
                           placeholder="Repeat password"
-                          className="pr-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-emerald-500 h-10 rounded-xl text-sm"
+                          className="pr-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 h-10 rounded-xl text-sm"
                           required
                         />
                         <button
@@ -594,7 +594,7 @@ export default function LoginPage() {
                   <Button
                     type="submit"
                     disabled={loading || !schoolName || !email || !password || !confirmPassword}
-                    className="w-full h-11 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold rounded-xl shadow-lg shadow-emerald-950/50 transition-all text-sm flex items-center justify-center gap-2"
+                    className="w-full h-11 bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:to-slate-950 text-white font-bold rounded-xl shadow-lg shadow-blue-950/50 transition-all text-sm flex items-center justify-center gap-2 border border-blue-400/20"
                   >
                     {loading ? (
                       <>
@@ -611,29 +611,111 @@ export default function LoginPage() {
                 </form>
               )}
 
-              {/* ── Demo Credentials Quick Bar ── */}
+              {/* ── Demo Role Credentials Quick Bar (Requirement: SuperAdmin, Admin, Teacher) ── */}
               {!registering && (
-                <div className="p-3 bg-slate-950/50 rounded-xl border border-slate-800/60 text-xs text-slate-400 space-y-1.5">
-                  <div className="flex items-center justify-between font-semibold text-slate-300 text-[11px]">
-                    <span>⚡ Quick Test Credentials</span>
-                    <span className="text-[10px] text-emerald-400">Auto-Detects School</span>
+                <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-2">
+                  <div className="flex items-center justify-between font-bold text-slate-200 text-xs">
+                    <span>⚡ Select Role for 1-Click Login:</span>
+                    <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[9px] font-mono">DPS Delhi Demo</Badge>
                   </div>
-                  <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    {/* SuperAdmin Button */}
                     <button
                       type="button"
-                      onClick={() => { setEmail('pilot@client.school'); setPassword('ClientPilot2026'); }}
-                      className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-emerald-500/40 text-left truncate transition-all"
+                      onClick={async () => {
+                        setEmail('superadmin@dps.edu.in');
+                        setPassword('SuperAdmin2026');
+                        setLoading(true);
+                        try {
+                          const res = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: 'superadmin@dps.edu.in', password: 'SuperAdmin2026' }),
+                          });
+                          const data = await res.json();
+                          if (res.ok && data?.success) {
+                            localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'superadmin' }));
+                            sessionStorage.setItem('sc_user', JSON.stringify(data.user));
+                            if (data.token) sessionStorage.setItem('sc_token', data.token);
+                            toast({ title: 'SuperAdmin Logged In', description: 'Accessing Trust Command Center' });
+                            router.push('/dashboard');
+                          }
+                        } catch {
+                          router.push('/dashboard');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="p-2.5 rounded-xl bg-purple-950/40 border border-purple-500/30 hover:border-purple-400 text-left transition-all group cursor-pointer"
                     >
-                      <span className="text-emerald-400 font-semibold block truncate">DPS Delhi Admin</span>
-                      <span className="text-[10px] text-slate-500">pilot@client.school</span>
+                      <span className="text-purple-300 font-extrabold text-[11px] block truncate group-hover:text-purple-200">SuperAdmin</span>
+                      <span className="text-[9px] text-purple-400/80 block font-mono">Trust Center</span>
                     </button>
+
+                    {/* Admin Button */}
                     <button
                       type="button"
-                      onClick={() => { setEmail('priya.math@dps.edu'); setPassword('teacher123'); }}
-                      className="p-2 rounded-lg bg-slate-900 border border-slate-800 hover:border-emerald-500/40 text-left truncate transition-all"
+                      onClick={async () => {
+                        setEmail('admin@dps.edu.in');
+                        setPassword('ClientPilot2026');
+                        setLoading(true);
+                        try {
+                          const res = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: 'admin@dps.edu.in', password: 'ClientPilot2026' }),
+                          });
+                          const data = await res.json();
+                          if (res.ok && data?.success) {
+                            localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'admin' }));
+                            sessionStorage.setItem('sc_user', JSON.stringify(data.user));
+                            if (data.token) sessionStorage.setItem('sc_token', data.token);
+                            toast({ title: 'Admin Logged In', description: 'Logged in as DPS Principal' });
+                            router.push('/dashboard');
+                          }
+                        } catch {
+                          router.push('/dashboard');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/30 hover:border-blue-400 text-left transition-all group cursor-pointer"
                     >
-                      <span className="text-blue-400 font-semibold block truncate">Faculty (Math)</span>
-                      <span className="text-[10px] text-slate-500">priya.math@dps.edu</span>
+                      <span className="text-blue-300 font-extrabold text-[11px] block truncate group-hover:text-blue-200">Admin</span>
+                      <span className="text-[9px] text-blue-400/80 block font-mono">Principal</span>
+                    </button>
+
+                    {/* Teacher Button */}
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setEmail('priya.sharma@dps.edu.in');
+                        setPassword('teacher123');
+                        setLoading(true);
+                        try {
+                          const res = await fetch('/api/auth/login', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email: 'priya.sharma@dps.edu.in', password: 'teacher123' }),
+                          });
+                          const data = await res.json();
+                          if (res.ok && data?.success) {
+                            localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'teacher' }));
+                            sessionStorage.setItem('sc_user', JSON.stringify(data.user));
+                            if (data.token) sessionStorage.setItem('sc_token', data.token);
+                            toast({ title: 'Teacher Logged In', description: 'Logged in as Dr. Priya Sharma' });
+                            router.push('/dashboard');
+                          }
+                        } catch {
+                          router.push('/dashboard');
+                        } finally {
+                          setLoading(false);
+                        }
+                      }}
+                      className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 hover:border-emerald-400 text-left transition-all group cursor-pointer"
+                    >
+                      <span className="text-emerald-300 font-extrabold text-[11px] block truncate group-hover:text-emerald-200">Teacher</span>
+                      <span className="text-[9px] text-emerald-400/80 block font-mono">Faculty (Math)</span>
                     </button>
                   </div>
                 </div>
@@ -643,7 +725,7 @@ export default function LoginPage() {
 
           {/* Footer Direct Links */}
           <div className="flex items-center justify-center gap-4 text-xs text-slate-500">
-            <Link href="/" className="inline-flex items-center gap-1 text-emerald-400 hover:text-emerald-300 font-semibold transition-colors py-1 px-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+            <Link href="/" className="inline-flex items-center gap-1 text-blue-400 hover:text-blue-300 font-semibold transition-colors py-1 px-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
               <span>Back to Home Website</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </Link>
@@ -660,7 +742,7 @@ export default function LoginPage() {
         <DialogContent className="max-w-md bg-slate-900 border-slate-800 text-slate-100">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-white">
-              <Lock className="w-5 h-5 text-emerald-400" />
+              <Lock className="w-5 h-5 text-blue-400" />
               Reset Account Access
             </DialogTitle>
             <DialogDescription className="text-slate-400 text-xs">
@@ -670,12 +752,12 @@ export default function LoginPage() {
           
           {forgotSubmitted ? (
             <div className="py-6 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto">
+              <div className="w-12 h-12 rounded-full bg-blue-500/20 border border-blue-500/40 text-blue-400 flex items-center justify-center mx-auto">
                 <CheckCircle2 className="w-6 h-6" />
               </div>
               <p className="text-sm font-bold text-white">Reset Request Logged</p>
               <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                If <span className="text-emerald-300">{forgotEmail}</span> matches a registered school or faculty account, instructions have been dispatched.
+                If <span className="text-blue-300">{forgotEmail}</span> matches a registered school or faculty account, instructions have been dispatched.
               </p>
               <Button
                 variant="outline"
@@ -707,7 +789,7 @@ export default function LoginPage() {
                   Cancel
                 </Button>
                 <Button
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold"
+                  className="bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:to-slate-950 text-white text-xs font-bold"
                   onClick={() => {
                     if (forgotEmail) setForgotSubmitted(true);
                   }}

@@ -39,8 +39,8 @@ const INITIAL_EVENTS: CalendarEvent[] = [
 const CATEGORY_STYLES = {
   holiday: { label: 'Public Holiday', bg: 'bg-rose-50 border-rose-200 text-rose-700', badge: 'bg-rose-100 text-rose-800 border-rose-300' },
   exam: { label: 'Examination', bg: 'bg-blue-50 border-blue-200 text-blue-700', badge: 'bg-blue-100 text-blue-800 border-blue-300' },
-  event: { label: 'School Event', bg: 'bg-emerald-50 border-emerald-200 text-emerald-700', badge: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
-  ptm: { label: 'PTM', bg: 'bg-purple-50 border-purple-200 text-purple-700', badge: 'bg-purple-100 text-purple-800 border-purple-300' },
+  event: { label: 'School Event', bg: 'bg-indigo-50 border-indigo-200 text-indigo-700', badge: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
+  ptm: { label: 'PTM', bg: 'bg-sky-50 border-sky-200 text-sky-700', badge: 'bg-sky-100 text-sky-800 border-sky-300' },
   workshop: { label: 'Faculty Workshop', bg: 'bg-amber-50 border-amber-200 text-amber-700', badge: 'bg-amber-100 text-amber-800 border-amber-300' },
 };
 
@@ -125,28 +125,37 @@ export default function AcademicCalendarPage() {
 
   return (
     <div className="space-y-6">
-      {/* ── Page Header ── */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-            <CalendarDays className="w-6 h-6 text-emerald-600" />
-            Academic Calendar & School Milestones
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Manage institutional events, examination schedules, term breaks, and board milestones.
-          </p>
+      {/* ── Enterprise SaaS Academic Calendar Header ── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-800 to-slate-900 flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-500/20">
+            <CalendarDays className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
+                Academic Calendar & School Milestones
+              </h1>
+              <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
+                Delhi Public School (DPS)
+              </Badge>
+            </div>
+            <p className="text-xs text-[#64748B] font-medium mt-1">
+              Institutional events, examination schedules, term breaks, and board milestones.
+            </p>
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-2.5">
-          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2">
-            <Printer className="w-4 h-4" /> Print Calendar
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
+            <Printer className="w-4 h-4 text-[#2563EB]" /> Print Calendar
           </Button>
           <Button
             size="sm"
             onClick={() => setAddModalOpen(true)}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-bold shadow-md shadow-emerald-950/10"
+            className="gap-2 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold h-9 shadow-md text-xs px-3.5 border-none"
           >
-            <Plus className="w-4 h-4" /> Add Event / Holiday
+            <Plus className="w-4 h-4 text-amber-300" /> Add Event / Holiday
           </Button>
         </div>
       </div>

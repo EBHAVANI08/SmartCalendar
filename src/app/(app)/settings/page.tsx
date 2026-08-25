@@ -79,24 +79,33 @@ export default function SchoolSettingsPage() {
 
   return (
     <div className="space-y-6 max-w-5xl">
-      {/* Page Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2.5">
-            <Settings className="w-6 h-6 text-emerald-600" />
-            School Settings & Operations Console
-          </h1>
-          <p className="text-sm text-slate-500 mt-0.5">
-            Configure institutional profile, timetable slot structures, and autonomous AI automation rules.
-          </p>
+      {/* ── Enterprise SaaS School Settings Header ── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-800 to-slate-900 flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-500/20">
+            <Settings className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
+                School Settings & Operations Console
+              </h1>
+              <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
+                Delhi Public School (DPS)
+              </Badge>
+            </div>
+            <p className="text-xs text-[#64748B] font-medium mt-1">
+              Configure institutional profile, timetable slot structures, and autonomous AI automation rules.
+            </p>
+          </div>
         </div>
 
         <Button
           onClick={handleSaveSettings}
           disabled={saving}
-          className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold gap-2 shadow-md shadow-emerald-950/10"
+          className="gap-2 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold h-9 shadow-md text-xs px-3.5 border-none"
         >
-          {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+          {saving ? <RefreshCw className="w-4 h-4 animate-spin text-amber-300" /> : <Save className="w-4 h-4 text-amber-300" />}
           <span>{saving ? 'Saving...' : 'Save Configuration'}</span>
         </Button>
       </div>
@@ -341,12 +350,12 @@ export default function SchoolSettingsPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 pt-2 space-y-4">
-            <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-200 flex items-start gap-3.5">
-              <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+            <div className="p-4 bg-blue-50 rounded-2xl border border-blue-200 flex items-start gap-3.5">
+              <ShieldCheck className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-emerald-900">Single-Domain Tenant Data Boundary Active</p>
-                <p className="text-[11px] text-emerald-700 mt-0.5 leading-relaxed">
-                  All timetable allocations, substitution histories, and biometric records are cryptographically tagged with School ID <code className="font-mono bg-emerald-100 px-1 rounded">{schoolCode}</code>. Cross-tenant access is strictly blocked at the database middleware layer.
+                <p className="text-xs font-bold text-blue-950">Single-Domain Tenant Data Boundary Active</p>
+                <p className="text-[11px] text-blue-800 mt-0.5 leading-relaxed">
+                  All timetable allocations, substitution histories, and biometric records are cryptographically tagged with School ID <code className="font-mono bg-blue-100 px-1 rounded text-blue-900">{schoolCode}</code>. Cross-tenant access is strictly blocked at the database middleware layer.
                 </p>
               </div>
             </div>

@@ -33,7 +33,7 @@ interface Substitution {
 const statusConfig: Record<string, { label: string; color: string; icon: React.ElementType }> = {
   pending:   { label: 'Pending',   color: 'bg-amber-100 text-amber-700 border-amber-200',   icon: Clock },
   assigned:  { label: 'Assigned',  color: 'bg-blue-100 text-blue-700 border-blue-200',     icon: UserCheck },
-  completed: { label: 'Completed', color: 'bg-emerald-100 text-emerald-700 border-emerald-200', icon: CheckCircle2 },
+  completed: { label: 'Completed', color: 'bg-blue-100 text-blue-900 border-blue-200', icon: CheckCircle2 },
 };
 
 export default function SubstitutionsPage() {
@@ -95,20 +95,35 @@ export default function SubstitutionsPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Substitution War Room</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Manage and auto-assign teacher substitutions</p>
+      {/* ── Enterprise SaaS Substitution War Room Header ── */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-800 to-slate-900 flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-500/20">
+            <RefreshCw className="w-6 h-6 text-white" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
+                Substitution War Room
+              </h1>
+              <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
+                Delhi Public School (DPS)
+              </Badge>
+            </div>
+            <p className="text-xs text-[#64748B] font-medium mt-1">
+              Automated substitute teacher matching & biometric morning absence resolution.
+            </p>
+          </div>
         </div>
-        <div className="flex gap-2.5">
-          <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-40" />
-          <Button size="sm" variant="outline" onClick={fetchSubs} className="gap-2">
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="w-36 h-9 text-xs font-mono bg-white border-[#E2E8F0]" />
+          <Button size="sm" variant="outline" onClick={fetchSubs} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
           <Button size="sm" onClick={handleAutoAssignAll} disabled={autoAssigning || counts.pending === 0}
-            className="gap-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-md">
-            <Brain className={`w-4 h-4 ${autoAssigning ? 'animate-spin' : ''}`} />
+            className="gap-2 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold h-9 shadow-md text-xs px-3.5 border-none">
+            <Brain className={`w-4 h-4 text-amber-300 ${autoAssigning ? 'animate-spin' : ''}`} />
             {autoAssigning ? 'AI Assigning…' : `AI Auto-Assign (${counts.pending})`}
           </Button>
         </div>
@@ -119,15 +134,15 @@ export default function SubstitutionsPage() {
         {[
           { label: 'Pending', value: counts.pending, color: 'amber', icon: Clock },
           { label: 'Assigned', value: counts.assigned, color: 'blue', icon: UserCheck },
-          { label: 'Completed', value: counts.completed, color: 'emerald', icon: CheckCircle2 },
+          { label: 'Completed', value: counts.completed, color: 'indigo', icon: CheckCircle2 },
         ].map(s => (
-          <Card key={s.label} className={`border-${s.color}-100`}>
+          <Card key={s.label} className="border-slate-200">
             <CardContent className="p-4 flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-xl bg-${s.color}-50 flex items-center justify-center`}>
-                <s.icon className={`w-5 h-5 text-${s.color}-600`} />
+              <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
+                <s.icon className="w-5 h-5 text-blue-700" />
               </div>
               <div>
-                <p className={`text-2xl font-extrabold text-${s.color}-700`}>{s.value}</p>
+                <p className="text-2xl font-extrabold text-slate-800">{s.value}</p>
                 <p className="text-xs text-slate-500">{s.label}</p>
               </div>
             </CardContent>

@@ -121,11 +121,11 @@ export default function LessonPlansPage() {
           <p className="text-sm text-slate-500 mt-0.5">{plans.length} AI-generated lesson plans in your library</p>
         </div>
         <div className="flex gap-2">
-          <Button size="sm" variant="outline" onClick={fetchPlans} className="gap-2">
+          <Button size="sm" variant="outline" onClick={fetchPlans} className="gap-2 border-slate-300">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
           </Button>
-          <Button size="sm" className="gap-2 bg-gradient-to-r from-violet-600 to-purple-700 hover:from-violet-700 hover:to-purple-800 text-white shadow-md" onClick={() => setGenOpen(true)}>
-            <Sparkles className="w-4 h-4" /> Generate with AI
+          <Button size="sm" className="gap-2 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold shadow-md" onClick={() => setGenOpen(true)}>
+            <Sparkles className="w-4 h-4 text-amber-300" /> Generate with AI
           </Button>
         </div>
       </div>
@@ -133,8 +133,8 @@ export default function LessonPlansPage() {
       {/* Stats Row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
-          { label: 'Total Plans', value: plans.length, icon: BookOpen, color: 'text-violet-600 bg-violet-50' },
-          { label: 'AI Generated', value: plans.filter(p => p.aiGenerated).length, icon: Brain, color: 'text-emerald-600 bg-emerald-50' },
+          { label: 'Total Plans', value: plans.length, icon: BookOpen, color: 'text-blue-600 bg-blue-50' },
+          { label: 'AI Generated', value: plans.filter(p => p.aiGenerated).length, icon: Brain, color: 'text-indigo-600 bg-indigo-50' },
           { label: 'Subjects', value: new Set(plans.map(p => p.subject)).size, icon: Target, color: 'text-blue-600 bg-blue-50' },
           { label: 'Grades', value: new Set(plans.map(p => p.grade)).size, icon: GraduationCap, color: 'text-amber-600 bg-amber-50' },
         ].map(s => (

@@ -18,18 +18,18 @@ const TIME_SLOTS = [
 
 // CBSE Subjects by Grade
 const SUBJECTS_BY_GRADE: Record<string, string[]> = {
-  'Grade 1': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Art', 'Music'],
-  'Grade 2': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Art', 'Music'],
-  'Grade 3': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Art', 'Music'],
-  'Grade 4': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Art', 'Music'],
-  'Grade 5': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Art', 'Music'],
-  'Grade 6': ['Mathematics', 'English', 'Hindi', 'Sanskrit', 'Science', 'Social Science', 'Computer Science', 'Physical Education'],
-  'Grade 7': ['Mathematics', 'English', 'Hindi', 'Sanskrit', 'Science', 'Social Science', 'Computer Science', 'Physical Education'],
-  'Grade 8': ['Mathematics', 'English', 'Hindi', 'Sanskrit', 'Science', 'Social Science', 'Computer Science', 'Physical Education'],
-  'Grade 9': ['Mathematics', 'English', 'Hindi', 'Science', 'Social Science', 'Computer Science', 'Physical Education', 'Art'],
-  'Grade 10': ['Mathematics', 'English', 'Hindi', 'Science', 'Social Science', 'Computer Science', 'Physical Education', 'Art'],
-  'Grade 11': ['Physics', 'Chemistry', 'Mathematics', 'English', 'Computer Science', 'Physical Education'],
-  'Grade 12': ['Physics', 'Chemistry', 'Mathematics', 'English', 'Computer Science', 'Physical Education'],
+  'Grade 1': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Free Period / Library', 'Art', 'Music'],
+  'Grade 2': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Free Period / Library', 'Art', 'Music'],
+  'Grade 3': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Free Period / Library', 'Art', 'Music'],
+  'Grade 4': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Free Period / Library', 'Art', 'Music'],
+  'Grade 5': ['Mathematics', 'English', 'Hindi', 'EVS', 'Computer Science', 'Physical Education', 'Free Period / Library', 'Art', 'Music'],
+  'Grade 6': ['Mathematics', 'English', 'Hindi', 'Sanskrit', 'Science', 'Social Science', 'Computer Science', 'Physical Education', 'Free Period / Library'],
+  'Grade 7': ['Mathematics', 'English', 'Hindi', 'Sanskrit', 'Science', 'Social Science', 'Computer Science', 'Physical Education', 'Free Period / Library'],
+  'Grade 8': ['Mathematics', 'English', 'Hindi', 'Sanskrit', 'Science', 'Social Science', 'Computer Science', 'Physical Education', 'Free Period / Library'],
+  'Grade 9': ['Mathematics', 'English', 'Hindi', 'Science', 'Social Science', 'Computer Science', 'Physical Education', 'Free Period / Library', 'Art'],
+  'Grade 10': ['Mathematics', 'English', 'Hindi', 'Science', 'Social Science', 'Computer Science', 'Physical Education', 'Free Period / Library', 'Art'],
+  'Grade 11': ['Physics', 'Chemistry', 'Mathematics', 'English', 'Computer Science', 'Physical Education', 'Free Period / Library'],
+  'Grade 12': ['Physics', 'Chemistry', 'Mathematics', 'English', 'Computer Science', 'Physical Education', 'Free Period / Library'],
 };
 
 // Pedagogical constraints
@@ -80,18 +80,18 @@ interface GeneratedSchedule {
  */
 export async function POST(request: Request) {
   try {
-    const { grade, section, schoolId, dryRun = false, setup = {} } = await request.json();
+    const { grade, section, schoolId, dryRun = false, setup = {}, bulkAll = false } = await request.json();
 
     // Validate required parameters
-    if (!grade || !section || !schoolId) {
+    if ((!grade || !section) && !bulkAll) {
       return NextResponse.json(
         { error: 'School, grade and section are required.' },
         { status: 400 }
       );
     }
 
-    const targetGrade = grade as string;
-    const targetSection = section as string;
+    const targetGrade = (grade || 'Grade 10') as string;
+    const targetSection = (section || 'A') as string;
     const periodsPerDay = Math.min(10, Math.max(4, Number(setup.periodsPerDay) || 8));
     const workingDays = Number(setup.workingDays) === 5 ? 5 : 6;
     const saturdayPeriods = Math.min(periodsPerDay, Math.max(1, Number(setup.saturdayPeriods) || 4));
@@ -307,17 +307,26 @@ export async function POST(request: Request) {
       map.set(subject, (map.get(subject) || 0) + 1);
     };
 
-    // Build subject order per day that respects pedagogical constraints
-    // Core subjects in morning, PE not in period 1, Art/Music in afternoon
+    // Global period-to-subject history across days to ensure JUMBLED period placements
+    // Map<periodNumber, Map<subjectName, count>>
+    const periodSubjectHistory = new Map<number, Map<string, number>>();
+    const getPeriodSubjectCount = (period: number, subject: string) => {
+      return periodSubjectHistory.get(period)?.get(subject) || 0;
+    };
+    const recordPeriodSubject = (period: number, subject: string) => {
+      if (!periodSubjectHistory.has(period)) periodSubjectHistory.set(period, new Map());
+      const pMap = periodSubjectHistory.get(period)!;
+      pMap.set(subject, (pMap.get(subject) || 0) + 1);
+    };
+
+    // Build subject order per day that respects pedagogical constraints + JUMBLED period placement
     const buildSubjectOrderForDay = (day: string): { period: number; subject: string }[] => {
       const assignments: { period: number; subject: string }[] = [];
       const usedSubjects = new Map<string, number>(); // subject -> count assigned today
       const isPTGrade = ['Grade 3', 'Grade 4', 'Grade 5'].includes(targetGrade);
+      const dayIdx = DAYS.indexOf(day);
+
       const subjectDailyLimit = (subject: string): number => {
-        // Allow repeating a subject in the same day (max 2) but never consecutive.
-        // Extra sports balancing:
-        // - Grade 3: only 1 sports (Physical Education) period on Wednesday
-        // - Grade 5: allow up to 2 sports periods on Wednesday
         if (subject === 'Physical Education' && day === 'Wednesday') {
           if (targetGrade === 'Grade 3') return 1;
           if (targetGrade === 'Grade 5') return 2;
@@ -326,31 +335,31 @@ export async function POST(request: Request) {
         return 2;
       };
 
-      // Categorize subjects
-      const rotate = <T,>(items: T[], offset: number) => items.length ? items.slice(offset % items.length).concat(items.slice(0, offset % items.length)) : items;
-      const dayOffset = Math.max(0, DAYS.indexOf(day));
-      const coreSubs = rotate(subjects.filter((s) => CORE_SUBJECTS.includes(s)), dayOffset);
-      const afternoonSubs = rotate(subjects.filter((s) => AFTERNOON_PREFERRED.includes(s)), dayOffset);
+      // Rotate and jumble subject lists dynamically per day using day index and period hashing
+      const rotateAndJumble = <T,>(items: T[], dayOffset: number) => {
+        if (!items.length) return items;
+        // Shift array by dayOffset and then apply deterministic pseudo-shuffle
+        const shifted = items.slice(dayOffset % items.length).concat(items.slice(0, dayOffset % items.length));
+        return [...shifted].sort((a, b) => Math.sin(dayOffset * 7 + String(a).length * 13) - Math.sin(dayOffset * 11 + String(b).length * 17));
+      };
+
+      const dayOffset = Math.max(0, dayIdx);
+      const coreSubs = rotateAndJumble(subjects.filter((s) => CORE_SUBJECTS.includes(s)), dayOffset);
+      const afternoonSubs = rotateAndJumble(subjects.filter((s) => AFTERNOON_PREFERRED.includes(s)), dayOffset);
       const peSubject = subjects.find((s) => s === 'Physical Education');
-      const otherSubs = rotate(subjects.filter(
-        // Physical Education is allowed here; period-1 restriction is enforced later.
+      const otherSubs = rotateAndJumble(subjects.filter(
         (s) => !CORE_SUBJECTS.includes(s) && !AFTERNOON_PREFERRED.includes(s)
       ), dayOffset);
 
       // Track which subjects still need periods
       const subjectNeeded = new Map<string, number>();
       for (const s of subjects) {
-        // Each subject gets at least 1 period, aiming for roughly equal distribution
         subjectNeeded.set(s, Math.max(1, Math.ceil(TIME_SLOTS.length / subjects.length)));
       }
 
-      // Assign morning periods (1-5) first — prioritize core subjects
+      // Assign morning periods (1-5) first — prioritize core subjects with period-jumble sorting
       const morningSlots = TIME_SLOTS.filter((s) => MORNING_PERIODS.includes(s.period));
       const afternoonSlots = TIME_SLOTS.filter((s) => AFTERNOON_PERIODS.includes(s.period));
-
-      // Fill morning periods
-      const morningQueue = [...coreSubs, ...otherSubs];
-      let morningIdx = 0;
 
       for (const slot of morningSlots) {
         let assigned = false;
@@ -362,16 +371,22 @@ export async function POST(request: Request) {
           if (currentCount < subjectDailyLimit(pe)) {
             assignments.push({ period: slot.period, subject: pe });
             usedSubjects.set(pe, currentCount + 1);
-            morningIdx++;
+            recordPeriodSubject(slot.period, pe);
             assigned = true;
             continue;
           }
         }
 
-        // Try to assign a core subject first
-        for (const sub of morningQueue) {
+        // Candidate subjects sorted by LEAST used in this period on prior days (jumble optimization)
+        const candidates = [...coreSubs, ...otherSubs].sort((a, b) => {
+          const timesInThisPeriodA = getPeriodSubjectCount(slot.period, a);
+          const timesInThisPeriodB = getPeriodSubjectCount(slot.period, b);
+          if (timesInThisPeriodA !== timesInThisPeriodB) return timesInThisPeriodA - timesInThisPeriodB;
+          return (usedSubjects.get(a) || 0) - (usedSubjects.get(b) || 0);
+        });
+
+        for (const sub of candidates) {
           const currentCount = usedSubjects.get(sub) || 0;
-          // Pedagogical constraint: max 2 occurrences per day per subject
           if (currentCount >= subjectDailyLimit(sub)) continue;
 
           // PE should not be in period 1 (except PT rule above)
@@ -386,7 +401,7 @@ export async function POST(request: Request) {
 
           assignments.push({ period: slot.period, subject: sub });
           usedSubjects.set(sub, (usedSubjects.get(sub) || 0) + 1);
-          morningIdx++;
+          recordPeriodSubject(slot.period, sub);
           assigned = true;
           break;
         }
