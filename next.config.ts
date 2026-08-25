@@ -3,9 +3,6 @@ process.env.NEXT_DISABLE_ESLINT = '1';
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   reactStrictMode: false,
   productionBrowserSourceMaps: false,
   serverExternalPackages: ['pdf-parse', 'xlsx', '@prisma/client', 'prisma'],
