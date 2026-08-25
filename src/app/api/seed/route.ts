@@ -71,13 +71,43 @@ export async function POST() {
       'Psychology': ['Introduction to Psychology', 'Learning & Memory', 'Developmental Psychology', 'Social Psychology', 'Cognitive Psychology', 'Personality', 'Intelligence', 'Emotions', 'Motivation', 'Psychological Disorders'],
     };
 
-    // Create admin account for DPS
+    // Create admin account for DPS and SuperAdmin
     await db.admin.create({
       data: {
         name: 'Dr. Kiran Challa',
         email: 'admin@dps.edu',
         password: 'admin123',
         role: 'admin',
+      },
+    });
+
+    await db.admin.create({
+      data: {
+        name: 'Global SuperAdmin',
+        email: 'superadmin@smartcalendar.app',
+        password: 'admin123',
+        isSuperAdmin: true,
+        role: 'superadmin',
+      },
+    });
+
+    // Create Client Pilot School for Quick Test Credentials (pilot@client.school)
+    const pilotSchool = await db.school.create({
+      data: {
+        name: 'DPS Delhi Admin',
+        code: 'CLIENTPILOT',
+        email: 'pilot@client.school',
+        password: 'ClientPilot2026',
+        featureFlags: {
+          create: {
+            aiTimetableEnabled: true,
+            manualTimetableEnabled: true,
+            bulkImportEnabled: true,
+            substitutionEnabled: true,
+            autoSubstitutionEnabled: true,
+            planName: 'enterprise',
+          }
+        }
       },
     });
 
@@ -110,8 +140,7 @@ export async function POST() {
 
     // Indian teacher names (North + South Indian)
     const teacherNames = [
-      // Mathematics teachers (18)
-      { name: 'Priya Sharma', subject: 'Mathematics', grades: ['Grade 1', 'Grade 2', 'Grade 3'] },
+      { name: 'Priya Sharma', subject: 'Mathematics', grades: ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 9', 'Grade 10'] },
       { name: 'Rajesh Kumar', subject: 'Mathematics', grades: ['Grade 1', 'Grade 2'] },
       { name: 'Ananya Iyer', subject: 'Mathematics', grades: ['Grade 3', 'Grade 4', 'Grade 5'] },
       { name: 'Vikram Patel', subject: 'Mathematics', grades: ['Grade 4', 'Grade 5'] },
@@ -357,6 +386,19 @@ export async function POST() {
         schoolId: dpsSchool.id,
       });
     }
+
+    // Add explicit Quick Test Credentials teacher priya.math@dps.edu
+    teacherInputData.push({
+      name: 'Priya Sharma',
+      email: 'priya.math@dps.edu',
+      subject: 'Mathematics',
+      grades: JSON.stringify(['Grade 9', 'Grade 10']),
+      password: 'teacher123',
+      phone: '+91-98765-43210',
+      availability: JSON.stringify([]),
+      role: 'teacher',
+      schoolId: dpsSchool.id,
+    });
 
     // Bulk insert teachers with createMany
     await db.teacher.createMany({ data: teacherInputData });
