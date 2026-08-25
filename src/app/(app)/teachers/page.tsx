@@ -122,6 +122,23 @@ const DEFAULT_TIMETABLE_FACULTY: Teacher[] = [
   { id: 'f-14', name: 'Dr. Birbal Sahni Jr.', email: 'birbal.sahni@dps.edu.in', phone: '+91 98765 43223', subject: 'Biology & Life Sciences', grades: '["Grade 11", "Grade 12"]', role: 'teacher', _count: { schedules: 18, absentSubstitutions: 0 } },
 ];
 
+const isDemoSchool = () => {
+  try {
+    const raw = typeof window !== 'undefined' ? (sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session')) : null;
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    const u = parsed.user || parsed;
+    const email = (u.email || '').toLowerCase();
+    const code = (u.schoolCode || '').toUpperCase();
+    if (code && code !== 'DPS_DELHI' && code !== 'DPS_TRUST' && email !== 'pilot@client.school' && !email.includes('dps.edu')) {
+      return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+};
+
 export default function TeachersPage() {
   const { toast } = useToast();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -149,13 +166,19 @@ export default function TeachersPage() {
         const d = await r.json();
         list = Array.isArray(d) ? d : d.teachers || d.data || [];
       }
-      const existingNames = new Set(list.map((t) => t.name.toLowerCase()));
-      const missingDefault = DEFAULT_TIMETABLE_FACULTY.filter(
-        (dt) => !existingNames.has(dt.name.toLowerCase())
-      );
-      setTeachers([...list, ...missingDefault]);
+      if (list.length > 0) {
+        setTeachers(list);
+      } else if (isDemoSchool()) {
+        setTeachers(DEFAULT_TIMETABLE_FACULTY);
+      } else {
+        setTeachers([]);
+      }
     } catch {
-      setTeachers(DEFAULT_TIMETABLE_FACULTY);
+      if (isDemoSchool()) {
+        setTeachers(DEFAULT_TIMETABLE_FACULTY);
+      } else {
+        setTeachers([]);
+      }
     } finally {
       setLoading(false);
     }

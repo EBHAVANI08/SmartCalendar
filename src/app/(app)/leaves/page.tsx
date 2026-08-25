@@ -218,9 +218,34 @@ const INITIAL_LEAVE_REQUESTS: LeaveRequest[] = [
   },
 ];
 
+const isDemoSchool = () => {
+  try {
+    const raw = typeof window !== 'undefined' ? (sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session')) : null;
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    const u = parsed.user || parsed;
+    const email = (u.email || '').toLowerCase();
+    const code = (u.schoolCode || '').toUpperCase();
+    if (code && code !== 'DPS_DELHI' && code !== 'DPS_TRUST' && email !== 'pilot@client.school' && !email.includes('dps.edu')) {
+      return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+};
+
 export default function LeavesPage() {
   const { toast } = useToast();
-  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(INITIAL_LEAVE_REQUESTS);
+  const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>([]);
+
+  useEffect(() => {
+    if (isDemoSchool()) {
+      setLeaveRequests(INITIAL_LEAVE_REQUESTS);
+    } else {
+      setLeaveRequests([]);
+    }
+  }, []);
   const [activeTab, setActiveTab] = useState<'pending' | 'approved' | 'rejected' | 'today' | 'calendar'>('pending');
   const [selectedDate, setSelectedDate] = useState<string>('2026-08-27');
   const [searchQuery, setSearchQuery] = useState('');

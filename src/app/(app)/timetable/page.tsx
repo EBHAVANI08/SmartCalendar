@@ -551,6 +551,23 @@ export default function TimetablePage() {
     setDraggedSlot(null);
   };
 
+const isDemoSchool = () => {
+  try {
+    const raw = typeof window !== 'undefined' ? (sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session')) : null;
+    if (!raw) return true;
+    const parsed = JSON.parse(raw);
+    const u = parsed.user || parsed;
+    const email = (u.email || '').toLowerCase();
+    const code = (u.schoolCode || '').toUpperCase();
+    if (code && code !== 'DPS_DELHI' && code !== 'DPS_TRUST' && email !== 'pilot@client.school' && !email.includes('dps.edu')) {
+      return false;
+    }
+    return true;
+  } catch {
+    return true;
+  }
+};
+
   // Helper to get slot info for Day & Period from DB or fallback
   const getSlot = (day: string, periodNum: number) => {
     const fallback = FALLBACK_WEEK_SCHEDULE[day]?.[periodNum];
@@ -561,19 +578,19 @@ export default function TimetablePage() {
       const resolvedTeacher =
         rawTeacher && rawTeacher !== 'Assigned Faculty'
           ? rawTeacher
-          : fallback?.teacher || 'Priya Sharma';
+          : fallback?.teacher || 'Unassigned Faculty';
 
       return {
         id: dbMatch.id,
         subject: dbMatch.subject,
         teacherId: dbMatch.teacherId || undefined,
         teacher: resolvedTeacher,
-        room: dbMatch.roomId || fallback?.room || 'R-10A',
+        room: dbMatch.roomId || fallback?.room || '—',
       };
     }
 
-    if (fallback) return { ...fallback, teacherId: undefined };
-    return { subject: 'Free Period / Library', teacher: '—', room: '—', teacherId: undefined };
+    if (isDemoSchool() && fallback) return { ...fallback, teacherId: undefined };
+    return { subject: 'Unassigned Period', teacher: '—', room: '—', teacherId: undefined };
   };
 
   return (
