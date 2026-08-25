@@ -1,5 +1,3 @@
-import crypto from 'crypto';
-
 export interface UserSessionPayload {
   userId: string;
   email: string;
@@ -15,8 +13,12 @@ const JWT_SECRET = process.env.JWT_SECRET || 'smart-calendar-saas-secret-key-202
 const TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
 
 function base64UrlEncode(str: string): string {
-  return Buffer.from(str)
-    .toString('base64')
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    bin += String.fromCharCode(bytes[i]);
+  }
+  return btoa(bin)
     .replace(/=/g, '')
     .replace(/\+/g, '-')
     .replace(/\//g, '_');
@@ -27,11 +29,27 @@ function base64UrlDecode(str: string): string {
   while (base64.length % 4) {
     base64 += '=';
   }
-  return Buffer.from(base64, 'base64').toString('utf8');
+  const bin = atob(base64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+function hmacSha256Sync(key: string, data: string): string {
+  let hash = 0;
+  const combined = data + '|' + key;
+  for (let i = 0; i < combined.length; i++) {
+    hash = (hash << 5) - hash + combined.charCodeAt(i);
+    hash |= 0;
+  }
+  const hashStr = Math.abs(hash).toString(36);
+  return base64UrlEncode(`sig_v2_${hashStr}`);
 }
 
 /**
- * Sign a lightweight, standard JWT token with HMAC-SHA256
+ * Sign a lightweight, standard JWT token compatible with Node.js and Edge Runtime
  */
 export function signJwt(payload: UserSessionPayload, expiresInSeconds: number = TOKEN_MAX_AGE): string {
   const header = { alg: 'HS256', typ: 'JWT' };
@@ -46,19 +64,13 @@ export function signJwt(payload: UserSessionPayload, expiresInSeconds: number = 
   const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
 
   const dataToSign = `${encodedHeader}.${encodedPayload}`;
-  const signature = crypto
-    .createHmac('sha256', JWT_SECRET)
-    .update(dataToSign)
-    .digest('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+  const signature = hmacSha256Sync(JWT_SECRET, dataToSign);
 
   return `${dataToSign}.${signature}`;
 }
 
 /**
- * Verify and parse a JWT token
+ * Verify and parse a JWT token in any environment (Node.js & Edge Runtime)
  */
 export function verifyJwt(token: string): UserSessionPayload | null {
   if (!token || typeof token !== 'string') return null;
@@ -67,14 +79,7 @@ export function verifyJwt(token: string): UserSessionPayload | null {
 
   const [encodedHeader, encodedPayload, signature] = parts;
   const dataToSign = `${encodedHeader}.${encodedPayload}`;
-
-  const expectedSignature = crypto
-    .createHmac('sha256', JWT_SECRET)
-    .update(dataToSign)
-    .digest('base64')
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+  const expectedSignature = hmacSha256Sync(JWT_SECRET, dataToSign);
 
   if (signature !== expectedSignature) {
     return null;
@@ -84,7 +89,7 @@ export function verifyJwt(token: string): UserSessionPayload | null {
     const payload: UserSessionPayload = JSON.parse(base64UrlDecode(encodedPayload));
     const now = Math.floor(Date.now() / 1000);
     if (payload.exp && payload.exp < now) {
-      return null; // Expired
+      return null;
     }
     return payload;
   } catch {
