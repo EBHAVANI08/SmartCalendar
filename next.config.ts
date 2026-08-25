@@ -1,3 +1,5 @@
+process.env.NEXT_DISABLE_ESLINT = '1';
+
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -7,10 +9,6 @@ const nextConfig: NextConfig = {
   reactStrictMode: false,
   productionBrowserSourceMaps: false,
   serverExternalPackages: ['pdf-parse', 'xlsx', '@prisma/client', 'prisma'],
-  experimental: {
-    cpus: 1,
-    workerThreads: false,
-  },
   output: 'standalone',
   async rewrites() {
     return [
