@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "node node_modules/next/dist/bin/next dev -p 3005",
-    "build": "node node_modules/prisma/build/index.js generate && node node_modules/next/dist/bin/next build --webpack",
+    "build": "node node_modules/prisma/build/index.js generate && node node_modules/next/dist/bin/next build",
     "start": "node node_modules/next/dist/bin/next start",
     "lint": "eslint .",
     "db:push": "node node_modules/prisma/build/index.js db push",
