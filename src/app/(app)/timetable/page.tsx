@@ -5,7 +5,8 @@ import {
   CalendarDays, Sparkles, RefreshCw, Printer, Download,
   Filter, Plus, Search, BookOpen, User, Clock,
   CheckCircle2, AlertCircle, Eye, Share2, Edit3,
-  Coffee, Utensils, ChevronRight, Layers, Building2
+  Coffee, Utensils, ChevronRight, Layers, Building2,
+  Upload, FileSpreadsheet, FileText
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -135,6 +136,9 @@ export default function TimetablePage() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [cellEditOpen, setCellEditOpen] = useState(false);
   const [editingCell, setEditingCell] = useState<{ day: string; period: number; subject: string; teacher: string; room: string } | null>(null);
 
@@ -176,6 +180,52 @@ export default function TimetablePage() {
       fetchSchedules();
     } finally {
       setGenerating(false);
+    }
+  };
+
+  const handleBulkUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUploadFile) {
+      toast({ title: 'File Required', description: 'Please select an Excel (.xlsx/.csv) or PDF (.pdf) file to upload.', variant: 'destructive' });
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', selectedUploadFile);
+      formData.append('grade', selectedGrade);
+      formData.append('section', selectedSection);
+
+      const res = await fetch('/api/timetable/bulk-upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({
+          title: 'Bulk Import Successful',
+          description: `${data.message} (${data.schedulesCreated} slots processed).`,
+        });
+        setUploadOpen(false);
+        setSelectedUploadFile(null);
+        fetchSchedules();
+      } else {
+        toast({
+          title: 'Upload Failed',
+          description: data.error || 'Failed to process bulk upload file.',
+          variant: 'destructive',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Upload Error',
+        description: err?.message || 'Network error occurred during upload.',
+        variant: 'destructive',
+      });
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -224,6 +274,15 @@ export default function TimetablePage() {
           </Button>
           <Button size="sm" variant="outline" onClick={fetchSchedules} className="gap-2 text-xs">
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} /> Refresh
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setUploadOpen(true)}
+            className="gap-2 text-xs border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-semibold"
+          >
+            <Upload className="w-4 h-4 text-indigo-600" />
+            Bulk Upload (.xlsx / .pdf)
           </Button>
           <Button
             size="sm"
@@ -549,6 +608,108 @@ export default function TimetablePage() {
               )}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Bulk Upload Modal (Excel & PDF) ── */}
+      <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-indigo-900">
+              <Upload className="w-5 h-5 text-indigo-600" />
+              Bulk Timetable Upload (Excel / PDF)
+            </DialogTitle>
+          </DialogHeader>
+          <form onSubmit={handleBulkUpload} className="space-y-4 py-2">
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Upload existing timetable files in <span className="font-semibold text-slate-700">Excel (.xlsx, .csv)</span> or <span className="font-semibold text-slate-700">PDF (.pdf)</span> format. Schedules and teacher records will be extracted automatically into MongoDB.
+            </p>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Target Grade</Label>
+                <Select value={selectedGrade} onValueChange={setSelectedGrade}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Section</Label>
+                <Select value={selectedSection} onValueChange={setSelectedSection}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SECTIONS.map((s) => <SelectItem key={s} value={s}>Section {s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="border-2 border-dashed border-indigo-200 rounded-xl p-6 bg-indigo-50/40 text-center hover:bg-indigo-50/70 transition-colors">
+              <input
+                type="file"
+                id="timetable-file-upload"
+                accept=".xlsx,.xls,.csv,.pdf"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    setSelectedUploadFile(e.target.files[0]);
+                  }
+                }}
+              />
+              <label htmlFor="timetable-file-upload" className="cursor-pointer space-y-2 block">
+                <div className="flex justify-center gap-2">
+                  <FileSpreadsheet className="w-8 h-8 text-emerald-600" />
+                  <FileText className="w-8 h-8 text-indigo-600" />
+                </div>
+                {selectedUploadFile ? (
+                  <div className="space-y-1">
+                    <p className="text-xs font-bold text-slate-800">{selectedUploadFile.name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">{(selectedUploadFile.size / 1024).toFixed(1)} KB</p>
+                    <Badge variant="outline" className="text-[10px] bg-emerald-100 text-emerald-800 border-emerald-300">
+                      Ready to Process
+                    </Badge>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="text-xs font-bold text-indigo-900">Click to browse or drag & drop</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Supports .xlsx, .xls, .csv, and .pdf documents</p>
+                  </div>
+                )}
+              </label>
+            </div>
+
+            <div className="flex justify-between items-center text-[11px] text-slate-500">
+              <span>Need format reference?</span>
+              <a
+                href="/api/timetable/import/template"
+                download
+                className="text-indigo-600 font-semibold hover:underline inline-flex items-center gap-1"
+              >
+                <Download className="w-3 h-3" /> Download Excel Template
+              </a>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => setUploadOpen(false)}>Cancel</Button>
+              <Button
+                type="submit"
+                disabled={uploading || !selectedUploadFile}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold gap-2"
+              >
+                {uploading ? (
+                  <><RefreshCw className="w-4 h-4 animate-spin" /> Uploading & Processing...</>
+                ) : (
+                  <><Upload className="w-4 h-4" /> Start Bulk Import</>
+                )}
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

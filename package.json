@@ -6,17 +6,17 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "next dev -p 3005",
-    "build": "prisma generate && next build --webpack",
-    "start": "next start",
+    "dev": "node node_modules/next/dist/bin/next dev -p 3005",
+    "build": "node node_modules/prisma/build/index.js generate && node node_modules/next/dist/bin/next build --webpack",
+    "start": "node node_modules/next/dist/bin/next start",
     "lint": "eslint .",
-    "db:push": "prisma db push",
-    "db:generate": "prisma generate",
+    "db:push": "node node_modules/prisma/build/index.js db push",
+    "db:generate": "node node_modules/prisma/build/index.js generate",
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
-    "typecheck:smart-calendar": "tsc -p tsconfig.smart-calendar.json",
+    "typecheck:smart-calendar": "node node_modules/typescript/bin/tsc -p tsconfig.smart-calendar.json",
     "test:smart-calendar": "node --test tests/smart-calendar.test.mjs",
-    "postinstall": "prisma generate"
+    "postinstall": "node node_modules/prisma/build/index.js generate"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
