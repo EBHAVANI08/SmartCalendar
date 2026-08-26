@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
+import * as XLSX from 'xlsx';
 import {
   CalendarDays, Sparkles, RefreshCw, Printer, Download,
   Filter, Plus, Search, BookOpen, User, Clock, Users,
@@ -530,6 +531,74 @@ export default function TimetablePage() {
     }
   };
 
+  // Download Excel Format Template for School Setup
+  const handleDownloadTemplate = () => {
+    try {
+      window.location.href = '/api/timetable/import/template?type=complete&format=xlsx';
+      toast({
+        title: 'Excel Format Template Downloaded',
+        description: 'Downloading Complete Timetable & Faculty Excel Setup Template.',
+      });
+    } catch {
+      toast({
+        title: 'Download Failed',
+        description: 'Could not download template.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Download Current Grade Timetable as formatted Excel
+  const handleDownloadGradeExcel = () => {
+    try {
+      const dataRows = DAYS.flatMap((day) => {
+        return activePeriods.map((period) => {
+          if (period.isBreak) {
+            return {
+              Grade: selectedGrade,
+              Section: selectedSection,
+              Day: day,
+              Period: String(period.label || 'Break Recess'),
+              Timing: period.time,
+              Subject: '— Break Recess —',
+              Teacher: '—',
+              Room: '—',
+            };
+          }
+          const slot = getSlot(day, Number(period.num));
+          return {
+            Grade: selectedGrade,
+            Section: selectedSection,
+            Day: day,
+            Period: `Period ${period.num}`,
+            Timing: period.time,
+            Subject: slot.subject,
+            Teacher: slot.teacher,
+            Room: slot.room,
+          };
+        });
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(dataRows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, `${selectedGrade}_${selectedSection}`);
+
+      XLSX.writeFile(workbook, `${selectedGrade.replace(/\s+/g, '_')}_Section_${selectedSection}_Timetable.xlsx`);
+
+      toast({
+        title: 'Excel Export Complete!',
+        description: `Downloaded timetable spreadsheet for ${selectedGrade} Section ${selectedSection}.`,
+      });
+    } catch (err) {
+      console.error('Excel Export Error:', err);
+      toast({
+        title: 'Export Failed',
+        description: 'Could not generate Excel file for selected timetable.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   // Drag and Drop Handlers
   const handleDragStart = (e: React.DragEvent, slot: { id?: string; day: string; period: number }) => {
     setDraggedSlot(slot);
@@ -624,6 +693,24 @@ const isDemoSchool = () => {
           <Button
             size="sm"
             variant="outline"
+            onClick={handleDownloadTemplate}
+            className="gap-2 text-xs border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold h-9 shadow-xs px-3.5"
+          >
+            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Download Excel Format Template
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleDownloadGradeExcel}
+            className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
+          >
+            <Download className="w-4 h-4 text-[#2563EB]" /> Export Excel — {selectedGrade} ({selectedSection})
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
             onClick={() => setBellTimingsOpen(true)}
             className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
           >
@@ -636,7 +723,7 @@ const isDemoSchool = () => {
             onClick={() => window.print()}
             className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
           >
-            <Download className="w-4 h-4 text-[#2563EB]" /> Print Timetable — {selectedGrade} ({selectedSection})
+            <Printer className="w-4 h-4 text-[#2563EB]" /> Print Timetable
           </Button>
 
           <Button
@@ -644,7 +731,7 @@ const isDemoSchool = () => {
             onClick={() => { setStudioStep(1); setStudioOpen(true); }}
             className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 text-xs h-9 shadow-md border-none px-3.5"
           >
-            <Sparkles className="w-4 h-4 text-amber-300" /> Create Master Timetable
+            <Sparkles className="w-4 h-4 text-amber-300" /> Create / Upload Master Timetable
           </Button>
         </div>
       </div>
@@ -664,7 +751,7 @@ const isDemoSchool = () => {
                 size="sm"
                 variant={selectedSection === sec ? 'default' : 'outline'}
                 onClick={() => setSelectedSection(sec)}
-                className={`h-7 px-3 text-xs font-extrabold ${selectedSection === sec ? 'bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white shadow-md border-none' : 'border-slate-300 text-slate-700 bg-slate-100 hover:bg-slate-200'}`}
+                className={`h-7 px-3 text-xs font-extrabold rounded-lg ${selectedSection === sec ? 'bg-[#2563EB] text-white border-none shadow-xs' : 'text-slate-700 bg-white border-[#E2E8F0]'}`}
               >
                 Section {sec}
               </Button>
@@ -673,7 +760,7 @@ const isDemoSchool = () => {
         </div>
 
         {/* Grade Buttons Carousel */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none">
           {GRADES.map((g) => (
             <Button
               key={g}
@@ -707,6 +794,14 @@ const isDemoSchool = () => {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleDownloadGradeExcel}
+              className="h-8 px-3 text-xs font-extrabold border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 shadow-xs gap-1.5"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Download Excel ({selectedGrade}-{selectedSection})
+            </Button>
             <Button
               size="sm"
               variant="outline"
@@ -1255,9 +1350,19 @@ const isDemoSchool = () => {
               {/* Mode-Specific Settings */}
               {studioMode === 'upload' ? (
                 <div className="space-y-3 pt-2">
-                  <Label className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                    Upload Master Timetable Spreadsheet / Document
-                  </Label>
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                      Upload Master Timetable Spreadsheet / Document
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="link"
+                      onClick={handleDownloadTemplate}
+                      className="h-auto p-0 text-xs font-extrabold text-[#2563EB] hover:underline flex items-center gap-1"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Download Excel Format Template
+                    </Button>
+                  </div>
                   <div className="border-2 border-dashed border-blue-200 rounded-xl p-5 bg-blue-50/40 text-center hover:bg-blue-50/70 transition-colors">
                     <input
                       type="file"
