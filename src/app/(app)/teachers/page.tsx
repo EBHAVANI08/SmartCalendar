@@ -483,32 +483,45 @@ export default function TeachersPage() {
             <p className="text-xs text-slate-500 leading-relaxed">
               Upload an Excel (`.xlsx`, `.csv`) or text document with teacher Name, Email, Subject, and Grades to populate the Faculty Directory.
             </p>
-            <div className="border-2 border-dashed border-blue-200 rounded-xl p-5 bg-blue-50/40 text-center hover:bg-blue-50/70 transition-colors">
-              <input
-                type="file"
-                id="faculty-bulk-upload"
-                accept=".xlsx,.xls,.csv,.txt"
-                className="hidden"
-                onChange={(e) => {
-                  if (e.target.files && e.target.files[0]) {
-                    setBulkFile(e.target.files[0]);
-                  }
-                }}
-              />
-              <label htmlFor="faculty-bulk-upload" className="cursor-pointer space-y-2 block">
-                <FileSpreadsheet className="w-8 h-8 text-blue-700 mx-auto" />
-                {bulkFile ? (
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">{bulkFile.name}</p>
-                    <p className="text-[10px] text-slate-500">{(bulkFile.size / 1024).toFixed(1)} KB attached</p>
-                  </div>
-                ) : (
-                  <div>
-                    <p className="text-xs font-bold text-blue-950">Click to select file or drag & drop</p>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Supports CSV/Excel with Name, Email, Subject</p>
-                  </div>
-                )}
-              </label>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold text-slate-800">Select Faculty List File (.csv / .xlsx)</Label>
+                <a
+                  href="/api/timetable/import/template?type=teacher&format=csv"
+                  download="Teacher_Faculty_Template.csv"
+                  className="text-xs font-extrabold text-[#2563EB] hover:underline flex items-center gap-1"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Download Sample Template
+                </a>
+              </div>
+              <div className="border-2 border-dashed border-blue-200 rounded-xl p-5 bg-blue-50/40 text-center hover:bg-blue-50/70 transition-colors">
+                <input
+                  type="file"
+                  id="faculty-bulk-upload"
+                  accept=".xlsx,.xls,.csv,.txt"
+                  className="hidden"
+                  onChange={(e) => {
+                    if (e.target.files && e.target.files[0]) {
+                      setBulkFile(e.target.files[0]);
+                    }
+                  }}
+                />
+                <label htmlFor="faculty-bulk-upload" className="cursor-pointer space-y-2 block">
+                  <FileSpreadsheet className="w-8 h-8 text-blue-700 mx-auto" />
+                  {bulkFile ? (
+                    <div>
+                      <p className="text-xs font-bold text-slate-800">{bulkFile.name}</p>
+                      <p className="text-[10px] text-slate-500">{(bulkFile.size / 1024).toFixed(1)} KB attached</p>
+                    </div>
+                  ) : (
+                    <div>
+                      <p className="text-xs font-bold text-blue-950">Click to select file or drag & drop</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Supports CSV/Excel with Name, Email, Subject</p>
+                    </div>
+                  )}
+                </label>
+              </div>
             </div>
           </div>
           <DialogFooter>
