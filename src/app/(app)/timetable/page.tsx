@@ -693,19 +693,10 @@ const isDemoSchool = () => {
           <Button
             size="sm"
             variant="outline"
-            onClick={handleDownloadTemplate}
-            className="gap-2 text-xs border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 font-bold h-9 shadow-xs px-3.5"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Download Excel Format Template
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleDownloadGradeExcel}
+            onClick={() => window.print()}
             className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
           >
-            <Download className="w-4 h-4 text-[#2563EB]" /> Export Excel — {selectedGrade} ({selectedSection})
+            <Printer className="w-4 h-4 text-[#2563EB]" /> Print Timetable — {selectedGrade} ({selectedSection})
           </Button>
 
           <Button
@@ -719,19 +710,10 @@ const isDemoSchool = () => {
 
           <Button
             size="sm"
-            variant="outline"
-            onClick={() => window.print()}
-            className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
-          >
-            <Printer className="w-4 h-4 text-[#2563EB]" /> Print Timetable
-          </Button>
-
-          <Button
-            size="sm"
             onClick={() => { setStudioStep(1); setStudioOpen(true); }}
             className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 text-xs h-9 shadow-md border-none px-3.5"
           >
-            <Sparkles className="w-4 h-4 text-amber-300" /> Create / Upload Master Timetable
+            <Sparkles className="w-4 h-4 text-amber-300" /> Create Master Timetable
           </Button>
         </div>
       </div>
@@ -797,16 +779,16 @@ const isDemoSchool = () => {
             <Button
               size="sm"
               variant="outline"
-              onClick={handleDownloadGradeExcel}
-              className="h-8 px-3 text-xs font-extrabold border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 shadow-xs gap-1.5"
+              onClick={() => window.print()}
+              className="h-8 px-3 text-xs font-extrabold border-blue-200 bg-blue-50 text-[#2563EB] hover:bg-blue-100 shadow-xs gap-1.5"
             >
-              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Download Excel ({selectedGrade}-{selectedSection})
+              <Printer className="w-3.5 h-3.5 text-[#2563EB]" /> Print Timetable ({selectedGrade}-{selectedSection})
             </Button>
             <Button
               size="sm"
               variant="outline"
               onClick={() => setBellTimingsOpen(true)}
-              className="h-8 px-3 text-xs font-extrabold border-blue-200 bg-blue-50 text-[#2563EB] hover:bg-blue-100 shadow-xs gap-1.5"
+              className="h-8 px-3 text-xs font-extrabold border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shadow-xs gap-1.5"
             >
               <Clock className="w-3.5 h-3.5" /> Edit Timetable & Timings
             </Button>
