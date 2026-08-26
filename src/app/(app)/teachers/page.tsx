@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import * as XLSX from 'xlsx';
 import {
   Users, Plus, Search, Filter, Mail, Phone, BookOpen,
   Edit2, Trash2, Eye, Download, UserCheck, AlertCircle,
@@ -261,6 +262,37 @@ export default function TeachersPage() {
       fetchTeachers();
     } finally {
       setBulkUploading(false);
+    }
+  };
+
+  const handleExportTeacherExcel = (teacher: Teacher) => {
+    try {
+      const rows = DAYS.map((day) => {
+        const rowData: Record<string, string> = { Day: day };
+        PERIOD_NUMS.forEach((p) => {
+          const slot = getTeacherScheduleSlot(teacher, day, p);
+          rowData[`P${p}`] = slot ? `${slot.grade} ${slot.section} - ${slot.subject}` : '— Free —';
+        });
+        return rowData;
+      });
+
+      const worksheet = XLSX.utils.json_to_sheet(rows);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Schedule');
+
+      const fileName = `${teacher.name.replace(/\s+/g, '_')}_Timetable.xlsx`;
+      XLSX.writeFile(workbook, fileName);
+
+      toast({
+        title: 'Excel Export Complete',
+        description: `Downloaded individual timetable spreadsheet for ${teacher.name}.`,
+      });
+    } catch {
+      toast({
+        title: 'Export Failed',
+        description: 'Could not export Excel file.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -548,9 +580,24 @@ export default function TeachersPage() {
                     {viewTeacher.subject} Faculty • {viewTeacher.email}
                   </p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => window.print()} className="gap-1.5 text-xs border-slate-300">
-                  <Printer className="w-4 h-4 text-slate-600" /> Download PDF / Print
-                </Button>
+                <div className="flex items-center gap-2 no-print">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => handleExportTeacherExcel(viewTeacher)}
+                    className="gap-1.5 text-xs border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Export Excel
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => window.print()}
+                    className="gap-1.5 text-xs border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold"
+                  >
+                    <Printer className="w-4 h-4 text-blue-600" /> Download PDF / Print
+                  </Button>
+                </div>
               </DialogHeader>
 
               {/* Individual Teacher Weekly Schedule Table */}

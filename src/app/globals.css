@@ -267,11 +267,13 @@
     visibility: hidden !important;
   }
 
-  /* Exclusively show ONLY the target timetable containers */
+  /* Exclusively show ONLY the target timetable containers & portals */
   #printable-timetable-container,
   #printable-timetable-container *,
   #printable-teacher-timetable,
-  #printable-teacher-timetable * {
+  #printable-teacher-timetable *,
+  div[data-radix-portal],
+  div[data-radix-portal] * {
     visibility: visible !important;
   }
 
