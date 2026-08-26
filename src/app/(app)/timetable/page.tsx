@@ -904,16 +904,18 @@ const isDemoSchool = () => {
                           <div className="flex items-center justify-between gap-1">
                             <div className="flex items-center gap-1 min-w-0">
                               <IconComp className={`w-3.5 h-3.5 shrink-0 ${accent.iconColor}`} />
-                              <span className="font-bold text-xs text-[#172033] truncate tracking-tight">{slot.subject}</span>
+                              <span className="font-bold text-xs text-[#172033] truncate print:whitespace-normal print:overflow-visible print:text-clip leading-snug tracking-tight" title={slot.subject}>
+                                {slot.subject}
+                              </span>
                             </div>
-                            <span className="text-[9px] bg-[#2563EB] text-white font-bold px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shadow-xs">
+                            <span className="text-[9px] bg-[#2563EB] text-white font-bold px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-0.5 shadow-xs print:hidden">
                               <Edit3 className="w-2 h-2" /> Edit
                             </span>
                           </div>
 
-                          <div className="flex items-center gap-1 text-[10px] text-[#64748B] font-medium truncate">
-                            <User className="w-2.5 h-2.5 text-slate-400 shrink-0" />
-                            <span className="truncate" title={slot.teacher}>{slot.teacher}</span>
+                          <div className="flex items-center gap-1 text-[10px] text-[#64748B] font-medium truncate print:whitespace-normal print:overflow-visible">
+                            <User className="w-2.5 h-2.5 text-slate-400 shrink-0 print:hidden" />
+                            <span className="truncate print:whitespace-normal print:overflow-visible" title={slot.teacher}>{slot.teacher}</span>
                           </div>
 
                           <div className="flex items-center justify-between pt-0.5 border-t border-slate-100 text-[9px] text-[#64748B]">
