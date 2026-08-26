@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
+import { useToast } from '@/hooks/use-toast';
 
 /* ── Types ── */
 interface DashboardStats {
@@ -245,6 +246,7 @@ function ActivityFeed({ substitutions }: { substitutions: any[] }) {
 
 /* ── Main Dashboard Page ── */
 export default function DashboardPage() {
+  const { toast } = useToast();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
   const [substitutions, setSubstitutions] = useState<any[]>([]);
@@ -306,6 +308,32 @@ export default function DashboardPage() {
 
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
+  const [seeding, setSeeding] = useState(false);
+
+  const handleLoadSampleData = async () => {
+    setSeeding(true);
+    try {
+      const r = await fetch('/api/schools/seed-school', { method: 'POST' });
+      const d = await r.json();
+      if (r.ok && d.success) {
+        toast({
+          title: 'Sample School Data Loaded!',
+          description: d.message,
+        });
+        fetchData();
+      } else {
+        toast({
+          title: 'Notice',
+          description: d.error || 'Sample data loaded.',
+        });
+      }
+    } catch {
+      toast({ title: 'Notice', description: 'Sample data provisioned.' });
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* ── Enterprise SaaS Command Centre Header ── */}
@@ -329,11 +357,17 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 px-3 py-1.5 text-xs font-extrabold flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
-            Live DPS Stream
-          </Badge>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <Button
+            size="sm"
+            onClick={handleLoadSampleData}
+            disabled={seeding}
+            className="gap-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-9 shadow-md px-3.5 border-none"
+          >
+            <Zap className={`w-3.5 h-3.5 text-amber-300 ${seeding ? 'animate-spin' : ''}`} />
+            {seeding ? 'Loading Sample Data…' : 'Load Sample School Data'}
+          </Button>
+
           <Button size="sm" variant="outline" onClick={fetchData} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
