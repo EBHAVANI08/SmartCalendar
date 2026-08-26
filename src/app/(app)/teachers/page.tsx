@@ -537,7 +537,7 @@ export default function TeachersPage() {
       <Dialog open={!!viewTeacher} onOpenChange={() => setViewTeacher(null)}>
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           {viewTeacher && (
-            <div className="space-y-4">
+            <div className="space-y-4" id="printable-teacher-timetable">
               <DialogHeader className="flex flex-row items-center justify-between border-b border-slate-100 pb-3">
                 <div>
                   <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">

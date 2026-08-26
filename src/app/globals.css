@@ -267,9 +267,11 @@
     visibility: hidden !important;
   }
 
-  /* Exclusively show ONLY the target timetable container */
+  /* Exclusively show ONLY the target timetable containers */
   #printable-timetable-container,
-  #printable-timetable-container * {
+  #printable-timetable-container *,
+  #printable-teacher-timetable,
+  #printable-teacher-timetable * {
     visibility: visible !important;
   }
 
@@ -278,7 +280,8 @@
     margin: 6mm;
   }
 
-  #printable-timetable-container {
+  #printable-timetable-container,
+  #printable-teacher-timetable {
     position: absolute !important;
     left: 0 !important;
     top: 0 !important;
@@ -292,14 +295,16 @@
     z-index: 999999 !important;
   }
 
-  #printable-timetable-container * {
+  #printable-timetable-container *,
+  #printable-teacher-timetable * {
     white-space: normal !important;
     overflow: visible !important;
     text-overflow: clip !important;
     word-break: break-word !important;
   }
 
-  #printable-timetable-container .truncate {
+  #printable-timetable-container .truncate,
+  #printable-teacher-timetable .truncate {
     white-space: normal !important;
     overflow: visible !important;
     text-overflow: clip !important;
