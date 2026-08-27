@@ -158,6 +158,36 @@ export default function TeachersPage() {
   const [saving, setSaving] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
 
+  // ─── Dedicated print function: opens a clean new window to avoid Radix portal visibility issues ───
+  const printTeacherTimetable = (teacher: Teacher) => {
+    const rows = DAYS.map((day) => {
+      const cells = PERIOD_NUMS.map((p) => {
+        const s = getTeacherScheduleSlot(teacher, day, p);
+        return s
+          ? `<td style="padding:5px;border:1px solid #334155;text-align:center;font-size:9pt;"><strong style="color:#1e3a5f">${s.grade} ${s.section}</strong><br/><span style="color:#475569">${s.subject}</span></td>`
+          : `<td style="padding:5px;border:1px solid #e2e8f0;text-align:center;color:#cbd5e1;font-size:9pt;">—</td>`;
+      }).join('');
+      return `<tr><td style="padding:5px 8px;border:1px solid #334155;font-weight:bold;background:#f1f5f9;font-size:9pt;">${day}</td>${cells}</tr>`;
+    }).join('');
+
+    const periodHeaders = PERIOD_NUMS.map((p) => `<th style="padding:6px;border:1px solid #334155;background:#1c2d54;color:#fff;font-size:9pt;text-align:center;">P${p}</th>`).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/><title>Teacher Timetable — ${teacher.name}</title>
+<style>body{margin:16px;font-family:Arial,sans-serif;color:#0f172a;}h2{margin:0 0 4px}p{margin:0 0 12px;color:#64748b;font-size:11pt;}table{border-collapse:collapse;width:100%;}
+@media print{@page{size:A4 landscape;margin:8mm;}}</style></head><body>
+<h2 style="font-size:15pt;">Teacher Timetable — ${teacher.name}</h2>
+<p>${teacher.subject} Faculty &bull; ${teacher.email}</p>
+<table><thead><tr><th style="padding:6px 10px;border:1px solid #334155;background:#1c2d54;color:#fff;font-size:9pt;text-align:left;">Day</th>${periodHeaders}</tr></thead><tbody>${rows}</tbody></table>
+</body></html>`;
+
+    const win = window.open('', '_blank', 'width=1100,height=700');
+    if (!win) { window.alert('Please allow popups for this site to print the timetable.'); return; }
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); win.close(); }, 400);
+  };
+
   const fetchTeachers = useCallback(async () => {
     setLoading(true);
     try {
@@ -592,7 +622,7 @@ export default function TeachersPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={() => window.print()}
+                    onClick={() => viewTeacher && printTeacherTimetable(viewTeacher)}
                     className="gap-1.5 text-xs border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold"
                   >
                     <Printer className="w-4 h-4 text-blue-600" /> Download PDF / Print
