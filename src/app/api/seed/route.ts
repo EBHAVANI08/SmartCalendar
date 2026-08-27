@@ -682,3 +682,16 @@ export async function POST() {
     return NextResponse.json({ error: 'Failed to seed database', details: String(error) }, { status: 500 });
   }
 }
+
+// ─── GET /api/seed — Returns current school info (for client schoolId resolution) ───
+export async function GET() {
+  try {
+    const school = await db.school.findFirst({ select: { id: true, name: true, code: true } });
+    if (!school) {
+      return NextResponse.json({ error: 'No school seeded yet. POST /api/seed to initialize.' }, { status: 404 });
+    }
+    return NextResponse.json({ success: true, schoolId: school.id, school });
+  } catch (error) {
+    return NextResponse.json({ error: 'Failed to query school', details: String(error) }, { status: 500 });
+  }
+}

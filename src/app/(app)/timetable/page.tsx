@@ -333,23 +333,18 @@ export default function TimetablePage() {
           return;
         }
 
-        const schoolRes = await fetch('/api/teacher/me').catch(() => null);
-        let schoolId = '60d5ecb8b5c9c22340000001';
-        if (schoolRes && schoolRes.ok) {
-          const sData = await schoolRes.json();
-          if (sData?.schoolId) schoolId = sData.schoolId;
-        }
-
+        // schoolId is resolved server-side automatically from DB — no need to fetch it here
         const formData = new FormData();
         formData.append('file', selectedUploadFile);
-        formData.append('schoolId', schoolId);
         formData.append('startTime', studioSettings.startTime);
         formData.append('periodDuration', studioSettings.periodDuration);
         formData.append('totalPeriods', studioSettings.totalPeriods);
         formData.append('saturdayType', studioSettings.saturdayType);
         formData.append('saturdayPeriods', studioSettings.saturdayPeriods);
         formData.append('shortBreakAfter', studioSettings.shortBreakAfter);
+        formData.append('shortBreakMins', '30');
         formData.append('lunchBreakAfter', studioSettings.lunchBreakAfter);
+        formData.append('lunchBreakMins', '30');
         formData.append('startGrade', studioSettings.startGrade);
         formData.append('endGrade', studioSettings.endGrade);
         formData.append('sectionsCount', studioSettings.sectionsCount);
