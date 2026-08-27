@@ -8,6 +8,53 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 const ALL_GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
 const ALL_SECTIONS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J'];
 
+const SHORT_NAME_MAP: Record<string, string> = {
+  'Palak M': 'Palak Sharma',
+  'Pratiksha S': 'Pratiksha Sumrao',
+  'Manisha R': 'Manisha Rajput',
+  'Shubhangi K': 'Shubhangi Kakani',
+  'Sonali J': 'Sonali Jagtap',
+  'Jishya K': 'Jishya Kackoth',
+  'Neeta M': 'Neeta Mohite',
+  'Fauziya M': 'Fauziya Ahmed',
+  'Afreen M': 'Afreen Deshmukh',
+  'Kranti M': 'Kranti Chavan',
+  'Sayeed Sir': 'Sayeed Sir',
+  'Komal M': 'Komal Mahajan',
+  'Priya M': 'Priya Mishra',
+  'Sarika M': 'Sarika Pahade',
+  'Jakiya M': 'Jakiya Pathan',
+  'Archana K': 'Archana Kadam',
+  'Dipali B': 'Dipali Bhalke',
+  'Vaibhavi M': 'Vaibhavi More',
+  'Poonam K': 'Poonam Kulkarni',
+  'Anita M': 'Anita Kulkarni',
+  'Jayshri J': 'Jayshri Joshi',
+  'Archana S': 'Archana Sharma',
+  'Megha M': 'Megha Lohade',
+  'Kaushalya M': 'Kaushalya Bharadwaj',
+  'Daval Sir': 'Daval Bachhav',
+  'Ankita M': 'Ankeeta Baviskar',
+  'Pradnya M': 'Pradnya Patil',
+  'Huma M': 'Huma Kausar Pathan',
+  'Divyani M': 'Devyani Desai',
+  'Atiya M': 'Atiya Ansari',
+  'Pratiksha A': 'Pratiksha Agrawal',
+  'Dipali W': 'Dipali Wagh',
+  'Priyanka M': 'Priyanka Desai',
+  'Shikha M': 'Shikha Mishra',
+  'Snehal M': 'Snehal Maru',
+  'Amit Sir': 'Amit More',
+  'Hemlata P': 'Hemlata Patil',
+  'Kaviraj sir': 'Kaviraj Sir',
+  'Reena L': 'Reena L',
+  'Mateen sir': 'Mateen Sir',
+  'Sagar sir': 'Sagar Sir',
+  'Qamar sir': 'Qamar Sir',
+  'Roshan Sir': 'Roshan Sir',
+  'Coach Rakesh': 'Coach Rakesh Kumar',
+};
+
 interface ExtractedSchedule {
   day: string;
   period: number;
@@ -33,9 +80,9 @@ function normalizeDay(input: string): string {
 function computePeriodTiming(
   periodNum: number,
   startTimeStr: string = '08:00',
-  durationMins: number = 45,
-  shortBreakAfter: number = 2,
-  shortBreakMins: number = 15,
+  durationMins: number = 40,
+  shortBreakAfter: number = 3,
+  shortBreakMins: number = 30,
   lunchBreakAfter: number = 4,
   lunchBreakMins: number = 30
 ): { start: string; end: string } {
@@ -64,7 +111,7 @@ function computePeriodTiming(
     }
   }
 
-  return { start: '08:00', end: '08:45' };
+  return { start: '08:00', end: '08:40' };
 }
 
 function parseExcelBuffer(buffer: Buffer, defaultGrade: string, defaultSection: string): ExtractedSchedule[] {
@@ -76,13 +123,13 @@ function parseExcelBuffer(buffer: Buffer, defaultGrade: string, defaultSection: 
     const rows = XLSX.utils.sheet_to_json<Record<string, any>>(sheet, { defval: '' });
 
     for (const row of rows) {
-      const dayVal = row['Day'] || row['day'] || row['DAY'];
-      const periodVal = row['Period'] || row['period'] || row['PERIOD'] || row['Slot'];
-      const subjectVal = row['Subject'] || row['subject'] || row['SUBJECT'] || row['Course'];
-      const teacherVal = row['Teacher Name'] || row['Teacher'] || row['teacher'] || row['Faculty'] || row['Employee ID'];
-      const gradeVal = row['Grade'] || row['grade'] || row['Class Code'] || defaultGrade;
-      const sectionVal = row['Section'] || row['section'] || defaultSection;
-      const roomVal = row['Room'] || row['room'] || row['Room Code'] || 'R-10A';
+      const dayVal = row['Day'] || row['day'] || row['DAY'] || row['Day Name'];
+      const periodVal = row['Period'] || row['period'] || row['PERIOD'] || row['Slot'] || row['Period No'];
+      const subjectVal = row['Subject'] || row['subject'] || row['SUBJECT'] || row['Course'] || row['Subject Name'];
+      const teacherVal = row['Teacher Name'] || row['Teacher'] || row['teacher'] || row['Faculty'] || row['Teacher Code'] || row['Class Teacher'] || row['Employee ID'];
+      const gradeVal = row['Grade'] || row['grade'] || row['Class'] || row['Class Code'] || defaultGrade;
+      const sectionVal = row['Section'] || row['section'] || row['SEC'] || defaultSection;
+      const roomVal = row['Room'] || row['room'] || row['Room Code'] || 'Room 10A';
 
       if (dayVal && subjectVal) {
         const periodNum = parseInt(String(periodVal).replace(/\D/g, ''), 10) || 1;
@@ -101,67 +148,24 @@ function parseExcelBuffer(buffer: Buffer, defaultGrade: string, defaultSection: 
   return results;
 }
 
-async function parsePdfBuffer(buffer: Buffer, defaultGrade: string, defaultSection: string): Promise<ExtractedSchedule[]> {
-  const results: ExtractedSchedule[] = [];
-  try {
-    const pdfParseModule = require('pdf-parse');
-    const pdfData = await pdfParseModule(buffer);
-    const text: string = pdfData.text || '';
-    const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-
-    let currentDay = 'Monday';
-
-    for (const line of lines) {
-      for (const d of DAYS) {
-        if (line.toLowerCase().includes(d.toLowerCase())) {
-          currentDay = d;
-          break;
-        }
-      }
-
-      const periodMatch = /(?:Period\s*)?([1-9]|10)[\s:|,-]+([A-Za-z\s]+)(?:\(([^)]+)\)|(?:by|with|-)\s*([A-Za-z\s]+))?/i.exec(line);
-      if (periodMatch) {
-        const periodNum = parseInt(periodMatch[1], 10);
-        const subject = periodMatch[2].trim();
-        const teacher = (periodMatch[3] || periodMatch[4] || '').trim();
-
-        if (subject && subject.length > 2 && !['break', 'lunch', 'short break'].includes(subject.toLowerCase())) {
-          results.push({
-            day: currentDay,
-            period: periodNum,
-            grade: defaultGrade,
-            section: defaultSection,
-            subject: subject,
-            teacherName: teacher || undefined,
-            room: 'R-10A',
-          });
-        }
-      }
-    }
-  } catch (err) {
-    console.error('PDF parsing error:', err);
-  }
-  return results;
-}
-
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
+    const schoolId = String(formData.get('schoolId') || '60d5ecb8b5c9c22340000001');
 
     // School Schedule Settings passed from Wizard Form
     const startTimeStr = String(formData.get('startTime') || '08:00');
-    const durationMins = parseInt(String(formData.get('periodDuration') || '45'), 10);
+    const durationMins = parseInt(String(formData.get('periodDuration') || '40'), 10);
     const totalPeriodsPerDay = parseInt(String(formData.get('totalPeriods') || '8'), 10);
-    const saturdayType = String(formData.get('saturdayType') || 'half'); // 'full' | 'half' | 'off'
-    const saturdayPeriods = parseInt(String(formData.get('saturdayPeriods') || '4'), 10);
-    const shortBreakAfter = parseInt(String(formData.get('shortBreakAfter') || '2'), 10);
-    const shortBreakMins = parseInt(String(formData.get('shortBreakMins') || '15'), 10);
+    const saturdayType = String(formData.get('saturdayType') || 'half');
+    const saturdayPeriods = parseInt(String(formData.get('saturdayPeriods') || '5'), 10);
+    const shortBreakAfter = parseInt(String(formData.get('shortBreakAfter') || '3'), 10);
+    const shortBreakMins = parseInt(String(formData.get('shortBreakMins') || '30'), 10);
     const lunchBreakAfter = parseInt(String(formData.get('lunchBreakAfter') || '4'), 10);
     const lunchBreakMins = parseInt(String(formData.get('lunchBreakMins') || '30'), 10);
-    const startGrade = String(formData.get('startGrade') || 'Grade 1');
-    const endGrade = String(formData.get('endGrade') || 'Grade 10');
-    const sectionsCount = Math.min(Math.max(parseInt(String(formData.get('sectionsCount') || '3'), 10), 1), 10);
+    const startGrade = String(formData.get('startGrade') || 'Grade 3');
+    const endGrade = String(formData.get('endGrade') || 'Grade 8');
 
     const defaultGrade = String(formData.get('grade') || startGrade);
     const defaultSection = String(formData.get('section') || 'A').toUpperCase();
@@ -176,79 +180,80 @@ export async function POST(request: Request) {
     const buffer = Buffer.from(arrayBuffer);
 
     let extractedSchedules: ExtractedSchedule[] = [];
-    let fileType: 'xlsx' | 'pdf' = 'xlsx';
 
     if (['.xlsx', '.xls', '.csv'].includes(fileExt)) {
-      fileType = 'xlsx';
       extractedSchedules = parseExcelBuffer(buffer, defaultGrade, defaultSection);
-    } else if (fileExt === '.pdf') {
-      fileType = 'pdf';
-      extractedSchedules = await parsePdfBuffer(buffer, defaultGrade, defaultSection);
     } else {
-      return NextResponse.json({ error: `Unsupported file format '${fileExt}'. Only .xlsx, .xls, .csv, and .pdf files are supported.` }, { status: 400 });
+      return NextResponse.json({ error: `Unsupported file format '${fileExt}'. Only .xlsx, .xls, and .csv files are supported.` }, { status: 400 });
     }
 
-    // Determine Grade Range
-    const startIdx = Math.max(0, ALL_GRADES.indexOf(startGrade));
-    const endIdx = Math.max(startIdx, ALL_GRADES.indexOf(endGrade));
-    const activeGrades = ALL_GRADES.slice(startIdx, endIdx + 1);
-    const activeSections = ALL_SECTIONS.slice(0, sectionsCount);
+    // Fetch all existing teachers for school to perform smart matching
+    const existingTeachers = await db.teacher.findMany({
+      where: { schoolId },
+    });
 
-    if (extractedSchedules.length === 0) {
-      // Fallback matrix generation using configured grades & sections
-      for (const gName of activeGrades) {
-        for (const sName of activeSections) {
-          for (const d of DAYS.slice(0, 6)) {
-            if (d === 'Saturday' && saturdayType === 'off') continue;
-            const maxP = d === 'Saturday' && saturdayType === 'half' ? saturdayPeriods : totalPeriodsPerDay;
+    const resolveTeacher = (nameInput?: string): { id: string; name: string } | null => {
+      if (!nameInput || nameInput === 'Assigned Faculty' || nameInput === '—' || nameInput.toUpperCase() === 'NO') return null;
 
-            for (let p = 1; p <= maxP; p++) {
-              extractedSchedules.push({
-                day: d,
-                period: p,
-                grade: gName,
-                section: sName,
-                subject: p % 2 === 0 ? 'Mathematics' : 'Science',
-                teacherName: 'Assigned Faculty',
-                room: `R-${gName.replace(/\D/g, '')}${sName}`,
-              });
-            }
-          }
-        }
+      const cleanInput = nameInput.trim();
+      const mappedFullName = SHORT_NAME_MAP[cleanInput] || cleanInput;
+
+      // 1. Exact match by full name or short code
+      let matched = existingTeachers.find(
+        (t) => t.name.toLowerCase() === mappedFullName.toLowerCase() || t.name.toLowerCase() === cleanInput.toLowerCase()
+      );
+
+      // 2. Substring match
+      if (!matched) {
+        matched = existingTeachers.find(
+          (t) => t.name.toLowerCase().includes(mappedFullName.toLowerCase()) || mappedFullName.toLowerCase().includes(t.name.toLowerCase())
+        );
       }
-    }
+
+      if (matched) {
+        return { id: matched.id, name: matched.name };
+      }
+      return null;
+    };
 
     let savedCount = 0;
-    const teachersCreatedSet = new Set<string>();
+    const teachersAssignedSet = new Set<string>();
 
     for (const item of extractedSchedules) {
       // Apply Saturday constraints
       if (item.day === 'Saturday') {
         if (saturdayType === 'off') continue;
-        if (saturdayType === 'half' && item.period > saturdayPeriods) continue;
+        if (item.period > saturdayPeriods) continue;
       }
       if (item.period > totalPeriodsPerDay) continue;
 
-      let teacherId: string | null = null;
+      let teacherObj = resolveTeacher(item.teacherName);
+      let teacherId: string | null = teacherObj ? teacherObj.id : null;
 
-      if (item.teacherName && item.teacherName !== 'Assigned Faculty' && item.teacherName !== '—') {
-        const teacherEmail = `${item.teacherName.toLowerCase().replace(/[^a-z0-9]/g, '.')}@school.edu`;
-        const teacher = await db.teacher.upsert({
-          where: { email: teacherEmail },
-          update: { subject: item.subject },
-          create: {
-            name: item.teacherName,
+      // If teacher name is present in Excel but not in DB, create new teacher record
+      if (!teacherObj && item.teacherName && !['Assigned Faculty', '—', 'NO'].includes(item.teacherName)) {
+        const rawName = item.teacherName.trim();
+        const resolvedFullName = SHORT_NAME_MAP[rawName] || rawName;
+        const teacherEmail = `${resolvedFullName.toLowerCase().replace(/[^a-z0-9]/g, '.')}@takshilaschool.edu`;
+
+        const newTeacher = await db.teacher.create({
+          data: {
+            name: resolvedFullName,
             email: teacherEmail,
             subject: item.subject,
             password: 'teacher123',
             grades: JSON.stringify([item.grade]),
+            schoolId,
           },
         }).catch(() => null);
 
-        if (teacher) {
-          teacherId = teacher.id;
-          teachersCreatedSet.add(teacher.name);
+        if (newTeacher) {
+          teacherId = newTeacher.id;
+          teachersAssignedSet.add(newTeacher.name);
+          existingTeachers.push(newTeacher);
         }
+      } else if (teacherObj) {
+        teachersAssignedSet.add(teacherObj.name);
       }
 
       // Compute dynamic start & end times based on school bell schedule settings
@@ -268,6 +273,7 @@ export async function POST(request: Request) {
           section: item.section,
           day: item.day,
           period: item.period,
+          schoolId,
         },
       }).catch(() => null);
 
@@ -285,6 +291,7 @@ export async function POST(request: Request) {
       } else {
         await db.schedule.create({
           data: {
+            schoolId,
             grade: item.grade,
             section: item.section,
             day: item.day,
@@ -293,7 +300,7 @@ export async function POST(request: Request) {
             startTime: times.start,
             endTime: times.end,
             teacherId,
-            roomId: item.room || 'R-10A',
+            roomId: item.room || 'Room 10A',
           },
         }).catch(() => null);
       }
@@ -303,20 +310,9 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       fileName,
-      fileType,
       schedulesCreated: savedCount,
-      teachersProcessed: teachersCreatedSet.size,
-      gradeRange: `${startGrade} to ${endGrade}`,
-      sectionsCount,
-      schoolSettings: {
-        startTime: startTimeStr,
-        durationMins,
-        totalPeriodsPerDay,
-        saturdayType,
-        shortBreakAfter,
-        lunchBreakAfter,
-      },
-      message: `Successfully processed ${fileName}. Created/updated ${savedCount} timetable slots with dynamic school bell timings.`,
+      teachersProcessed: teachersAssignedSet.size,
+      message: `Successfully processed ${fileName}. Extracted ${savedCount} timetable slots and assigned ${teachersAssignedSet.size} teachers!`,
     });
   } catch (error: any) {
     console.error('Bulk upload error:', error);

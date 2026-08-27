@@ -94,29 +94,29 @@ export async function POST(request: Request) {
       });
     }
 
-    if (cleanEmail === 'pilot@client.school' || cleanEmail === 'admin@dps.edu.in' || cleanEmail === 'dps_delhi') {
+    if (cleanEmail === 'pilot@client.school' || cleanEmail === 'admin@takshilaschool.edu' || cleanEmail === 'takshila_school') {
       return createLoginResponse({
-        id: '6a8bf21c3359da9c7c8a7b02',
-        name: 'DPS School Principal / Admin',
-        email: 'admin@dps.edu.in',
+        id: '60d5ecb8b5c9c22340000001',
+        name: 'Takshila School Principal / Admin',
+        email: 'admin@takshilaschool.edu',
         role: 'admin',
-        schoolId: '6a8bf21c3359da9c7c8a7b02',
-        schoolCode: 'DPS_DELHI',
-        schoolName: 'Delhi Public School (DPS)',
+        schoolId: '60d5ecb8b5c9c22340000001',
+        schoolCode: 'TAKSHILA2025',
+        schoolName: 'Takshila School',
       });
     }
 
-    if (cleanEmail === 'priya.math@dps.edu' || cleanEmail === 'priya.sharma@dps.edu.in' || cleanEmail === 'teacher@dps.edu.in') {
+    if (cleanEmail === 'megha.lohade@takshilaschool.edu' || cleanEmail === 'teacher@takshilaschool.edu') {
       return createLoginResponse({
-        id: '6a8bf21c3359da9c7c8a7b99',
-        name: 'Dr. Priya Sharma',
-        email: 'priya.sharma@dps.edu.in',
+        id: '60d5ecb8b5c9c22340000001',
+        name: 'Megha Lohade',
+        email: 'megha.lohade@takshilaschool.edu',
         role: 'teacher',
-        schoolId: '6a8bf21c3359da9c7c8a7b02',
-        schoolCode: 'DPS_DELHI',
-        schoolName: 'Delhi Public School (DPS)',
+        schoolId: '60d5ecb8b5c9c22340000001',
+        schoolCode: 'TAKSHILA2025',
+        schoolName: 'Takshila School',
         subject: 'Mathematics',
-        grades: '["Grade 9","Grade 10","Grade 11"]',
+        grades: '["Grade 3 Jasmine"]',
       });
     }
 

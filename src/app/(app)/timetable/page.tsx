@@ -45,11 +45,24 @@ interface Schedule {
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
-const SECTIONS = ['A', 'B', 'C'];
+const SECTIONS_BY_GRADE: Record<string, string[]> = {
+  'Grade 1': ['Sunflower', 'Lotus', 'Jasmine'],
+  'Grade 2': ['Lotus', 'Jasmine', 'Sunflower'],
+  'Grade 3': ['Jasmine', 'Sunflower', 'Lotus', 'Rose'],
+  'Grade 4': ['Lotus', 'Jasmine', 'Sunflower'],
+  'Grade 5': ['Sunflower', 'Jasmine', 'Lotus'],
+  'Grade 6': ['A', 'B', 'C'],
+  'Grade 7': ['A', 'B'],
+  'Grade 8': ['A', 'B'],
+  'Grade 9': ['A', 'B'],
+  'Grade 10': ['A', 'B'],
+  'Grade 11': ['A', 'B'],
+  'Grade 12': ['A', 'B'],
+};
 const ALL_SUBJECTS = [
-  'Mathematics', 'Science', 'English', 'Hindi', 'Social Science',
+  'Mathematics', 'Science', 'English', 'Hindi', 'Marathi', 'Social Science',
   'Physics', 'Chemistry', 'Biology', 'Computer Science',
-  'Physical Education', 'Art', 'Music', 'Free Period / Library'
+  'Physical Education', 'Art', 'Music', 'Robotics', 'Foreign Language', 'Knowledge Building', 'Value Education', 'Free Period / Library'
 ];
 
 interface PeriodItem {
@@ -60,16 +73,15 @@ interface PeriodItem {
 }
 
 const PERIODS: PeriodItem[] = [
-  { num: 1, time: '08:00 - 08:45' },
-  { num: 2, time: '08:45 - 09:30' },
-  { num: 'break1', label: 'Short Break', time: '09:30 - 09:45', isBreak: true },
-  { num: 3, time: '09:45 - 10:30' },
-  { num: 4, time: '10:30 - 11:15' },
-  { num: 'lunch', label: 'Lunch Recess', time: '11:15 - 11:45', isBreak: true },
-  { num: 5, time: '11:45 - 12:30' },
-  { num: 6, time: '12:30 - 01:15' },
-  { num: 7, time: '01:15 - 02:00' },
-  { num: 8, time: '02:00 - 02:45' },
+  { num: 1, time: '08:00 - 08:40' },
+  { num: 2, time: '08:40 - 09:20' },
+  { num: 3, time: '09:20 - 10:00' },
+  { num: 'break1', label: 'BREAK', time: '10:00 - 10:30', isBreak: true },
+  { num: 4, time: '10:30 - 11:10' },
+  { num: 5, time: '11:10 - 11:50' },
+  { num: 6, time: '11:50 - 12:30' },
+  { num: 7, time: '12:30 - 01:10' },
+  { num: 8, time: '01:10 - 01:45' },
 ];
 
 const getSubjectAccent = (subject: string) => {
@@ -317,8 +329,16 @@ export default function TimetablePage() {
           return;
         }
 
+        const schoolRes = await fetch('/api/teacher/me').catch(() => null);
+        let schoolId = '60d5ecb8b5c9c22340000001';
+        if (schoolRes && schoolRes.ok) {
+          const sData = await schoolRes.json();
+          if (sData?.schoolId) schoolId = sData.schoolId;
+        }
+
         const formData = new FormData();
         formData.append('file', selectedUploadFile);
+        formData.append('schoolId', schoolId);
         formData.append('startTime', studioSettings.startTime);
         formData.append('periodDuration', studioSettings.periodDuration);
         formData.append('totalPeriods', studioSettings.totalPeriods);
@@ -727,7 +747,7 @@ const isDemoSchool = () => {
           </span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-[#64748B] font-semibold">Section:</span>
-            {SECTIONS.map((sec) => (
+            {(SECTIONS_BY_GRADE[selectedGrade] || ['A', 'B', 'C']).map((sec) => (
               <Button
                 key={sec}
                 size="sm"
@@ -735,7 +755,7 @@ const isDemoSchool = () => {
                 onClick={() => setSelectedSection(sec)}
                 className={`h-7 px-3 text-xs font-extrabold rounded-lg ${selectedSection === sec ? 'bg-[#2563EB] text-white border-none shadow-xs' : 'text-slate-700 bg-white border-[#E2E8F0]'}`}
               >
-                Section {sec}
+                {sec.length > 2 ? sec : `Section ${sec}`}
               </Button>
             ))}
           </div>
@@ -748,7 +768,13 @@ const isDemoSchool = () => {
               key={g}
               size="sm"
               variant={selectedGrade === g ? 'default' : 'ghost'}
-              onClick={() => setSelectedGrade(g)}
+              onClick={() => {
+                setSelectedGrade(g);
+                const validSecs = SECTIONS_BY_GRADE[g] || ['A'];
+                if (!validSecs.includes(selectedSection)) {
+                  setSelectedSection(validSecs[0]);
+                }
+              }}
               className={`h-8 px-3.5 text-xs shrink-0 font-extrabold rounded-lg ${selectedGrade === g ? 'bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white shadow-md border-none' : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200'}`}
             >
               {g}
@@ -761,7 +787,7 @@ const isDemoSchool = () => {
       <Card className="border-[#E2E8F0] shadow-xs overflow-hidden bg-white rounded-2xl" id="printable-timetable-container">
         {/* Printable Official Header Banner — Visible ONLY during print */}
         <div className="hidden print:block p-4 border-b border-slate-300 text-center bg-slate-50">
-          <h1 className="text-xl font-black text-slate-900 uppercase tracking-wide">Delhi Public School — Master Timetable</h1>
+          <h1 className="text-xl font-black text-slate-900 uppercase tracking-wide">Takshila School — Master Timetable</h1>
           <h2 className="text-base font-bold text-[#0F2747] mt-0.5">Class Weekly Schedule: {selectedGrade} — Section {selectedSection}</h2>
           <p className="text-xs text-slate-600 mt-0.5">Clash-Free Academic Timetable &middot; Generated via Smart Calendar ERP OS</p>
         </div>
@@ -1163,7 +1189,7 @@ const isDemoSchool = () => {
                   <Clock className="w-4 h-4 text-blue-700" />
                   School Hours & Period Counts
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                   <div className="space-y-1">
                     <Label className="text-[11px] font-semibold text-slate-600">Start Time</Label>
                     <Input
@@ -1183,7 +1209,7 @@ const isDemoSchool = () => {
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">Periods / Day</Label>
+                    <Label className="text-[11px] font-semibold text-slate-600">Mon-Fri Periods</Label>
                     <Select
                       value={studioSettings.totalPeriods}
                       onValueChange={(val) => setStudioSettings({ ...studioSettings, totalPeriods: val })}
@@ -1200,33 +1226,73 @@ const isDemoSchool = () => {
                       </SelectContent>
                     </Select>
                   </div>
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-slate-600">Saturday Periods</Label>
+                    <Select
+                      value={studioSettings.saturdayPeriods}
+                      onValueChange={(val) => setStudioSettings({ ...studioSettings, saturdayPeriods: val })}
+                    >
+                      <SelectTrigger className="h-8 text-xs font-bold text-blue-900 border-blue-200 bg-blue-50">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="4">4 Periods on Saturday</SelectItem>
+                        <SelectItem value="5">5 Periods (45 Total Weekly)</SelectItem>
+                        <SelectItem value="6">6 Periods on Saturday</SelectItem>
+                        <SelectItem value="8">8 Periods (Full Day)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
 
+              {/* Class Scope Selector */}
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
                 <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                  <Utensils className="w-4 h-4 text-blue-700" />
-                  Saturday Rules & Break Placement
+                  <Building2 className="w-4 h-4 text-blue-700" />
+                  Target Class Grade Scope
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">Saturday Schedule</Label>
+                    <Label className="text-[11px] font-semibold text-slate-600">From Grade</Label>
                     <Select
-                      value={studioSettings.saturdayType}
-                      onValueChange={(val) => setStudioSettings({ ...studioSettings, saturdayType: val })}
+                      value={studioSettings.startGrade}
+                      onValueChange={(val) => setStudioSettings({ ...studioSettings, startGrade: val })}
                     >
                       <SelectTrigger className="h-8 text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="half">Half Day (Max 4 Periods)</SelectItem>
-                        <SelectItem value="full">Full Day (All Periods)</SelectItem>
-                        <SelectItem value="off">Off / Holiday (No Classes)</SelectItem>
+                        {GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">Short Break After</Label>
+                    <Label className="text-[11px] font-semibold text-slate-600">To Grade</Label>
+                    <Select
+                      value={studioSettings.endGrade}
+                      onValueChange={(val) => setStudioSettings({ ...studioSettings, endGrade: val })}
+                    >
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom Rules & Break Placement */}
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
+                  <Utensils className="w-4 h-4 text-blue-700" />
+                  Pedagogical Rules & Break Placement
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-slate-600">Break Placement</Label>
                     <Select
                       value={studioSettings.shortBreakAfter}
                       onValueChange={(val) => setStudioSettings({ ...studioSettings, shortBreakAfter: val })}
@@ -1235,27 +1301,17 @@ const isDemoSchool = () => {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="1">After Period 1</SelectItem>
-                        <SelectItem value="2">After Period 2 (Standard)</SelectItem>
-                        <SelectItem value="3">After Period 3</SelectItem>
+                        <SelectItem value="2">After Period 2 (09:20)</SelectItem>
+                        <SelectItem value="3">After Period 3 (10:00 - Standard)</SelectItem>
+                        <SelectItem value="4">After Period 4</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">Lunch Break After</Label>
-                    <Select
-                      value={studioSettings.lunchBreakAfter}
-                      onValueChange={(val) => setStudioSettings({ ...studioSettings, lunchBreakAfter: val })}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="3">After Period 3</SelectItem>
-                        <SelectItem value="4">After Period 4 (Standard)</SelectItem>
-                        <SelectItem value="5">After Period 5</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="flex flex-col justify-center space-y-1 bg-white p-2.5 rounded-lg border border-slate-200">
+                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
+                      <Trophy className="w-3.5 h-3.5 text-teal-600" /> Wednesday PT & Sports Rule
+                    </span>
+                    <span className="text-[10px] text-slate-500">Fixed Wed P1 PT + Afternoon Sports for Grade 3–5</span>
                   </div>
                 </div>
               </div>

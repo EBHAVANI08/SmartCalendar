@@ -616,28 +616,28 @@ export default function LoginPage() {
                 <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between font-bold text-slate-200 text-xs">
                     <span>⚡ Select Role for 1-Click Login:</span>
-                    <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[9px] font-mono">DPS Delhi Demo</Badge>
+                    <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[9px] font-mono">Takshila School</Badge>
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-xs">
                     {/* SuperAdmin Button */}
                     <button
                       type="button"
                       onClick={async () => {
-                        setEmail('superadmin@dps.edu.in');
-                        setPassword('SuperAdmin2026');
+                        setEmail('admin@takshilaschool.edu');
+                        setPassword('admin123');
                         setLoading(true);
                         try {
                           const res = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'superadmin@dps.edu.in', password: 'SuperAdmin2026' }),
+                            body: JSON.stringify({ email: 'admin@takshilaschool.edu', password: 'admin123' }),
                           });
                           const data = await res.json();
                           if (res.ok && data?.success) {
-                            localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'superadmin' }));
+                            localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'admin' }));
                             sessionStorage.setItem('sc_user', JSON.stringify(data.user));
                             if (data.token) sessionStorage.setItem('sc_token', data.token);
-                            toast({ title: 'SuperAdmin Logged In', description: 'Accessing Trust Command Center' });
+                            toast({ title: 'School Admin Logged In', description: 'Takshila School Command Center' });
                             router.push('/dashboard');
                           }
                         } catch {
@@ -648,29 +648,29 @@ export default function LoginPage() {
                       }}
                       className="p-2.5 rounded-xl bg-purple-950/40 border border-purple-500/30 hover:border-purple-400 text-left transition-all group cursor-pointer"
                     >
-                      <span className="text-purple-300 font-extrabold text-[11px] block truncate group-hover:text-purple-200">SuperAdmin</span>
-                      <span className="text-[9px] text-purple-400/80 block font-mono">Trust Center</span>
+                      <span className="text-purple-300 font-extrabold text-[11px] block truncate group-hover:text-purple-200">School Admin</span>
+                      <span className="text-[9px] text-purple-400/80 block font-mono">Takshila Admin</span>
                     </button>
 
-                    {/* Admin Button */}
+                    {/* Pilot Admin Button */}
                     <button
                       type="button"
                       onClick={async () => {
-                        setEmail('admin@dps.edu.in');
+                        setEmail('pilot@client.school');
                         setPassword('ClientPilot2026');
                         setLoading(true);
                         try {
                           const res = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'admin@dps.edu.in', password: 'ClientPilot2026' }),
+                            body: JSON.stringify({ email: 'pilot@client.school', password: 'ClientPilot2026' }),
                           });
                           const data = await res.json();
                           if (res.ok && data?.success) {
                             localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'admin' }));
                             sessionStorage.setItem('sc_user', JSON.stringify(data.user));
                             if (data.token) sessionStorage.setItem('sc_token', data.token);
-                            toast({ title: 'Admin Logged In', description: 'Logged in as DPS Principal' });
+                            toast({ title: 'Pilot Admin Logged In', description: 'Takshila School Portal' });
                             router.push('/dashboard');
                           }
                         } catch {
@@ -681,7 +681,7 @@ export default function LoginPage() {
                       }}
                       className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/30 hover:border-blue-400 text-left transition-all group cursor-pointer"
                     >
-                      <span className="text-blue-300 font-extrabold text-[11px] block truncate group-hover:text-blue-200">Admin</span>
+                      <span className="text-blue-300 font-extrabold text-[11px] block truncate group-hover:text-blue-200">Pilot Admin</span>
                       <span className="text-[9px] text-blue-400/80 block font-mono">Principal</span>
                     </button>
 
@@ -689,21 +689,21 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={async () => {
-                        setEmail('priya.sharma@dps.edu.in');
+                        setEmail('megha.lohade@takshilaschool.edu');
                         setPassword('teacher123');
                         setLoading(true);
                         try {
                           const res = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'priya.sharma@dps.edu.in', password: 'teacher123' }),
+                            body: JSON.stringify({ email: 'megha.lohade@takshilaschool.edu', password: 'teacher123' }),
                           });
                           const data = await res.json();
                           if (res.ok && data?.success) {
                             localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'teacher' }));
                             sessionStorage.setItem('sc_user', JSON.stringify(data.user));
                             if (data.token) sessionStorage.setItem('sc_token', data.token);
-                            toast({ title: 'Teacher Logged In', description: 'Logged in as Dr. Priya Sharma' });
+                            toast({ title: 'Teacher Logged In', description: 'Logged in as Megha Lohade (3-Jasmine CT)' });
                             router.push('/dashboard');
                           }
                         } catch {
@@ -715,7 +715,7 @@ export default function LoginPage() {
                       className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 hover:border-emerald-400 text-left transition-all group cursor-pointer"
                     >
                       <span className="text-emerald-300 font-extrabold text-[11px] block truncate group-hover:text-emerald-200">Teacher</span>
-                      <span className="text-[9px] text-emerald-400/80 block font-mono">Faculty (Math)</span>
+                      <span className="text-[9px] text-emerald-400/80 block font-mono">Class Teacher</span>
                     </button>
                   </div>
                 </div>
