@@ -1357,17 +1357,31 @@ const isDemoSchool = () => {
                       </Select>
                     </div>
                   )}
-                  <div className="flex items-center gap-2 p-2.5 bg-white rounded-lg border border-emerald-200 text-emerald-800">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                    <div>
-                      <p className="text-[10px] font-bold text-emerald-900">Weekly Total</p>
-                      <p className="text-[10px] text-emerald-700">
-                        {studioSettings.saturdayType === 'off'
-                          ? `${parseInt(studioSettings.totalPeriods) * 5} periods/week (Mon–Fri only)`
-                          : `${parseInt(studioSettings.totalPeriods) * 5 + parseInt(studioSettings.saturdayPeriods)} periods/week`}
-                      </p>
-                    </div>
-                  </div>
+                  {(() => {
+                    const total = studioSettings.saturdayType === 'off'
+                      ? parseInt(studioSettings.totalPeriods) * 5
+                      : parseInt(studioSettings.totalPeriods) * 5 + parseInt(studioSettings.saturdayPeriods);
+                    const isIdeal = total === 45;
+                    return (
+                      <div className={`flex items-center gap-2 p-2.5 rounded-lg border transition-all ${isIdeal
+                        ? 'bg-emerald-50 border-emerald-400 text-emerald-800'
+                        : 'bg-red-50 border-red-400 text-red-800'}`}>
+                        {isIdeal
+                          ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          : <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />}
+                        <div>
+                          <p className={`text-[10px] font-bold ${isIdeal ? 'text-emerald-900' : 'text-red-900'}`}>
+                            Weekly Total — {total} periods/week
+                          </p>
+                          <p className={`text-[10px] ${isIdeal ? 'text-emerald-700' : 'text-red-600 font-semibold'}`}>
+                            {isIdeal
+                              ? '✓ Perfect — matches Takshila 45-period standard'
+                              : `⚠ Adjust to reach 45 periods/week (${45 - total > 0 ? `+${45 - total} needed` : `${total - 45} excess`})`}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
