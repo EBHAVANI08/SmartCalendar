@@ -36,12 +36,15 @@ export async function POST(req: NextRequest) {
     // Resolve the real schoolId from DB (same pattern as teachers, schedules APIs)
     let schoolId = await getTenantSchoolId(req);
     if (!schoolId) {
-      // Absolute fallback: grab first school from DB
-      const firstSchool = await db.school.findFirst({ select: { id: true } });
-      schoolId = firstSchool?.id || null;
+      try {
+        const firstSchool = await db.school.findFirst({ select: { id: true } });
+        schoolId = firstSchool?.id || null;
+      } catch (dbErr: any) {
+        return NextResponse.json({ success: false, error: `Database connection failed: ${dbErr?.message || 'Check DATABASE_URL env variable on Render.'}` }, { status: 503 });
+      }
     }
     if (!schoolId) {
-      return NextResponse.json({ success: false, error: 'No school found in database. Please seed school data first.' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'No school found. Please seed school data first via POST /api/seed.' }, { status: 400 });
     }
 
     const body = await req.json();

@@ -356,14 +356,29 @@ export async function POST(request: Request) {
     const formData = await request.formData();
     const file = formData.get('file') as File | null;
 
-    // Auto-resolve schoolId from DB — no tenant ID required from client
+    // Auto-resolve schoolId — wrap in try-catch so missing DATABASE_URL gives a clear error
     let schoolId = String(formData.get('schoolId') || '').trim();
     if (!schoolId || schoolId === 'null' || schoolId === 'undefined' || schoolId.length < 20) {
-      const firstSchool = await db.school.findFirst({ select: { id: true, name: true } });
-      if (!firstSchool) {
-        return NextResponse.json({ error: 'No school found in database. Please run POST /api/seed first.' }, { status: 400 });
+      try {
+        const firstSchool = await db.school.findFirst({ select: { id: true, name: true } });
+        if (firstSchool) {
+          schoolId = firstSchool.id;
+          console.log(`[BULK-UPLOAD] Auto-resolved schoolId: ${schoolId} (${firstSchool.name})`);
+        } else {
+          return NextResponse.json({
+            error: 'No school found in database. Please visit /api/seed to initialize school data first.',
+          }, { status: 400 });
+        }
+      } catch (dbErr: any) {
+        // DATABASE_URL not set or Prisma can't connect
+        const isUrlError = dbErr?.message?.includes('DATABASE_URL') || dbErr?.message?.includes('datasource') || dbErr?.message?.includes('protocol');
+        return NextResponse.json({
+          error: isUrlError
+            ? '⚠️ Database not configured on this server. Please add DATABASE_URL environment variable in Render → Environment Settings, then redeploy.'
+            : `Database connection failed: ${dbErr?.message || 'Unknown error'}`,
+          fix: 'Go to Render Dashboard → Your Service → Environment → Add DATABASE_URL = your MongoDB Atlas connection string',
+        }, { status: 503 });
       }
-      schoolId = firstSchool.id;
     }
 
     const startTimeStr = String(formData.get('startTime') || '08:00');
