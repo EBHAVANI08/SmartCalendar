@@ -236,8 +236,16 @@ export default function TimetablePage() {
   const [teachersList, setTeachersList] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // isDemo: start true on SSR so server + client render same content (no hydration mismatch)
+  const [isDemo, setIsDemo] = useState(true);
+
   // Dynamic Period Timings State
   const [activePeriods, setActivePeriods] = useState<PeriodItem[]>(PERIODS);
+
+  // Resolve isDemo on client-side only (after hydration) to avoid SSR mismatch
+  useEffect(() => {
+    setIsDemo(isDemoSchool());
+  }, []);
 
   // Unified Master Studio Modal States
   const [studioOpen, setStudioOpen] = useState(false);
@@ -683,7 +691,7 @@ const isDemoSchool = () => {
       };
     }
 
-    if (isDemoSchool() && fallback) return { ...fallback, teacherId: undefined };
+    if (isDemo && fallback) return { ...fallback, teacherId: undefined };
     return { subject: 'Unassigned Period', teacher: '—', room: '—', teacherId: undefined };
   };
 
