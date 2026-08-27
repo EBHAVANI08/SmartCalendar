@@ -1184,44 +1184,34 @@ const isDemoSchool = () => {
 
           {/* ── Step 1: Day & Period Timings ── */}
           {studioStep === 1 && (
-            <div className="space-y-4 py-2">
+            <div className="space-y-3.5 py-1">
               <p className="text-xs text-slate-500 leading-relaxed">
-                Configure your school's daily bell schedule, period duration, Saturday rules, and break allocations for master timetable creation.
+                Configure your school's daily bell schedule, period duration, pedagogical rules, and Saturday settings for master timetable creation.
               </p>
 
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-blue-700" />
-                  School Hours & Period Counts
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+              {/* ─── Section 1: School Hours (Mon-Fri) ─── */}
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 bg-gradient-to-r from-blue-700 to-indigo-800 flex items-center gap-2">
+                  <Clock className="w-3.5 h-3.5 text-white/80" />
+                  <span className="text-[11px] font-bold text-white uppercase tracking-wider">Mon–Fri School Hours & Periods</span>
+                </div>
+                <div className="p-4 bg-slate-50 grid grid-cols-2 sm:grid-cols-3 gap-3">
                   <div className="space-y-1">
                     <Label className="text-[11px] font-semibold text-slate-600">Start Time</Label>
-                    <Input
-                      type="time"
-                      value={studioSettings.startTime}
+                    <Input type="time" value={studioSettings.startTime}
                       onChange={(e) => setStudioSettings({ ...studioSettings, startTime: e.target.value })}
-                      className="h-8 text-xs font-mono"
-                    />
+                      className="h-8 text-xs font-mono bg-white" />
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[11px] font-semibold text-slate-600">End Time</Label>
-                    <Input
-                      type="time"
-                      value={studioSettings.endTime}
+                    <Input type="time" value={studioSettings.endTime}
                       onChange={(e) => setStudioSettings({ ...studioSettings, endTime: e.target.value })}
-                      className="h-8 text-xs font-mono"
-                    />
+                      className="h-8 text-xs font-mono bg-white" />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">Mon-Fri Periods</Label>
-                    <Select
-                      value={studioSettings.totalPeriods}
-                      onValueChange={(val) => setStudioSettings({ ...studioSettings, totalPeriods: val })}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
+                    <Label className="text-[11px] font-semibold text-slate-600">Periods Per Day</Label>
+                    <Select value={studioSettings.totalPeriods} onValueChange={(val) => setStudioSettings({ ...studioSettings, totalPeriods: val })}>
+                      <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="6">6 Periods / Day</SelectItem>
                         <SelectItem value="7">7 Periods / Day</SelectItem>
@@ -1231,177 +1221,164 @@ const isDemoSchool = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">Saturday Periods</Label>
-                    <Select
-                      value={studioSettings.saturdayPeriods}
-                      onValueChange={(val) => setStudioSettings({ ...studioSettings, saturdayPeriods: val })}
-                    >
-                      <SelectTrigger className="h-8 text-xs font-bold text-blue-900 border-blue-200 bg-blue-50">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="4">4 Periods on Saturday</SelectItem>
-                        <SelectItem value="5">5 Periods (45 Total Weekly)</SelectItem>
-                        <SelectItem value="6">6 Periods on Saturday</SelectItem>
-                        <SelectItem value="8">8 Periods (Full Day)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
                 </div>
               </div>
 
-              {/* Class Scope Selector */}
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                  <Building2 className="w-4 h-4 text-blue-700" />
-                  Target Class Grade Scope
-                </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {/* ─── Section 2: Target Grade Scope ─── */}
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 bg-gradient-to-r from-indigo-700 to-slate-800 flex items-center gap-2">
+                  <Building2 className="w-3.5 h-3.5 text-white/80" />
+                  <span className="text-[11px] font-bold text-white uppercase tracking-wider">Target Class Grade Scope</span>
+                </div>
+                <div className="p-4 bg-slate-50 grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <Label className="text-[11px] font-semibold text-slate-600">From Grade</Label>
-                    <Select
-                      value={studioSettings.startGrade}
-                      onValueChange={(val) => setStudioSettings({ ...studioSettings, startGrade: val })}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                      </SelectContent>
+                    <Select value={studioSettings.startGrade} onValueChange={(val) => setStudioSettings({ ...studioSettings, startGrade: val })}>
+                      <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent>{GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[11px] font-semibold text-slate-600">To Grade</Label>
-                    <Select
-                      value={studioSettings.endGrade}
-                      onValueChange={(val) => setStudioSettings({ ...studioSettings, endGrade: val })}
-                    >
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}
-                      </SelectContent>
+                    <Select value={studioSettings.endGrade} onValueChange={(val) => setStudioSettings({ ...studioSettings, endGrade: val })}>
+                      <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
+                      <SelectContent>{GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                 </div>
               </div>
 
-              {/* Custom Rules & Pedagogical Constraints Matrix */}
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center justify-between">
+              {/* ─── Section 3: AI Pedagogical Rules ─── */}
+              <div className="rounded-xl border border-slate-200 overflow-hidden">
+                <div className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 flex items-center justify-between">
                   <span className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-amber-500" />
-                    AI Pedagogical Rules & Custom Constraints
+                    <Sparkles className="w-3.5 h-3.5 text-white/90" />
+                    <span className="text-[11px] font-bold text-white uppercase tracking-wider">AI Pedagogical Rules & Constraints</span>
                   </span>
-                  <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-800 border-blue-200 font-bold">
-                    Active Rules Config
-                  </Badge>
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                  {/* Rule 1 Toggle */}
+                  <span className="text-[9px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full border border-white/30">Active Config</span>
+                </div>
+                <div className="p-4 bg-slate-50 grid grid-cols-1 sm:grid-cols-2 gap-2">
                   <label className="flex items-start gap-2.5 p-2.5 bg-white rounded-lg border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={studioSettings.preventConsecutiveDouble}
+                    <input type="checkbox" checked={studioSettings.preventConsecutiveDouble}
                       onChange={(e) => setStudioSettings({ ...studioSettings, preventConsecutiveDouble: e.target.checked })}
-                      className="mt-0.5 w-4 h-4 text-blue-600 rounded cursor-pointer accent-blue-600"
-                    />
+                      className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0" />
                     <div>
-                      <span className="text-[11px] font-bold text-slate-800 block">Rule 1: Non-Consecutive Double Periods</span>
-                      <span className="text-[10px] text-slate-500">Same subject 2 periods in a day are separated</span>
+                      <span className="text-[11px] font-bold text-slate-800 block">Rule 1: Non-Consecutive Doubles</span>
+                      <span className="text-[10px] text-slate-500">Same subject max 2×/day, never back-to-back</span>
                     </div>
                   </label>
-
-                  {/* Rule 2 & 3 Toggle */}
                   <label className="flex items-start gap-2.5 p-2.5 bg-white rounded-lg border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={studioSettings.enableWedPtSports}
+                    <input type="checkbox" checked={studioSettings.enableWedPtSports}
                       onChange={(e) => setStudioSettings({ ...studioSettings, enableWedPtSports: e.target.checked })}
-                      className="mt-0.5 w-4 h-4 text-blue-600 rounded cursor-pointer accent-blue-600"
-                    />
+                      className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0" />
                     <div>
                       <span className="text-[11px] font-bold text-slate-800 block">Rule 2 & 3: Wednesday PT & Sports</span>
-                      <span className="text-[10px] text-slate-500">Wed P1 PT + Afternoon Sports (Grade 3–5)</span>
+                      <span className="text-[10px] text-slate-500">Wed P1 = PT + Afternoon Sports (Grade 3–5)</span>
                     </div>
                   </label>
-
-                  {/* Rule 4 Toggle */}
                   <label className="flex items-start gap-2.5 p-2.5 bg-white rounded-lg border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={studioSettings.anchorClassTeacherP1}
+                    <input type="checkbox" checked={studioSettings.anchorClassTeacherP1}
                       onChange={(e) => setStudioSettings({ ...studioSettings, anchorClassTeacherP1: e.target.checked })}
-                      className="mt-0.5 w-4 h-4 text-blue-600 rounded cursor-pointer accent-blue-600"
-                    />
+                      className="mt-0.5 w-4 h-4 accent-blue-600 cursor-pointer shrink-0" />
                     <div>
                       <span className="text-[11px] font-bold text-slate-800 block">Rule 4: Period 1 Class Teacher</span>
                       <span className="text-[10px] text-slate-500">Anchor Period 1 to Class Teacher (Grade 3–8)</span>
                     </div>
                   </label>
-
-                  {/* Break Placement Selector */}
                   <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1">
-                    <Label className="text-[11px] font-bold text-slate-800">Recess Break Placement</Label>
-                    <Select
-                      value={studioSettings.shortBreakAfter}
-                      onValueChange={(val) => setStudioSettings({ ...studioSettings, shortBreakAfter: val })}
-                    >
-                      <SelectTrigger className="h-7 text-xs border-slate-200">
-                        <SelectValue />
-                      </SelectTrigger>
+                    <Label className="text-[11px] font-bold text-slate-800">Recess Break After</Label>
+                    <Select value={studioSettings.shortBreakAfter} onValueChange={(val) => setStudioSettings({ ...studioSettings, shortBreakAfter: val })}>
+                      <SelectTrigger className="h-7 text-xs border-slate-200 bg-white"><SelectValue /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value="2">After Period 2 (09:20)</SelectItem>
-                        <SelectItem value="3">After Period 3 (10:00 - Standard)</SelectItem>
+                        <SelectItem value="3">After Period 3 (10:00 — Standard)</SelectItem>
                         <SelectItem value="4">After Period 4</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                 </div>
 
-                {/* Custom AI Directives Prompt Area */}
-                <div className="pt-1 space-y-1">
+                {/* Custom AI prompt */}
+                <div className="px-4 pb-4 bg-slate-50 space-y-1.5">
                   <Label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
-                    <span>Custom AI School Directives & Prompt (Optional)</span>
-                    <span className="text-[10px] text-slate-400 font-normal">Natural language AI instructions</span>
+                    <span>Custom AI School Directives (Optional)</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Natural language</span>
                   </Label>
-                  <textarea
-                    rows={2}
-                    value={studioSettings.customPrompt}
+                  <textarea rows={2} value={studioSettings.customPrompt}
                     onChange={(e) => setStudioSettings({ ...studioSettings, customPrompt: e.target.value })}
-                    placeholder='e.g. "Assign Morning Assembly on Monday Period 1. Keep Robotics in afternoon slots. Do not schedule heavy core subjects right after lunch."'
-                    className="w-full p-2.5 text-xs rounded-lg border border-slate-200 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 font-sans resize-none"
-                  />
+                    placeholder='e.g. "Morning Assembly on Monday P1. Robotics only in afternoons. No heavy subjects after lunch."'
+                    className="w-full p-2.5 text-xs rounded-lg border border-slate-200 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none font-sans" />
                 </div>
               </div>
 
-              <DialogFooter className="pt-2 flex justify-between items-center">
+              {/* ─── Section 4: Saturday Settings (bottom, highlighted) ─── */}
+              <div className="rounded-xl border-2 border-emerald-300 overflow-hidden shadow-sm">
+                <div className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Trophy className="w-3.5 h-3.5 text-white/90" />
+                    <span className="text-[11px] font-bold text-white uppercase tracking-wider">Saturday Schedule Settings</span>
+                  </span>
+                  <span className="text-[9px] font-bold bg-white/20 text-white px-2 py-0.5 rounded-full border border-white/30">
+                    {studioSettings.saturdayPeriods} Periods · {parseInt(studioSettings.totalPeriods) * 5 + parseInt(studioSettings.saturdayPeriods)} Total/Week
+                  </span>
+                </div>
+                <div className="p-4 bg-emerald-50 grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] font-semibold text-emerald-800">Saturday Mode</Label>
+                    <Select value={studioSettings.saturdayType} onValueChange={(val) => setStudioSettings({ ...studioSettings, saturdayType: val })}>
+                      <SelectTrigger className="h-8 text-xs bg-white border-emerald-200"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="half">Half Day (Short Saturday)</SelectItem>
+                        <SelectItem value="full">Full Day (Same as Mon–Fri)</SelectItem>
+                        <SelectItem value="off">No Saturday (5-Day Week)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {studioSettings.saturdayType !== 'off' && (
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-emerald-800">No. of Periods on Saturday</Label>
+                      <Select value={studioSettings.saturdayPeriods} onValueChange={(val) => setStudioSettings({ ...studioSettings, saturdayPeriods: val })}>
+                        <SelectTrigger className="h-8 text-xs bg-white border-emerald-200 font-bold text-emerald-900"><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="3">3 Periods</SelectItem>
+                          <SelectItem value="4">4 Periods</SelectItem>
+                          <SelectItem value="5">5 Periods (45 Total/Week ✓)</SelectItem>
+                          <SelectItem value="6">6 Periods</SelectItem>
+                          <SelectItem value="8">8 Periods (Full Day)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 p-2.5 bg-white rounded-lg border border-emerald-200 text-emerald-800">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <div>
+                      <p className="text-[10px] font-bold text-emerald-900">Weekly Total</p>
+                      <p className="text-[10px] text-emerald-700">
+                        {studioSettings.saturdayType === 'off'
+                          ? `${parseInt(studioSettings.totalPeriods) * 5} periods/week (Mon–Fri only)`
+                          : `${parseInt(studioSettings.totalPeriods) * 5 + parseInt(studioSettings.saturdayPeriods)} periods/week`}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <DialogFooter className="pt-1 flex justify-between items-center">
                 <Button variant="outline" onClick={() => setStudioOpen(false)}>Cancel</Button>
                 <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      toast({
-                        title: 'Bell Schedule Timings Updated!',
-                        description: `Saved Start: ${studioSettings.startTime}, End: ${studioSettings.endTime}, Periods: ${studioSettings.totalPeriods}/day. Timings updated on master grid!`,
-                      });
-                      setStudioOpen(false);
-                    }}
-                    className="border-blue-300 text-blue-900 bg-blue-50 hover:bg-blue-100 font-bold"
-                  >
+                  <Button variant="outline"
+                    onClick={() => { toast({ title: 'Bell Schedule Timings Saved!', description: `Start: ${studioSettings.startTime}, End: ${studioSettings.endTime}, ${studioSettings.totalPeriods} periods/day.` }); setStudioOpen(false); }}
+                    className="border-blue-300 text-blue-900 bg-blue-50 hover:bg-blue-100 font-bold text-xs">
                     Save & Apply Timings
                   </Button>
-                  <Button onClick={() => setStudioStep(2)} className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 shadow-md">
+                  <Button onClick={() => setStudioStep(2)} className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 shadow-md text-xs">
                     Next: Creation Mode <ArrowRight className="w-4 h-4" />
                   </Button>
                 </div>
               </DialogFooter>
             </div>
           )}
+
 
           {/* ── Step 2: Creation Mode Selection (Bulk Document Upload vs AI Generator) ── */}
           {studioStep === 2 && (
