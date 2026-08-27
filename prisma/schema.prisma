@@ -9,16 +9,29 @@ datasource db {
 }
 
 model School {
-  id           String              @id @default(auto()) @map("_id") @db.ObjectId
-  name         String
-  code         String              @unique
-  email        String              @unique
-  password     String              @default("school123")
-  createdAt    DateTime            @default(now())
-  updatedAt    DateTime            @updatedAt
-  teachers     Teacher[]
-  schedules    Schedule[]
-  featureFlags SchoolFeatureFlags?
+  id            String              @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  code          String              @unique
+  email         String              @unique
+  password      String              @default("school123")
+  status        String              @default("active") // active | suspended | cancelled
+  contactName   String?
+  phone         String?
+  notes         String?
+  includedSeats Int                 @default(5)
+  extraSeats    Int                 @default(0)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  teachers      Teacher[]
+  schedules     Schedule[]
+  featureFlags  SchoolFeatureFlags?
+  subscriptions Subscription[]
+  payments      Payment[]
+  invoices      Invoice[]
+  couponRedemptions CouponRedemption[]
+  members       WorkspaceMember[]
+  tickets       SupportTicket[]
+  messages      TenantMessage[]
 }
 
 model Teacher {
@@ -741,4 +754,255 @@ model SubstituteReservation {
 
   @@unique([schoolId, teacherId, date, period])
   @@index([schoolId, status, responseDueAt])
+}
+
+// ─── Application Owner (SuperAdmin) SaaS models ───
+
+model Plan {
+  id               String         @id @default(auto()) @map("_id") @db.ObjectId
+  name             String         @unique
+  displayName      String
+  description      String?
+  priceMonthly     Float          @default(0)
+  priceYearly      Float          @default(0)
+  currency         String         @default("INR")
+  maxTeachers      Int            @default(50)
+  maxGrades        Int            @default(12)
+  maxPeriodsPerDay Int            @default(8)
+  features         String         @default("[]")
+  isActive         Boolean        @default(true)
+  sortOrder        Int            @default(0)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  subscriptions    Subscription[]
+}
+
+model Coupon {
+  id             String             @id @default(auto()) @map("_id") @db.ObjectId
+  code           String             @unique
+  description    String?
+  discountType   String             @default("percent") // percent | fixed
+  discountValue  Float
+  currency       String             @default("INR")
+  maxRedemptions Int?
+  usedCount      Int                @default(0)
+  minAmount      Float              @default(0)
+  appliesToPlan  String?
+  startsAt       DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean            @default(true)
+  createdBy      String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+  redemptions    CouponRedemption[]
+}
+
+model CouponRedemption {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  couponId  String   @db.ObjectId
+  schoolId  String   @db.ObjectId
+  paymentId String?
+  discount  Float
+  createdAt DateTime @default(now())
+  coupon    Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([couponId, schoolId])
+}
+
+model Subscription {
+  id                 String    @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId           String    @db.ObjectId
+  planId             String    @db.ObjectId
+  status             String    @default("trial") // trial | active | past_due | cancelled | paused
+  billingCycle       String    @default("monthly") // monthly | yearly
+  amount             Float
+  currency           String    @default("INR")
+  couponCode         String?
+  startedAt          DateTime  @default(now())
+  currentPeriodStart DateTime  @default(now())
+  currentPeriodEnd   DateTime
+  cancelledAt        DateTime?
+  notes              String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  school             School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  plan               Plan      @relation(fields: [planId], references: [id])
+
+  @@index([schoolId, status])
+}
+
+model Invoice {
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId       String    @db.ObjectId
+  subscriptionId String?
+  number         String    @unique
+  amount         Float
+  discount       Float     @default(0)
+  tax            Float     @default(0)
+  total          Float
+  currency       String    @default("INR")
+  status         String    @default("issued") // draft | issued | paid | overdue | void
+  dueDate        DateTime?
+  paidAt         DateTime?
+  couponCode     String?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  school         School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  payments       Payment[]
+
+  @@index([schoolId, status])
+}
+
+model Payment {
+  id        String    @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId  String    @db.ObjectId
+  invoiceId String?   @db.ObjectId
+  amount    Float
+  currency  String    @default("INR")
+  method    String    @default("manual") // manual | upi | bank | card | razorpay | stripe
+  status    String    @default("completed") // pending | completed | failed | refunded
+  reference String?
+  couponCode String?
+  discount  Float     @default(0)
+  notes     String?
+  paidAt    DateTime  @default(now())
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  school    School    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  invoice   Invoice?  @relation(fields: [invoiceId], references: [id])
+
+  @@index([schoolId, status, paidAt])
+}
+
+model PlatformAuditLog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  actorEmail String
+  actorRole  String   @default("superadmin")
+  action     String
+  entityType String
+  entityId   String?
+  details    String?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, createdAt])
+}
+
+model WebsiteSettings {
+  id                     String   @id @default(auto()) @map("_id") @db.ObjectId
+  key                    String   @unique @default("default")
+  siteName               String   @default("AI Smart Calendar")
+  tagline                String   @default("The Intelligent Operating System for Modern Schools")
+  heroBadge              String   @default("Next-Generation AI Timetable & Substitution OS · NEP 2020 Compliant")
+  heroTitle              String   @default("The Intelligent Operating System for Modern Schools")
+  heroSubtitle           String   @default("Automate clash-free master timetables in 60 seconds, detect teacher absences via Biometric IoT punches, and alert substitutes on WhatsApp in real time.")
+  ctaPrimary             String   @default("Start Free School Pilot")
+  ctaSecondary           String   @default("Try Demo School")
+  announcement           String?
+  announcementEnabled    Boolean  @default(false)
+  maintenanceMode        Boolean  @default(false)
+  seoTitle               String   @default("AI Smart Calendar — The Intelligent Operating System for Modern Schools")
+  seoDescription         String   @default("AI-powered school timetable generation, biometric absence detection, instant WhatsApp substitution alerts, and multi-tenant school management.")
+  seoKeywords            String   @default("AI School Timetable, Smart Calendar, Teacher Substitution, Biometric Attendance, School SaaS, NEP 2020")
+  canonicalUrl           String   @default("https://smartcalendar.app")
+  ogImageUrl             String?
+  heroImageUrl           String?
+  logoUrl                String?
+  gaMeasurementId        String?
+  gtmContainerId         String?
+  googleSiteVerification String?
+  googleAdsId            String?
+  indexable              Boolean  @default(true)
+  updatedAt              DateTime @updatedAt
+  createdAt              DateTime @default(now())
+}
+
+model WebsiteMedia {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  url       String
+  filename  String
+  alt       String?
+  kind      String   @default("gallery") // gallery | logo | banner | og
+  createdAt DateTime @default(now())
+}
+
+model OwnerEmployee {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String
+  email     String   @unique
+  password  String
+  role      String   @default("support") // owner | sales | support | demo | finance | engineer
+  modules   String   @default("[]")
+  status    String   @default("active") // active | disabled
+  isDemo    Boolean  @default(false)
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model WorkspaceMember {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId  String   @db.ObjectId
+  name      String
+  email     String   @unique
+  password  String   @default("member123")
+  role      String   @default("staff") // admin | principal | coordinator | teacher | staff | demo
+  modules   String   @default("[]")
+  status    String   @default("active") // active | disabled
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, status])
+}
+
+model SupportTicket {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId      String?       @db.ObjectId
+  createdById   String?
+  createdByName String
+  createdByEmail String
+  createdByRole String
+  category      String        @default("general") // billing | access | bug | demo | feature | general
+  subject       String
+  status        String        @default("open") // open | pending | resolved | closed
+  priority      String        @default("normal") // low | normal | high | urgent
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  school        School?       @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  replies       TicketReply[]
+
+  @@index([schoolId, status, createdAt])
+}
+
+model TicketReply {
+  id         String        @id @default(auto()) @map("_id") @db.ObjectId
+  ticketId   String        @db.ObjectId
+  authorName String
+  authorEmail String
+  authorRole String
+  body       String
+  createdAt  DateTime      @default(now())
+  ticket     SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+}
+
+model TenantMessage {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId  String   @db.ObjectId
+  direction String   @default("outbound") // outbound = owner->tenant, inbound = tenant->owner
+  channel   String   @default("message") // message | alert | announcement
+  subject   String
+  body      String
+  fromName  String
+  fromRole  String
+  fromEmail String?
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  @@index([schoolId, createdAt])
 }

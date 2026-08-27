@@ -7,37 +7,42 @@ import {
   LayoutDashboard, CalendarDays, Users, RefreshCw, BarChart3,
   BookOpen, Building2, GraduationCap, FileText, Settings,
   Fingerprint, ClipboardList, Brain, ChevronLeft, ChevronRight,
-  LogOut, Sparkles, Bell, Zap, X
+  LogOut, Sparkles, Zap, X, User
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
+import { hasModule, parseModules } from '@/lib/access';
 
 const navSections = [
   {
     title: 'Core Engine',
     items: [
-      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: null },
-      { href: '/timetable', label: 'Timetable Studio', icon: CalendarDays, badge: 'AI' },
-      { href: '/substitutions', label: 'Substitutions', icon: RefreshCw, badge: null },
-      { href: '/leaves', label: 'AI Leave Management', icon: ClipboardList, badge: 'AI' },
+      { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: null, module: 'dashboard' },
+      { href: '/timetable', label: 'Timetable Studio', icon: CalendarDays, badge: 'AI', module: 'timetable' },
+      { href: '/substitutions', label: 'Substitutions', icon: RefreshCw, badge: null, module: 'substitutions' },
+      { href: '/leaves', label: 'AI Leave Management', icon: ClipboardList, badge: 'AI', module: 'leaves' },
     ]
   },
   {
     title: 'Directory & Ops',
     items: [
-      { href: '/teachers', label: 'Faculty Directory', icon: Users, badge: null },
-      { href: '/attendance', label: 'Biometric Attendance', icon: Fingerprint, badge: null },
-      { href: '/rooms', label: 'Rooms & Facilities', icon: Building2, badge: null },
-      { href: '/calendar', label: 'Academic Calendar', icon: CalendarDays, badge: null },
-      { href: '/settings', label: 'School Settings', icon: Settings, badge: null },
+      { href: '/teachers', label: 'Faculty Directory', icon: Users, badge: null, module: 'teachers' },
+      { href: '/attendance', label: 'Biometric Attendance', icon: Fingerprint, badge: null, module: 'attendance' },
+      { href: '/rooms', label: 'Rooms & Facilities', icon: Building2, badge: null, module: 'rooms' },
+      { href: '/calendar', label: 'Academic Calendar', icon: CalendarDays, badge: null, module: 'calendar' },
+      { href: '/support', label: 'Support & Tickets', icon: FileText, badge: null, module: 'support' },
+      { href: '/settings', label: 'School Settings', icon: Settings, badge: null, module: 'settings' },
     ]
   }
 ];
+
+const ownerNav = { href: '/superadmin', label: 'Owner Console', icon: Sparkles, badge: 'SA' };
 
 interface SidebarNavProps {
   schoolName?: string;
   schoolCode?: string;
   userRole?: string;
+  modules?: string[] | string;
   onLogout?: () => void;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
@@ -47,12 +52,14 @@ export function SidebarNav({
   schoolName,
   schoolCode,
   userRole,
+  modules,
   onLogout,
   mobileOpen = false,
   onCloseMobile,
 }: SidebarNavProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const allowed = parseModules(modules);
 
   return (
     <>
@@ -119,7 +126,10 @@ export function SidebarNav({
 
         {/* Nav Sections */}
         <nav className="flex-1 overflow-y-auto sidebar-scroll py-4 space-y-5 px-3">
-          {navSections.map((section) => (
+          {navSections.map((section) => {
+            const items = section.items.filter((item) => hasModule(allowed, item.module));
+            if (items.length === 0) return null;
+            return (
             <div key={section.title}>
               {(!collapsed || mobileOpen) && (
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-2">
@@ -127,7 +137,7 @@ export function SidebarNav({
                 </p>
               )}
               <div className="space-y-1">
-                {section.items.map((item) => {
+                {items.map((item) => {
                   const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
                   const Icon = item.icon;
                   return (
@@ -166,11 +176,31 @@ export function SidebarNav({
                 })}
               </div>
             </div>
-          ))}
+            );
+          })}
         </nav>
 
         {/* Footer: Role & Logout */}
         <div className="shrink-0 border-t border-slate-100 p-3 space-y-2 bg-slate-50/50">
+          {userRole === 'superadmin' && (
+            <Link
+              href={ownerNav.href}
+              onClick={onCloseMobile}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-violet-800 bg-violet-50 hover:bg-violet-100 text-sm font-bold"
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              {(!collapsed || mobileOpen) && <span>{ownerNav.label}</span>}
+            </Link>
+          )}
+          <Link
+            href="/profile"
+            onClick={onCloseMobile}
+            title="My profile"
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-slate-600 hover:text-blue-700 hover:bg-blue-50 transition-all text-sm font-medium"
+          >
+            <User className="w-4 h-4 shrink-0" />
+            {(!collapsed || mobileOpen) && <span>My profile</span>}
+          </Link>
           {(!collapsed || mobileOpen) && userRole && (
             <div className="px-2 mb-1">
               <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-blue-50 border border-blue-200 text-blue-900 font-bold">

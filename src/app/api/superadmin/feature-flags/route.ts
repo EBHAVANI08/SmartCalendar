@@ -1,15 +1,11 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { isSuperAdminRequest, unauthorized, writeAudit } from '@/lib/superadmin';
 
-function checkAuth(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const token = searchParams.get('token');
-  return token === process.env.SUPERADMIN_TOKEN || token === 'sa_dev_token_2026';
-}
+export const dynamic = 'force-dynamic';
 
-// GET /api/superadmin/feature-flags?schoolId=xxx&token=xxx
 export async function GET(request: Request) {
-  if (!checkAuth(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isSuperAdminRequest(request)) return unauthorized();
 
   const { searchParams } = new URL(request.url);
   const schoolId = searchParams.get('schoolId');
@@ -22,20 +18,30 @@ export async function GET(request: Request) {
   return NextResponse.json({ flags });
 }
 
-// PUT /api/superadmin/feature-flags?schoolId=xxx&token=xxx
 export async function PUT(request: Request) {
-  if (!checkAuth(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!isSuperAdminRequest(request)) return unauthorized();
 
   const { searchParams } = new URL(request.url);
   const schoolId = searchParams.get('schoolId');
   if (!schoolId) return NextResponse.json({ error: 'schoolId required' }, { status: 400 });
 
   const body = await request.json();
-
+  const allowed = [
+    'aiTimetableEnabled', 'manualTimetableEnabled', 'bulkImportEnabled',
+    'shortBreakEnabled', 'lunchBreakEnabled', 'ptPeriodsEnabled',
+    'substitutionEnabled', 'autoSubstitutionEnabled', 'workloadAnalyticsEnabled',
+    'teacherNotifyEnabled', 'maxGrades', 'maxTeachers', 'maxPeriodsPerDay',
+    'planName', 'customNote', 'trialEndsAt',
+  ];
+  const data: Record<string, unknown> = {};
+  for (const key of allowed) {
+    if (body[key] !== undefined) data[key] = body[key];
+  }
   const flags = await db.schoolFeatureFlags.upsert({
     where: { schoolId },
-    create: { schoolId, ...body },
-    update: body,
+    create: { schoolId, ...data },
+    update: data,
   });
+  await writeAudit(request, 'featureFlags.update', 'school', schoolId);
   return NextResponse.json({ success: true, flags });
 }

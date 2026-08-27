@@ -22,8 +22,8 @@ export default function LoginPage() {
   const router = useRouter();
   const { toast } = useToast();
 
-  const [email, setEmail] = useState('pilot@client.school');
-  const [password, setPassword] = useState('ClientPilot2026');
+  const [email, setEmail] = useState('admin@takshilaschool.edu');
+  const [password, setPassword] = useState('school123');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -150,8 +150,8 @@ export default function LoginPage() {
           description: `Logged in as ${data.user.name || data.user.email}`,
         });
 
-        // Redirect to dashboard or teacher portal
-        router.push('/dashboard');
+        // Redirect owners to the command center; everyone else to the school dashboard
+        router.push(data.user?.role === 'superadmin' ? '/superadmin' : '/dashboard');
       } else {
         setError(data.error || 'Authentication failed. Please verify credentials.');
       }
@@ -365,7 +365,7 @@ export default function LoginPage() {
                         type="text"
                         value={email}
                         onChange={(e) => setEmail(e.target.value)}
-                        placeholder="e.g. pilot@client.school or priya@dps.edu"
+                        placeholder="e.g. admin@takshilaschool.edu or TAKSHILA2025"
                         className="pl-10 bg-slate-950/60 border-slate-800 text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:ring-blue-500/20 h-11 rounded-xl text-sm transition-all"
                         required
                       />
@@ -611,70 +611,38 @@ export default function LoginPage() {
                 </form>
               )}
 
-              {/* ── Demo Role Credentials Quick Bar (Requirement: SuperAdmin, Admin, Teacher) ── */}
+              {/* ── Dummy tenant: Takshila School only ── */}
               {!registering && (
                 <div className="p-3.5 bg-slate-950/70 rounded-2xl border border-slate-800 space-y-2">
                   <div className="flex items-center justify-between font-bold text-slate-200 text-xs">
                     <span>⚡ Select Role for 1-Click Login:</span>
-                    <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[9px] font-mono">DPS Delhi Demo</Badge>
+                    <Badge className="bg-blue-500/20 text-blue-300 border-blue-500/30 text-[9px] font-mono">Takshila School</Badge>
                   </div>
-                  <div className="grid grid-cols-3 gap-2 text-xs">
-                    {/* SuperAdmin Button */}
+                  <div className="grid grid-cols-2 gap-2 text-xs">
                     <button
                       type="button"
                       onClick={async () => {
-                        setEmail('superadmin@dps.edu.in');
-                        setPassword('SuperAdmin2026');
+                        setEmail('admin@takshilaschool.edu');
+                        setPassword('school123');
                         setLoading(true);
                         try {
                           const res = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'superadmin@dps.edu.in', password: 'SuperAdmin2026' }),
-                          });
-                          const data = await res.json();
-                          if (res.ok && data?.success) {
-                            localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'superadmin' }));
-                            sessionStorage.setItem('sc_user', JSON.stringify(data.user));
-                            if (data.token) sessionStorage.setItem('sc_token', data.token);
-                            toast({ title: 'SuperAdmin Logged In', description: 'Accessing Trust Command Center' });
-                            router.push('/dashboard');
-                          }
-                        } catch {
-                          router.push('/dashboard');
-                        } finally {
-                          setLoading(false);
-                        }
-                      }}
-                      className="p-2.5 rounded-xl bg-purple-950/40 border border-purple-500/30 hover:border-purple-400 text-left transition-all group cursor-pointer"
-                    >
-                      <span className="text-purple-300 font-extrabold text-[11px] block truncate group-hover:text-purple-200">SuperAdmin</span>
-                      <span className="text-[9px] text-purple-400/80 block font-mono">Trust Center</span>
-                    </button>
-
-                    {/* Admin Button */}
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        setEmail('admin@dps.edu.in');
-                        setPassword('ClientPilot2026');
-                        setLoading(true);
-                        try {
-                          const res = await fetch('/api/auth/login', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'admin@dps.edu.in', password: 'ClientPilot2026' }),
+                            body: JSON.stringify({ email: 'admin@takshilaschool.edu', password: 'school123' }),
                           });
                           const data = await res.json();
                           if (res.ok && data?.success) {
                             localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'admin' }));
                             sessionStorage.setItem('sc_user', JSON.stringify(data.user));
                             if (data.token) sessionStorage.setItem('sc_token', data.token);
-                            toast({ title: 'Admin Logged In', description: 'Logged in as DPS Principal' });
+                            toast({ title: 'Admin Logged In', description: 'Logged in as Takshila School Principal' });
                             router.push('/dashboard');
+                          } else {
+                            setError(data.error || 'Takshila admin login failed.');
                           }
                         } catch {
-                          router.push('/dashboard');
+                          setError('Network connection failed. Please try again.');
                         } finally {
                           setLoading(false);
                         }
@@ -682,32 +650,33 @@ export default function LoginPage() {
                       className="p-2.5 rounded-xl bg-blue-950/40 border border-blue-500/30 hover:border-blue-400 text-left transition-all group cursor-pointer"
                     >
                       <span className="text-blue-300 font-extrabold text-[11px] block truncate group-hover:text-blue-200">Admin</span>
-                      <span className="text-[9px] text-blue-400/80 block font-mono">Principal</span>
+                      <span className="text-[9px] text-blue-400/80 block font-mono">Takshila Principal</span>
                     </button>
 
-                    {/* Teacher Button */}
                     <button
                       type="button"
                       onClick={async () => {
-                        setEmail('priya.sharma@dps.edu.in');
+                        setEmail('afreen.deshmukh@takshilaschool.edu');
                         setPassword('teacher123');
                         setLoading(true);
                         try {
                           const res = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'priya.sharma@dps.edu.in', password: 'teacher123' }),
+                            body: JSON.stringify({ email: 'afreen.deshmukh@takshilaschool.edu', password: 'teacher123' }),
                           });
                           const data = await res.json();
                           if (res.ok && data?.success) {
                             localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'teacher' }));
                             sessionStorage.setItem('sc_user', JSON.stringify(data.user));
                             if (data.token) sessionStorage.setItem('sc_token', data.token);
-                            toast({ title: 'Teacher Logged In', description: 'Logged in as Dr. Priya Sharma' });
+                            toast({ title: 'Teacher Logged In', description: 'Logged in as Afreen Deshmukh' });
                             router.push('/dashboard');
+                          } else {
+                            setError(data.error || 'Takshila teacher login failed.');
                           }
                         } catch {
-                          router.push('/dashboard');
+                          setError('Network connection failed. Please try again.');
                         } finally {
                           setLoading(false);
                         }
@@ -715,7 +684,7 @@ export default function LoginPage() {
                       className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 hover:border-emerald-400 text-left transition-all group cursor-pointer"
                     >
                       <span className="text-emerald-300 font-extrabold text-[11px] block truncate group-hover:text-emerald-200">Teacher</span>
-                      <span className="text-[9px] text-emerald-400/80 block font-mono">Faculty (Math)</span>
+                      <span className="text-[9px] text-emerald-400/80 block font-mono">Afreen Deshmukh</span>
                     </button>
                   </div>
                 </div>

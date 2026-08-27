@@ -5,16 +5,16 @@ const prisma = new PrismaClient();
 async function seedDefaults() {
   // 1. Ensure SuperAdmin exists
   const superAdmin = await prisma.admin.upsert({
-    where: { email: 'superadmin@smartcalendar.app' },
+    where: { email: 'sp@kamglobalai.com' },
     update: {
       isSuperAdmin: true,
-      name: 'Global SuperAdmin',
-      password: 'admin123',
+      name: 'Platform SuperAdmin',
+      password: 'P@ssw0rd123',
     },
     create: {
-      email: 'superadmin@smartcalendar.app',
-      name: 'Global SuperAdmin',
-      password: 'admin123',
+      email: 'sp@kamglobalai.com',
+      name: 'Platform SuperAdmin',
+      password: 'P@ssw0rd123',
       isSuperAdmin: true,
     },
   });

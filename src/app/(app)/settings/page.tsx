@@ -78,7 +78,7 @@ export default function SchoolSettingsPage() {
   };
 
   return (
-    <div className="space-y-6 max-w-5xl">
+    <div className="w-full space-y-6">
       {/* ── Enterprise SaaS School Settings Header ── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
         <div className="flex items-center gap-4">

@@ -60,7 +60,13 @@ export async function getTenantSchoolId(request: Request | NextRequest, fallback
     }
     const headerId = request.headers.get('x-school-id') || request.headers.get('x-tenant-id');
     if (headerId) {
-      return await resolveSchoolId(headerId, fallbackToFirst);
+      const fromId = await resolveSchoolId(headerId, false);
+      if (fromId) return fromId;
+    }
+    const headerCode = request.headers.get('x-school-code');
+    if (headerCode) {
+      const fromCode = await resolveSchoolId(headerCode, false);
+      if (fromCode) return fromCode;
     }
   } catch {}
   if (!fallbackToFirst) return null;

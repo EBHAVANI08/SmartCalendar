@@ -50,5 +50,14 @@ test
 prompt
 
 server.log
+/public/uploads/website/*
 # Skills directory
 /skills/
+
+# leftover extracts, archives, and local databases (not part of the app)
+/fv-extract/
+/fvtar-extract/
+/upload/
+/db/
+*.db
+.zscripts/dev.pid

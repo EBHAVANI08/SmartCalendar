@@ -14,6 +14,8 @@ function createLoginResponse(user: any) {
     schoolId: user.schoolId || null,
     schoolCode: user.schoolCode || null,
     name: user.name,
+    ownerRole: user.ownerRole || null,
+    modules: Array.isArray(user.modules) ? JSON.stringify(user.modules) : (user.modules || null),
   });
 
   const response = NextResponse.json({
@@ -81,43 +83,111 @@ export async function POST(request: Request) {
 
     const cleanEmail = email.toLowerCase();
 
-    // ── Quick Demo Login Account Bypass (Guarantees SuperAdmin, Admin, and Teacher Logins Work 100%) ──
-    if (cleanEmail === 'superadmin@dps.edu.in' || cleanEmail === 'superadmin') {
+    // ── Owner team employees (sales, support, demo, finance) ──
+    try {
+      const employee = await db.ownerEmployee.findFirst({
+        where: { email: cleanEmail, status: 'active' },
+      });
+      if (employee) {
+        const ok = await verifyPassword(password, employee.password, async (newHash) => {
+          await db.ownerEmployee.update({ where: { id: employee.id }, data: { password: newHash } }).catch(() => null);
+        });
+        if (ok) {
+          let modules: string[] = [];
+          try { modules = JSON.parse(employee.modules || '[]'); } catch { modules = []; }
+          return createLoginResponse({
+            id: employee.id,
+            name: employee.name,
+            email: employee.email,
+            role: 'superadmin',
+            ownerRole: employee.role,
+            modules,
+            isDemo: employee.isDemo,
+            schoolName: 'Application Owner Console',
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Error querying owner employee during login:', e);
+    }
+
+    // ── Platform SuperAdmin (owner console) ──
+    const SUPERADMIN_EMAIL = 'sp@kamglobalai.com';
+    const SUPERADMIN_PASSWORD = 'P@ssw0rd123';
+    if (cleanEmail === SUPERADMIN_EMAIL || cleanEmail === 'superadmin') {
+      if (password !== SUPERADMIN_PASSWORD) {
+        return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+      }
+      const hashed = await bcrypt.hash(SUPERADMIN_PASSWORD, 10);
+      await db.admin.upsert({
+        where: { email: SUPERADMIN_EMAIL },
+        update: { password: hashed, isSuperAdmin: true, name: 'Platform SuperAdmin', role: 'superadmin' },
+        create: {
+          email: SUPERADMIN_EMAIL,
+          password: hashed,
+          isSuperAdmin: true,
+          name: 'Platform SuperAdmin',
+          role: 'superadmin',
+        },
+      }).catch(() => null);
       return createLoginResponse({
-        id: 'superadmin-001',
-        name: 'SuperAdmin Command Trust',
-        email: 'superadmin@dps.edu.in',
+        id: 'superadmin-owner',
+        name: 'Platform SuperAdmin',
+        email: SUPERADMIN_EMAIL,
         role: 'superadmin',
-        schoolId: '6a8bf21c3359da9c7c8a7b02',
-        schoolCode: 'DPS_TRUST',
-        schoolName: 'Delhi Public School Trust (Multi-Campus)',
+        schoolName: 'Application Owner Console',
       });
     }
 
-    if (cleanEmail === 'pilot@client.school' || cleanEmail === 'admin@dps.edu.in' || cleanEmail === 'dps_delhi') {
-      return createLoginResponse({
-        id: '6a8bf21c3359da9c7c8a7b02',
-        name: 'DPS School Principal / Admin',
-        email: 'admin@dps.edu.in',
-        role: 'admin',
-        schoolId: '6a8bf21c3359da9c7c8a7b02',
-        schoolCode: 'DPS_DELHI',
-        schoolName: 'Delhi Public School (DPS)',
-      });
-    }
+    // ── Takshila School dummy tenant (1-click Admin / Teacher) ──
+    const takshilaSchool = await db.school.findFirst({
+      where: {
+        OR: [
+          { code: 'TAKSHILA2025' },
+          { email: 'admin@takshilaschool.edu' },
+        ],
+      },
+    }).catch(() => null);
 
-    if (cleanEmail === 'priya.math@dps.edu' || cleanEmail === 'priya.sharma@dps.edu.in' || cleanEmail === 'teacher@dps.edu.in') {
-      return createLoginResponse({
-        id: '6a8bf21c3359da9c7c8a7b99',
-        name: 'Dr. Priya Sharma',
-        email: 'priya.sharma@dps.edu.in',
-        role: 'teacher',
-        schoolId: '6a8bf21c3359da9c7c8a7b02',
-        schoolCode: 'DPS_DELHI',
-        schoolName: 'Delhi Public School (DPS)',
-        subject: 'Mathematics',
-        grades: '["Grade 9","Grade 10","Grade 11"]',
-      });
+    if (takshilaSchool) {
+      const isTakshilaAdmin =
+        cleanEmail === 'admin@takshilaschool.edu' ||
+        cleanEmail === takshilaSchool.email.toLowerCase() ||
+        email.toUpperCase() === 'TAKSHILA2025';
+
+      if (isTakshilaAdmin) {
+        return createLoginResponse({
+          id: takshilaSchool.id,
+          name: takshilaSchool.contactName || 'Takshila School Principal',
+          email: takshilaSchool.email,
+          role: 'admin',
+          schoolId: takshilaSchool.id,
+          schoolCode: takshilaSchool.code,
+          schoolName: takshilaSchool.name,
+        });
+      }
+
+      const DEMO_TEACHER_EMAIL = 'afreen.deshmukh@takshilaschool.edu';
+      if (cleanEmail === DEMO_TEACHER_EMAIL) {
+        const takshilaTeacher = await db.teacher.findFirst({
+          where: { schoolId: takshilaSchool.id, email: DEMO_TEACHER_EMAIL },
+        }).catch(() => null);
+
+        if (takshilaTeacher) {
+          return createLoginResponse({
+            id: takshilaTeacher.id,
+            name: takshilaTeacher.name,
+            email: takshilaTeacher.email,
+            role: 'teacher',
+            schoolId: takshilaSchool.id,
+            schoolCode: takshilaSchool.code,
+            schoolName: takshilaSchool.name,
+            subject: takshilaTeacher.subject,
+            grades: takshilaTeacher.grades,
+            phone: takshilaTeacher.phone,
+          });
+        }
+      }
     }
 
     // ── 1. Check School Tenant Database ──
@@ -152,6 +222,40 @@ export async function POST(request: Request) {
       }
     } catch (e) {
       console.error('Error querying school during login:', e);
+    }
+
+    // ── 1b. Tenant workspace members (role-based logins) ──
+    try {
+      const member = await db.workspaceMember.findFirst({
+        where: { email: cleanEmail, status: 'active' },
+        include: { school: true },
+      });
+      if (member) {
+        const ok = await verifyPassword(password, member.password, async (newHash) => {
+          await db.workspaceMember.update({ where: { id: member.id }, data: { password: newHash } }).catch(() => null);
+        });
+        if (ok) {
+          if (member.school?.status === 'suspended') {
+            return NextResponse.json({ error: 'This school workspace is suspended.' }, { status: 403 });
+          }
+          let modules: string[] = [];
+          try { modules = JSON.parse(member.modules || '[]'); } catch { modules = []; }
+          const mappedRole = ['teacher'].includes(member.role) ? 'teacher' : 'admin';
+          return createLoginResponse({
+            id: member.id,
+            name: member.name,
+            email: member.email,
+            role: mappedRole,
+            schoolId: member.schoolId,
+            schoolCode: member.school?.code,
+            schoolName: member.school?.name,
+            modules,
+            memberRole: member.role,
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Error querying workspace member during login:', e);
     }
 
     // ── 2. Check Teacher Faculty Database ──
@@ -213,16 +317,7 @@ export async function POST(request: Request) {
       console.error('Error querying admin during login:', e);
     }
 
-    // Fallback: If password checking failed but account exists, grant demo access
-    return createLoginResponse({
-      id: '6a8bf21c3359da9c7c8a7b02',
-      name: email.split('@')[0] || 'User',
-      email: email,
-      role: 'admin',
-      schoolId: '6a8bf21c3359da9c7c8a7b02',
-      schoolCode: 'DPS_DELHI',
-      schoolName: 'Delhi Public School',
-    });
+    return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
   } catch (error) {
     console.error('Login error:', error);
     return NextResponse.json({ error: 'Authentication service error.' }, { status: 500 });

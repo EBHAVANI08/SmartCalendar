@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Brain, Sparkles, CalendarDays, Users, ShieldCheck, Zap,
@@ -17,6 +17,14 @@ export function LandingClient() {
   const [facultyCount, setFacultyCount] = useState<number>(60);
   const [activeFeatureTab, setActiveFeatureTab] = useState<string>('ai-timetable');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
+  const [site, setSite] = useState<any>(null);
+
+  useEffect(() => {
+    fetch('/api/website')
+      .then((r) => r.json())
+      .then(setSite)
+      .catch(() => {});
+  }, []);
 
   // Calculations for ROI Calculator
   const hoursSavedPerMonth = Math.round(facultyCount * 0.8 + 24);
@@ -48,6 +56,16 @@ export function LandingClient() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 selection:bg-blue-600 selection:text-white font-sans antialiased overflow-x-hidden">
+      {site?.maintenanceMode && (
+        <div className="relative z-50 bg-amber-500 text-slate-950 text-center text-sm font-bold py-2">
+          Maintenance mode is on. Public visitors see the live site; you can still edit from Owner Console.
+        </div>
+      )}
+      {site?.announcementEnabled && site?.announcement && (
+        <div className="relative z-50 bg-blue-600 text-white text-center text-sm font-semibold py-2 px-4">
+          {site.announcement}
+        </div>
+      )}
       {/* ── Background Glow Elements ── */}
       <div className="fixed inset-0 pointer-events-none z-0">
         <div className="absolute top-[-10%] left-[10%] w-[500px] h-[500px] bg-blue-600/15 rounded-full blur-[120px]" />
@@ -65,7 +83,7 @@ export function LandingClient() {
             </div>
             <div>
               <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-100 to-slate-300 bg-clip-text text-transparent">
-                AI Smart Calendar
+                {site?.siteName || 'AI Smart Calendar'}
               </span>
               <span className="hidden sm:inline-block ml-2 text-[10px] uppercase tracking-widest font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
                 SaaS v2.0
@@ -98,23 +116,28 @@ export function LandingClient() {
 
       {/* ── Hero Section ── */}
       <section className="relative z-10 pt-16 pb-20 sm:pt-24 sm:pb-28 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+        {site?.heroImageUrl && (
+          <div className="mb-10 rounded-3xl overflow-hidden border border-slate-800 max-h-[360px]">
+            <img src={site.heroImageUrl} alt={site.siteName || 'Hero'} className="w-full h-[280px] sm:h-[360px] object-cover" />
+          </div>
+        )}
         <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-8 animate-pulse">
           <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-          <span>Next-Generation AI Timetable & Substitution OS · NEP 2020 Compliant</span>
+          <span>{site?.heroBadge || 'Next-Generation AI Timetable & Substitution OS · NEP 2020 Compliant'}</span>
         </div>
 
         <h1 className="text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight max-w-5xl mx-auto leading-[1.1] mb-6">
-          The Intelligent Operating System for <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-400 bg-clip-text text-transparent">Modern Schools</span>
+          {site?.heroTitle || <>The Intelligent Operating System for <span className="bg-gradient-to-r from-blue-400 via-indigo-300 to-sky-400 bg-clip-text text-transparent">Modern Schools</span></>}
         </h1>
 
         <p className="text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto font-normal leading-relaxed mb-10">
-          Automate clash-free master timetables in 60 seconds, detect teacher absences via Biometric IoT punches, and alert substitutes on WhatsApp in real time.
+          {site?.heroSubtitle || 'Automate clash-free master timetables in 60 seconds, detect teacher absences via Biometric IoT punches, and alert substitutes on WhatsApp in real time.'}
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
           <Link href="/login" className="w-full sm:w-auto">
             <Button size="lg" className="w-full sm:w-auto h-13 px-8 text-base font-bold bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:to-slate-950 text-white rounded-2xl shadow-xl shadow-blue-500/25 border border-blue-400/20 transition-all hover:scale-[1.02]">
-              Start Free School Pilot <ArrowRight className="w-5 h-5 ml-2" />
+              {site?.ctaPrimary || 'Start Free School Pilot'} <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </Link>
           <a href="#how-it-works" className="w-full sm:w-auto">

@@ -5,6 +5,8 @@ export interface UserSessionPayload {
   schoolId?: string | null;
   schoolCode?: string | null;
   name?: string;
+  ownerRole?: string | null;
+  modules?: string | null;
   iat?: number;
   exp?: number;
 }

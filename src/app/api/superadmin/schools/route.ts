@@ -1,13 +1,11 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { isSuperAdminRequest, unauthorized, writeAudit } from '@/lib/superadmin';
 
-// GET /api/superadmin/schools — list all schools with their feature flags and stats
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const token = searchParams.get('token');
-  if (token !== process.env.SUPERADMIN_TOKEN && token !== 'sa_dev_token_2026') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!isSuperAdminRequest(request)) return unauthorized();
 
   const schools = await db.school.findMany({
     include: {
@@ -20,13 +18,8 @@ export async function GET(request: Request) {
   return NextResponse.json({ schools });
 }
 
-// POST /api/superadmin/schools — create a new school account
 export async function POST(request: Request) {
-  const { searchParams } = new URL(request.url);
-  const token = searchParams.get('token');
-  if (token !== process.env.SUPERADMIN_TOKEN && token !== 'sa_dev_token_2026') {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!isSuperAdminRequest(request)) return unauthorized();
 
   const body = await request.json();
   const { name, code, email, password, planName } = body;
@@ -35,12 +28,13 @@ export async function POST(request: Request) {
   }
 
   const school = await db.school.create({
-    data: { name, code, email, password },
+    data: { name, code: String(code).toUpperCase(), email: String(email).toLowerCase(), password },
   });
 
   await db.schoolFeatureFlags.create({
     data: { schoolId: school.id, planName: planName ?? 'standard' },
   });
 
+  await writeAudit(request, 'tenant.create', 'school', school.id, { via: 'legacy-schools' });
   return NextResponse.json({ success: true, school });
 }
