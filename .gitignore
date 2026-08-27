@@ -50,5 +50,6 @@ test
 prompt
 
 server.log
+fvtar-extract
 # Skills directory
 /skills/

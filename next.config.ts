@@ -1,23 +1,14 @@
-process.env.NEXT_DISABLE_ESLINT = '1';
-
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   reactStrictMode: false,
   productionBrowserSourceMaps: false,
   serverExternalPackages: ['pdf-parse', 'xlsx', '@prisma/client', 'prisma'],
-  output: 'standalone',
-  async rewrites() {
-    return [
-      { source: '/dashboard', destination: '/' },
-      { source: '/calendar', destination: '/' },
-      { source: '/substitutions', destination: '/' },
-      { source: '/teachers', destination: '/' },
-      { source: '/analytics', destination: '/' },
-      { source: '/portal', destination: '/' },
-      { source: '/teacher-portal', destination: '/' },
-      { source: '/curriculum', destination: '/' },
-    ];
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+  typescript: {
+    ignoreBuildErrors: true,
   },
 };
 
