@@ -185,7 +185,9 @@ const calculatePeriods = (
   shortBreakAfterStr: string,
   lunchBreakAfterStr: string,
   shortBreakMinsStr: string = '15',
-  lunchBreakMinsStr: string = '30'
+  lunchBreakMinsStr: string = '30',
+  enableShortBreak: boolean = true,
+  enableLunchBreak: boolean = true
 ): PeriodItem[] => {
   const [startH, startM] = (start || '08:00').split(':').map(Number);
   let currentMinutes = (startH || 8) * 60 + (startM || 0);
@@ -213,7 +215,7 @@ const calculatePeriods = (
     });
     currentMinutes = endMins;
 
-    if (i === shortAfter) {
+    if (enableShortBreak && i === shortAfter) {
       const breakEndMins = currentMinutes + shortBreakDuration;
       list.push({
         num: 'break1',
@@ -222,7 +224,7 @@ const calculatePeriods = (
         isBreak: true,
       });
       currentMinutes = breakEndMins;
-    } else if (i === lunchAfter) {
+    } else if (enableLunchBreak && i === lunchAfter) {
       const lunchEndMins = currentMinutes + lunchBreakDuration;
       list.push({
         num: 'lunch',
@@ -273,8 +275,10 @@ export default function TimetablePage() {
     totalPeriods: '8',
     saturdayType: 'half', // 'full' | 'half' | 'off'
     saturdayPeriods: '5',
+    enableShortBreak: true,
     shortBreakAfter: '3',
     shortBreakMins: '15',
+    enableLunchBreak: true,
     lunchBreakAfter: '4',
     lunchBreakMins: '30',
     bulkAll: true,
@@ -1689,7 +1693,7 @@ const isDemoSchool = () => {
               </div>
             </div>
 
-            {/* ── Section 2: Break Placements & Duration (2 Dedicated Symmetric Cards) ── */}
+            {/* ── Section 2: Break Placements & Duration (2 Dedicated Symmetric Cards with ON/OFF Switches) ── */}
             <div className="rounded-xl border border-amber-200 overflow-hidden shadow-xs">
               <div className="px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 flex items-center justify-between text-white">
                 <span className="flex items-center gap-2">
@@ -1703,89 +1707,141 @@ const isDemoSchool = () => {
 
               <div className="p-4 bg-amber-50/40 grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Short Recess Card */}
-                <div className="p-3.5 bg-white rounded-xl border border-amber-200 shadow-xs space-y-3">
-                  <div className="flex items-center gap-2 pb-1.5 border-b border-amber-100">
-                    <span className="text-sm">☕</span>
-                    <span className="text-xs font-bold text-slate-800">Short Break (Morning Recess)</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5 min-w-0">
-                      <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">Placement</Label>
-                      <Select
-                        value={studioSettings.shortBreakAfter}
-                        onValueChange={(val) => setStudioSettings({ ...studioSettings, shortBreakAfter: val })}
-                      >
-                        <SelectTrigger className="h-10 text-xs font-semibold bg-slate-50 border-slate-200 w-full min-w-0 rounded-lg shadow-xs">
-                          <SelectValue placeholder="Slot" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="2">After Period 2</SelectItem>
-                          <SelectItem value="3">After Period 3 (Standard)</SelectItem>
-                          <SelectItem value="4">After Period 4</SelectItem>
-                        </SelectContent>
-                      </Select>
+                <div className={`p-3.5 bg-white rounded-xl border shadow-xs space-y-3 transition-all ${
+                  studioSettings.enableShortBreak ? 'border-amber-200' : 'border-slate-200 bg-slate-50/70'
+                }`}>
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">☕</span>
+                      <span className="text-xs font-bold text-slate-800">Short Break (Morning Recess)</span>
                     </div>
-                    <div className="space-y-1.5 min-w-0">
-                      <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">Duration</Label>
-                      <Select
-                        value={studioSettings.shortBreakMins}
-                        onValueChange={(val) => setStudioSettings({ ...studioSettings, shortBreakMins: val })}
-                      >
-                        <SelectTrigger className="h-10 text-xs font-semibold bg-slate-50 border-slate-200 w-full min-w-0 rounded-lg shadow-xs">
-                          <SelectValue placeholder="Mins" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="10">10 Minutes</SelectItem>
-                          <SelectItem value="15">15 Mins (Standard)</SelectItem>
-                          <SelectItem value="20">20 Minutes</SelectItem>
-                          <SelectItem value="30">30 Minutes</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+
+                    {/* ON / OFF Switch */}
+                    <button
+                      type="button"
+                      onClick={() => setStudioSettings({ ...studioSettings, enableShortBreak: !studioSettings.enableShortBreak })}
+                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider transition-all border ${
+                        studioSettings.enableShortBreak
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${studioSettings.enableShortBreak ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                      {studioSettings.enableShortBreak ? 'ON' : 'OFF'}
+                    </button>
                   </div>
+
+                  {studioSettings.enableShortBreak ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5 min-w-0">
+                        <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">Placement</Label>
+                        <Select
+                          value={studioSettings.shortBreakAfter}
+                          onValueChange={(val) => setStudioSettings({ ...studioSettings, shortBreakAfter: val })}
+                        >
+                          <SelectTrigger className="h-10 text-xs font-semibold bg-slate-50 border-slate-200 w-full min-w-0 rounded-lg shadow-xs">
+                            <SelectValue placeholder="Slot" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="2">After Period 2</SelectItem>
+                            <SelectItem value="3">After Period 3 (Standard)</SelectItem>
+                            <SelectItem value="4">After Period 4</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5 min-w-0">
+                        <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">Duration</Label>
+                        <Select
+                          value={studioSettings.shortBreakMins}
+                          onValueChange={(val) => setStudioSettings({ ...studioSettings, shortBreakMins: val })}
+                        >
+                          <SelectTrigger className="h-10 text-xs font-semibold bg-slate-50 border-slate-200 w-full min-w-0 rounded-lg shadow-xs">
+                            <SelectValue placeholder="Mins" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="10">10 Minutes</SelectItem>
+                            <SelectItem value="15">15 Mins (Standard)</SelectItem>
+                            <SelectItem value="20">20 Minutes</SelectItem>
+                            <SelectItem value="30">30 Minutes</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-2.5 px-3 bg-slate-100 rounded-lg border border-dashed border-slate-200 text-center">
+                      <p className="text-[11px] font-semibold text-slate-500">Morning Short Recess is turned OFF</p>
+                      <p className="text-[9px] text-slate-400">Periods will run consecutively without a morning break.</p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Lunch Break Card */}
-                <div className="p-3.5 bg-white rounded-xl border border-amber-200 shadow-xs space-y-3">
-                  <div className="flex items-center gap-2 pb-1.5 border-b border-amber-100">
-                    <span className="text-sm">🍱</span>
-                    <span className="text-xs font-bold text-slate-800">Lunch Break (Midday)</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1.5 min-w-0">
-                      <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">Placement</Label>
-                      <Select
-                        value={studioSettings.lunchBreakAfter}
-                        onValueChange={(val) => setStudioSettings({ ...studioSettings, lunchBreakAfter: val })}
-                      >
-                        <SelectTrigger className="h-10 text-xs font-semibold bg-slate-50 border-slate-200 w-full min-w-0 rounded-lg shadow-xs">
-                          <SelectValue placeholder="Slot" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="3">After Period 3</SelectItem>
-                          <SelectItem value="4">After Period 4 (Standard)</SelectItem>
-                          <SelectItem value="5">After Period 5</SelectItem>
-                        </SelectContent>
-                      </Select>
+                <div className={`p-3.5 bg-white rounded-xl border shadow-xs space-y-3 transition-all ${
+                  studioSettings.enableLunchBreak ? 'border-amber-200' : 'border-slate-200 bg-slate-50/70'
+                }`}>
+                  <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm">🍱</span>
+                      <span className="text-xs font-bold text-slate-800">Lunch Break (Midday)</span>
                     </div>
-                    <div className="space-y-1.5 min-w-0">
-                      <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">Duration</Label>
-                      <Select
-                        value={studioSettings.lunchBreakMins}
-                        onValueChange={(val) => setStudioSettings({ ...studioSettings, lunchBreakMins: val })}
-                      >
-                        <SelectTrigger className="h-10 text-xs font-semibold bg-slate-50 border-slate-200 w-full min-w-0 rounded-lg shadow-xs">
-                          <SelectValue placeholder="Mins" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="20">20 Minutes</SelectItem>
-                          <SelectItem value="30">30 Mins (Standard)</SelectItem>
-                          <SelectItem value="40">40 Minutes</SelectItem>
-                          <SelectItem value="45">45 Minutes</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
+
+                    {/* ON / OFF Switch */}
+                    <button
+                      type="button"
+                      onClick={() => setStudioSettings({ ...studioSettings, enableLunchBreak: !studioSettings.enableLunchBreak })}
+                      className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider transition-all border ${
+                        studioSettings.enableLunchBreak
+                          ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                          : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200'
+                      }`}
+                    >
+                      <span className={`w-2 h-2 rounded-full ${studioSettings.enableLunchBreak ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                      {studioSettings.enableLunchBreak ? 'ON' : 'OFF'}
+                    </button>
                   </div>
+
+                  {studioSettings.enableLunchBreak ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5 min-w-0">
+                        <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">Placement</Label>
+                        <Select
+                          value={studioSettings.lunchBreakAfter}
+                          onValueChange={(val) => setStudioSettings({ ...studioSettings, lunchBreakAfter: val })}
+                        >
+                          <SelectTrigger className="h-10 text-xs font-semibold bg-slate-50 border-slate-200 w-full min-w-0 rounded-lg shadow-xs">
+                            <SelectValue placeholder="Slot" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="3">After Period 3</SelectItem>
+                            <SelectItem value="4">After Period 4 (Standard)</SelectItem>
+                            <SelectItem value="5">After Period 5</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5 min-w-0">
+                        <Label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block truncate">Duration</Label>
+                        <Select
+                          value={studioSettings.lunchBreakMins}
+                          onValueChange={(val) => setStudioSettings({ ...studioSettings, lunchBreakMins: val })}
+                        >
+                          <SelectTrigger className="h-10 text-xs font-semibold bg-slate-50 border-slate-200 w-full min-w-0 rounded-lg shadow-xs">
+                            <SelectValue placeholder="Mins" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="20">20 Minutes</SelectItem>
+                            <SelectItem value="30">30 Mins (Standard)</SelectItem>
+                            <SelectItem value="40">40 Minutes</SelectItem>
+                            <SelectItem value="45">45 Minutes</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-2.5 px-3 bg-slate-100 rounded-lg border border-dashed border-slate-200 text-center">
+                      <p className="text-[11px] font-semibold text-slate-500">Lunch Break is turned OFF</p>
+                      <p className="text-[9px] text-slate-400">Periods will run without midday lunch recess.</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1900,7 +1956,9 @@ const isDemoSchool = () => {
                   studioSettings.shortBreakAfter,
                   studioSettings.lunchBreakAfter,
                   studioSettings.shortBreakMins,
-                  studioSettings.lunchBreakMins
+                  studioSettings.lunchBreakMins,
+                  studioSettings.enableShortBreak,
+                  studioSettings.enableLunchBreak
                 );
                 setActivePeriods(newPeriods);
                 toast({
