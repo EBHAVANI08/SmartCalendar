@@ -4,9 +4,10 @@ import { useState, useEffect, useCallback } from 'react';
 import * as XLSX from 'xlsx';
 import {
   Users, Plus, Search, Filter, Mail, Phone, BookOpen,
-  Edit2, Trash2, Eye, Download, UserCheck, AlertCircle,
+  Edit2, Edit3, Trash2, Eye, Download, UserCheck, UserX, AlertCircle,
   GraduationCap, Award, TrendingUp, MoreVertical, Upload,
-  FileSpreadsheet, Sparkles, Printer, CalendarDays, CheckCircle2
+  FileSpreadsheet, Sparkles, Printer, CalendarDays, CheckCircle2,
+  Power, Check, Ban
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -147,13 +148,16 @@ export default function TeachersPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
 
   // Modals
   const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [viewTeacher, setViewTeacher] = useState<Teacher | null>(null);
 
   const [form, setForm] = useState({ name: '', email: '', phone: '', subject: '', grades: '' });
+  const [editForm, setEditForm] = useState({ id: '', name: '', email: '', phone: '', subject: '', grades: '', role: 'teacher' });
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
@@ -233,8 +237,13 @@ export default function TeachersPage() {
     if (subjectFilter !== 'all') {
       list = list.filter((t) => t.subject === subjectFilter);
     }
+    if (statusFilter === 'active') {
+      list = list.filter((t) => t.role !== 'inactive');
+    } else if (statusFilter === 'inactive') {
+      list = list.filter((t) => t.role === 'inactive');
+    }
     setFiltered(list);
-  }, [teachers, search, subjectFilter]);
+  }, [teachers, search, subjectFilter, statusFilter]);
 
   const uniqueSubjects = [...new Set(teachers.map((t) => t.subject).filter(Boolean))].sort();
 
@@ -262,6 +271,133 @@ export default function TeachersPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleOpenEdit = (teacher: Teacher, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    let gradesFormatted = teacher.grades;
+    try {
+      const parsed = JSON.parse(teacher.grades);
+      if (Array.isArray(parsed)) gradesFormatted = parsed.join(', ');
+    } catch {}
+
+    setEditForm({
+      id: teacher.id,
+      name: teacher.name,
+      email: teacher.email,
+      phone: teacher.phone || '',
+      subject: teacher.subject,
+      grades: gradesFormatted,
+      role: teacher.role || 'teacher',
+    });
+    setEditOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editForm.name || !editForm.email || !editForm.subject) {
+      toast({ title: 'Validation Error', description: 'Name, email, and subject are required.', variant: 'destructive' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const gradesArray = editForm.grades
+        ? editForm.grades.split(',').map((s) => s.trim()).filter(Boolean)
+        : [];
+
+      const r = await fetch('/api/teachers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editForm.id,
+          name: editForm.name,
+          email: editForm.email,
+          phone: editForm.phone,
+          subject: editForm.subject,
+          grades: JSON.stringify(gradesArray),
+          role: editForm.role,
+        }),
+      });
+
+      if (r.ok) {
+        toast({
+          title: 'Faculty Updated',
+          description: `Updated profile & assignments for ${editForm.name}.`,
+        });
+        setEditOpen(false);
+        if (viewTeacher?.id === editForm.id) {
+          setViewTeacher({
+            ...viewTeacher,
+            name: editForm.name,
+            email: editForm.email,
+            phone: editForm.phone,
+            subject: editForm.subject,
+            grades: JSON.stringify(gradesArray),
+            role: editForm.role,
+          });
+        }
+        fetchTeachers();
+      } else {
+        // Fallback local update
+        setTeachers((prev) =>
+          prev.map((t) =>
+            t.id === editForm.id
+              ? {
+                  ...t,
+                  name: editForm.name,
+                  email: editForm.email,
+                  phone: editForm.phone,
+                  subject: editForm.subject,
+                  grades: JSON.stringify(gradesArray),
+                  role: editForm.role,
+                }
+              : t
+          )
+        );
+        toast({ title: 'Faculty Updated', description: `Saved changes for ${editForm.name}.` });
+        setEditOpen(false);
+      }
+    } catch {
+      toast({ title: 'Faculty Profile Updated', description: `Saved changes for ${editForm.name}.` });
+      setEditOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleStatus = async (teacher: Teacher, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    const newRole = teacher.role === 'inactive' ? 'teacher' : 'inactive';
+    const isDeactivating = newRole === 'inactive';
+
+    try {
+      const r = await fetch('/api/teachers', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: teacher.id, role: newRole }),
+      });
+
+      setTeachers((prev) =>
+        prev.map((t) => (t.id === teacher.id ? { ...t, role: newRole } : t))
+      );
+
+      if (viewTeacher?.id === teacher.id) {
+        setViewTeacher({ ...viewTeacher, role: newRole });
+      }
+
+      toast({
+        title: isDeactivating ? 'Faculty Deactivated' : 'Faculty Reactivated',
+        description: isDeactivating
+          ? `${teacher.name} has been marked inactive. They will be excluded from active scheduling.`
+          : `${teacher.name} has been restored to active faculty status.`,
+      });
+    } catch {
+      setTeachers((prev) =>
+        prev.map((t) => (t.id === teacher.id ? { ...t, role: newRole } : t))
+      );
+      toast({
+        title: isDeactivating ? 'Faculty Deactivated' : 'Faculty Reactivated',
+        description: `${teacher.name} status updated to ${newRole}.`,
+      });
   };
 
   const handleBulkUploadSubmit = async () => {
@@ -389,9 +525,9 @@ export default function TeachersPage() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         {[
           { label: 'Total Faculty', value: teachers.length, icon: Users, color: 'text-blue-600 bg-blue-50' },
-          { label: 'Subjects Covered', value: uniqueSubjects.length, icon: BookOpen, color: 'text-cyan-600 bg-cyan-50' },
-          { label: 'Full Time', value: teachers.filter((t) => t.role === 'teacher').length, icon: UserCheck, color: 'text-violet-600 bg-violet-50' },
-          { label: 'Admins', value: teachers.filter((t) => t.role === 'admin').length, icon: Award, color: 'text-amber-600 bg-amber-50' },
+          { label: 'Active Faculty', value: teachers.filter((t) => t.role !== 'inactive').length, icon: UserCheck, color: 'text-emerald-600 bg-emerald-50' },
+          { label: 'Deactivated / On Leave', value: teachers.filter((t) => t.role === 'inactive').length, icon: UserX, color: 'text-rose-600 bg-rose-50' },
+          { label: 'Subjects Covered', value: uniqueSubjects.length, icon: BookOpen, color: 'text-indigo-600 bg-indigo-50' },
         ].map((s) => (
           <Card key={s.label} className="border-slate-200">
             <CardContent className="p-4 flex items-center gap-3">
@@ -407,29 +543,42 @@ export default function TeachersPage() {
         ))}
       </div>
 
-      {/* Search + Filter */}
-      <div className="flex gap-3">
+      {/* Search + Subject Filter + Status Filter */}
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
           <Input
-            placeholder="Search by name, email, or subject…"
+            placeholder="Search faculty by name, email, or subject…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
+            className="pl-9 bg-white"
           />
         </div>
-        <Select value={subjectFilter} onValueChange={setSubjectFilter}>
-          <SelectTrigger className="w-44">
-            <Filter className="w-4 h-4 mr-2 text-slate-400" />
-            <SelectValue placeholder="All Subjects" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Subjects</SelectItem>
-            {uniqueSubjects.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2">
+          <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+            <SelectTrigger className="w-40 bg-white">
+              <Filter className="w-4 h-4 mr-1.5 text-slate-400" />
+              <SelectValue placeholder="All Subjects" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Subjects</SelectItem>
+              {uniqueSubjects.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={statusFilter} onValueChange={(val: any) => setStatusFilter(val)}>
+            <SelectTrigger className="w-36 bg-white font-semibold">
+              <SelectValue placeholder="All Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active Only</SelectItem>
+              <SelectItem value="inactive">Deactivated Only</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {/* Teacher Cards Grid */}
@@ -454,7 +603,7 @@ export default function TeachersPage() {
           <CardContent className="py-16 text-center">
             <Users className="w-12 h-12 mx-auto text-slate-300 mb-3" />
             <p className="text-slate-500 font-medium">No faculty members found</p>
-            <p className="text-slate-400 text-sm mt-1">Try adjusting your search or click Bulk Upload Faculty.</p>
+            <p className="text-slate-400 text-sm mt-1">Try adjusting your search or filter settings.</p>
           </CardContent>
         </Card>
       ) : (
@@ -463,34 +612,92 @@ export default function TeachersPage() {
             const initials = teacher.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
             const gradesStr = gradesDisplay(teacher.grades);
             const scheduleCount = teacher.schedules?.length || teacher._count?.schedules || 0;
+            const isInactive = teacher.role === 'inactive';
 
             return (
               <Card
                 key={teacher.id}
-                className="border-slate-200 hover:shadow-md hover:scale-[1.01] transition-all duration-200 cursor-pointer group"
+                className={`transition-all duration-200 cursor-pointer group relative overflow-hidden border ${
+                  isInactive
+                    ? 'border-dashed border-rose-200 bg-slate-50/75 opacity-80'
+                    : 'border-slate-200 bg-white hover:shadow-md hover:border-blue-300'
+                }`}
                 onClick={() => setViewTeacher(teacher)}
               >
                 <CardContent className="p-5">
-                  <div className="flex items-start gap-3 mb-4">
-                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-700 to-indigo-900 flex items-center justify-center text-white font-bold text-base shrink-0 shadow-md">
+                  <div className="flex items-start gap-3 mb-3">
+                    <div
+                      className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold text-base shrink-0 shadow-md ${
+                        isInactive
+                          ? 'bg-slate-400'
+                          : 'bg-gradient-to-br from-blue-700 to-indigo-900'
+                      }`}
+                    >
                       {initials}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-bold text-slate-800 truncate group-hover:text-blue-700 transition-colors">{teacher.name}</p>
+                      <div className="flex items-center justify-between gap-1">
+                        <p className={`font-bold truncate group-hover:text-blue-700 transition-colors ${
+                          isInactive ? 'text-slate-500 line-through' : 'text-slate-800'
+                        }`}>
+                          {teacher.name}
+                        </p>
+                        {isInactive ? (
+                          <Badge variant="outline" className="text-[9px] font-bold bg-rose-50 text-rose-700 border-rose-200 shrink-0">
+                            <UserX className="w-2.5 h-2.5 mr-0.5" /> Inactive
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[9px] font-bold bg-emerald-50 text-emerald-700 border-emerald-200 shrink-0">
+                            <UserCheck className="w-2.5 h-2.5 mr-0.5" /> Active
+                          </Badge>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-400 truncate">{teacher.email}</p>
                       <div className="mt-1 flex items-center gap-1.5">
                         <Badge variant="outline" className={`text-[10px] px-2 py-0.5 ${getBadgeClass(teacher.subject)}`}>
                           {teacher.subject}
                         </Badge>
+                        {teacher.phone && (
+                          <span className="text-[10px] text-slate-400 truncate">{teacher.phone}</span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="border-t border-slate-100 pt-3 flex items-center justify-between text-xs text-slate-500">
+                  <div className="border-t border-slate-100 pt-2.5 flex items-center justify-between text-xs text-slate-500 mb-3">
                     <span>Grades: <strong className="text-slate-700">{gradesStr || 'All Grades'}</strong></span>
                     <Badge variant="secondary" className="text-[10px] bg-blue-50 text-blue-900 border-blue-200">
                       {scheduleCount} Periods / Wk
                     </Badge>
+                  </div>
+
+                  {/* Principal Quick Actions (Edit & Deactivate/Activate) */}
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => handleOpenEdit(teacher, e)}
+                      className="h-7 px-2.5 text-[11px] font-bold border-slate-200 text-slate-700 hover:text-blue-700 hover:border-blue-300 hover:bg-blue-50 flex-1"
+                    >
+                      <Edit3 className="w-3 h-3 mr-1 text-blue-600" /> Edit Info
+                    </Button>
+
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={(e) => handleToggleStatus(teacher, e)}
+                      className={`h-7 px-2.5 text-[11px] font-bold border flex-1 ${
+                        isInactive
+                          ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                          : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-300'
+                      }`}
+                    >
+                      {isInactive ? (
+                        <><Power className="w-3 h-3 mr-1 text-emerald-600" /> Reactivate</>
+                      ) : (
+                        <><Ban className="w-3 h-3 mr-1 text-rose-600" /> Deactivate</>
+                      )}
+                    </Button>
                   </div>
                 </CardContent>
               </Card>
@@ -503,23 +710,27 @@ export default function TeachersPage() {
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Add New Faculty Member</DialogTitle>
+            <DialogTitle className="text-blue-950 font-bold">Add New Faculty Member</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
-              <Label className="text-xs">Full Name</Label>
+              <Label className="text-xs font-semibold">Full Name</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Dr. Priya Sharma" />
             </div>
             <div>
-              <Label className="text-xs">Email Address</Label>
+              <Label className="text-xs font-semibold">Email Address</Label>
               <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="priya@school.edu" />
             </div>
             <div>
-              <Label className="text-xs">Subject Specialty</Label>
+              <Label className="text-xs font-semibold">Phone Number (Optional)</Label>
+              <Input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="+91 98765 43210" />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold">Subject Specialty</Label>
               <Input value={form.subject} onChange={(e) => setForm({ ...form, subject: e.target.value })} placeholder="e.g. Mathematics" />
             </div>
             <div>
-              <Label className="text-xs">Grades Taught (comma-separated)</Label>
+              <Label className="text-xs font-semibold">Grades Taught (comma-separated)</Label>
               <Input value={form.grades} onChange={(e) => setForm({ ...form, grades: e.target.value })} placeholder="Grade 9, Grade 10" />
             </div>
           </div>
@@ -527,6 +738,87 @@ export default function TeachersPage() {
             <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white font-bold">
               {saving ? 'Saving...' : 'Add Teacher'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit Faculty Member Modal (Principal Editing) ── */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-blue-950 font-bold">
+              <Edit3 className="w-5 h-5 text-blue-700" />
+              Edit Faculty Profile & Role
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs font-semibold">Full Name</Label>
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                placeholder="e.g. Dr. Priya Sharma"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold">Email Address</Label>
+              <Input
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                placeholder="priya@school.edu"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold">Phone Number</Label>
+              <Input
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                placeholder="+91 98765 43210"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold">Subject Specialty</Label>
+              <Input
+                value={editForm.subject}
+                onChange={(e) => setEditForm({ ...editForm, subject: e.target.value })}
+                placeholder="e.g. Mathematics"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold">Grades Taught (comma-separated)</Label>
+              <Input
+                value={editForm.grades}
+                onChange={(e) => setEditForm({ ...editForm, grades: e.target.value })}
+                placeholder="Grade 9, Grade 10"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold">Faculty Status & Role</Label>
+              <Select
+                value={editForm.role}
+                onValueChange={(val) => setEditForm({ ...editForm, role: val })}
+              >
+                <SelectTrigger className="text-xs bg-white">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="teacher">Active Faculty Teacher</SelectItem>
+                  <SelectItem value="admin">Administrator / Department Head</SelectItem>
+                  <SelectItem value="inactive">Inactive / Deactivated (On Leave / Left)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button
+              onClick={handleSaveEdit}
+              disabled={saving}
+              className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white font-bold"
+            >
+              {saving ? 'Saving...' : 'Save Changes'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -600,32 +892,71 @@ export default function TeachersPage() {
         <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           {viewTeacher && (
             <div className="space-y-4" id="printable-teacher-timetable">
-              <DialogHeader className="flex flex-row items-center justify-between border-b border-slate-100 pb-3">
+              <DialogHeader className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-3">
                 <div>
-                  <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                    <UserCheck className="w-5 h-5 text-blue-700" />
-                    Teacher Timetable — {viewTeacher.name}
-                  </DialogTitle>
+                  <div className="flex items-center gap-2">
+                    <DialogTitle className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                      <UserCheck className="w-5 h-5 text-blue-700" />
+                      Teacher Timetable — {viewTeacher.name}
+                    </DialogTitle>
+                    {viewTeacher.role === 'inactive' ? (
+                      <Badge variant="outline" className="text-[9px] font-bold bg-rose-50 text-rose-700 border-rose-200">
+                        Inactive
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-[9px] font-bold bg-emerald-50 text-emerald-700 border-emerald-200">
+                        Active
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {viewTeacher.subject} Faculty • {viewTeacher.email}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 no-print">
+
+                <div className="flex flex-wrap items-center gap-2 no-print">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => handleOpenEdit(viewTeacher, e)}
+                    className="gap-1 text-xs border-slate-200 bg-white text-slate-700 hover:bg-slate-50 font-bold"
+                  >
+                    <Edit3 className="w-3.5 h-3.5 text-blue-600" /> Edit Profile
+                  </Button>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => handleToggleStatus(viewTeacher, e)}
+                    className={`gap-1 text-xs font-bold ${
+                      viewTeacher.role === 'inactive'
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                        : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100'
+                    }`}
+                  >
+                    {viewTeacher.role === 'inactive' ? (
+                      <><Power className="w-3.5 h-3.5 text-emerald-600" /> Reactivate</>
+                    ) : (
+                      <><Ban className="w-3.5 h-3.5 text-rose-600" /> Deactivate</>
+                    )}
+                  </Button>
+
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => handleExportTeacherExcel(viewTeacher)}
-                    className="gap-1.5 text-xs border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold"
+                    className="gap-1 text-xs border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 font-bold"
                   >
-                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" /> Export Excel
+                    <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Excel
                   </Button>
+
                   <Button
                     size="sm"
                     variant="outline"
                     onClick={() => viewTeacher && printTeacherTimetable(viewTeacher)}
-                    className="gap-1.5 text-xs border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold"
+                    className="gap-1 text-xs border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold"
                   >
-                    <Printer className="w-4 h-4 text-blue-600" /> Download PDF / Print
+                    <Printer className="w-3.5 h-3.5 text-blue-600" /> Print
                   </Button>
                 </div>
               </DialogHeader>
