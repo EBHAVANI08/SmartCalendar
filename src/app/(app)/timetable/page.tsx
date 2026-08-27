@@ -1619,7 +1619,9 @@ const isDemoSchool = () => {
                 {/* Card 1A: School Day Hours */}
                 <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs space-y-3">
                   <div className="flex items-center gap-2 pb-1.5 border-b border-slate-100">
-                    <span className="text-sm">🕒</span>
+                    <div className="w-5 h-5 rounded-md bg-blue-50 border border-blue-200/60 flex items-center justify-center text-blue-600">
+                      <Clock className="w-3 h-3" />
+                    </div>
                     <span className="text-xs font-bold text-slate-800">School Bell Timings</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -1647,7 +1649,9 @@ const isDemoSchool = () => {
                 {/* Card 1B: Periods Structure */}
                 <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-xs space-y-3">
                   <div className="flex items-center gap-2 pb-1.5 border-b border-slate-100">
-                    <span className="text-sm">📚</span>
+                    <div className="w-5 h-5 rounded-md bg-indigo-50 border border-indigo-200/60 flex items-center justify-center text-indigo-600">
+                      <BookOpen className="w-3 h-3" />
+                    </div>
                     <span className="text-xs font-bold text-slate-800">Daily Period Counts</span>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -1712,7 +1716,9 @@ const isDemoSchool = () => {
                 }`}>
                   <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm">☕</span>
+                      <div className="w-5 h-5 rounded-md bg-amber-50 border border-amber-200/60 flex items-center justify-center text-amber-600">
+                        <Coffee className="w-3 h-3" />
+                      </div>
                       <span className="text-xs font-bold text-slate-800">Short Break (Morning Recess)</span>
                     </div>
 
@@ -1781,7 +1787,9 @@ const isDemoSchool = () => {
                 }`}>
                   <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm">🍱</span>
+                      <div className="w-5 h-5 rounded-md bg-orange-50 border border-orange-200/60 flex items-center justify-center text-orange-600">
+                        <Utensils className="w-3 h-3" />
+                      </div>
                       <span className="text-xs font-bold text-slate-800">Lunch Break (Midday)</span>
                     </div>
 
