@@ -398,6 +398,7 @@ export default function TeachersPage() {
         title: isDeactivating ? 'Faculty Deactivated' : 'Faculty Reactivated',
         description: `${teacher.name} status updated to ${newRole}.`,
       });
+    }
   };
 
   const handleBulkUploadSubmit = async () => {
