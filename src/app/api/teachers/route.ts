@@ -52,3 +52,55 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create teacher' }, { status: 500 });
   }
 }
+
+export async function PUT(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, name, email, phone, subject, grades, role } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: 'Teacher ID is required.' }, { status: 400 });
+    }
+
+    const updateData: any = {};
+    if (name !== undefined) updateData.name = name;
+    if (email !== undefined) updateData.email = email;
+    if (phone !== undefined) updateData.phone = phone;
+    if (subject !== undefined) updateData.subject = subject;
+    if (grades !== undefined) {
+      updateData.grades = typeof grades === 'string' ? grades : JSON.stringify(grades);
+    }
+    if (role !== undefined) updateData.role = role;
+
+    const teacher = await db.teacher.update({
+      where: { id },
+      data: updateData,
+    });
+
+    return NextResponse.json({ success: true, teacher });
+  } catch (error: any) {
+    console.error('Error updating teacher:', error);
+    return NextResponse.json({ error: error?.message || 'Failed to update teacher' }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request) {
+  try {
+    const body = await request.json();
+    const { id, role } = body;
+
+    if (!id) {
+      return NextResponse.json({ error: 'Teacher ID is required.' }, { status: 400 });
+    }
+
+    const teacher = await db.teacher.update({
+      where: { id },
+      data: { role: role || 'inactive' },
+    });
+
+    return NextResponse.json({ success: true, teacher });
+  } catch (error: any) {
+    console.error('Error toggling teacher status:', error);
+    return NextResponse.json({ error: error?.message || 'Failed to toggle teacher status' }, { status: 500 });
+  }
+}

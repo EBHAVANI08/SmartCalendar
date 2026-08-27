@@ -33,7 +33,20 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const schoolId = await getTenantSchoolId(req);
+    // Resolve the real schoolId from DB (same pattern as teachers, schedules APIs)
+    let schoolId = await getTenantSchoolId(req);
+    if (!schoolId) {
+      try {
+        const firstSchool = await db.school.findFirst({ select: { id: true } });
+        schoolId = firstSchool?.id || null;
+      } catch (dbErr: any) {
+        return NextResponse.json({ success: false, error: `Database connection failed: ${dbErr?.message || 'Check DATABASE_URL env variable on Render.'}` }, { status: 503 });
+      }
+    }
+    if (!schoolId) {
+      return NextResponse.json({ success: false, error: 'No school found. Please seed school data first via POST /api/seed.' }, { status: 400 });
+    }
+
     const body = await req.json();
     const { code, name, type, capacity } = body;
 
@@ -43,11 +56,11 @@ export async function POST(req: NextRequest) {
 
     const room = await db.room.create({
       data: {
-        schoolId: schoolId || 'default',
-        code,
-        name,
+        schoolId,
+        code: code.trim().toUpperCase(),
+        name: name.trim(),
         type,
-        capacity: capacity || 30,
+        capacity: Number(capacity) || 30,
         active: true,
       },
     });
@@ -55,9 +68,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: true, room }, { status: 201 });
   } catch (error: any) {
     if (error?.code === 'P2002') {
-      return NextResponse.json({ success: false, error: 'A room with this code already exists.' }, { status: 409 });
+      return NextResponse.json({ success: false, error: 'A room with this code already exists in your school. Use a different room code.' }, { status: 409 });
     }
-    console.error('[ROOMS CREATE ERROR]', error);
-    return NextResponse.json({ success: false, error: 'Failed to create room' }, { status: 500 });
+    console.error('[ROOMS CREATE ERROR]', error?.message || error);
+    return NextResponse.json({ success: false, error: `Failed to create room: ${error?.message || 'Unknown error'}` }, { status: 500 });
   }
 }

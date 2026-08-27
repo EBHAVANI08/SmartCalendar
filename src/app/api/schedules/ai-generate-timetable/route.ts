@@ -328,8 +328,7 @@ export async function POST(request: Request) {
 
       const subjectDailyLimit = (subject: string): number => {
         if (subject === 'Physical Education' && day === 'Wednesday') {
-          if (targetGrade === 'Grade 3') return 1;
-          if (targetGrade === 'Grade 5') return 2;
+          if (['Grade 3', 'Grade 4', 'Grade 5'].includes(targetGrade)) return 2;
           return 1;
         }
         return 2;
@@ -462,16 +461,16 @@ export async function POST(request: Request) {
       }
 
       // PT balancing rule:
-      // Grade 5 should have one extra sports (Physical Education) period on Wednesday vs Grade 3.
-      // If PE is only placed once (and period-1 is already PE), force a second PE into a non-consecutive slot.
-      if (day === 'Wednesday' && targetGrade === 'Grade 5') {
+      // Grade 3, 4, and 5 must have one extra sports (Physical Education) period on Wednesday vs Period 1 PT.
+      // Force a second PE into a non-consecutive slot.
+      if (day === 'Wednesday' && ['Grade 3', 'Grade 4', 'Grade 5'].includes(targetGrade)) {
         const pe = 'Physical Education';
         const peCount = assignments.filter((a) => a.subject === pe).length;
-        if (peCount < subjectDailyLimit(pe)) {
+        if (peCount < 2) {
           const byPeriod = new Map(assignments.map((a) => [a.period, a]));
           const hasPeAt = (p: number) => byPeriod.get(p)?.subject === pe;
           const candidate = [...assignments]
-            .sort((a, b) => a.period - b.period)
+            .sort((a, b) => b.period - a.period) // Prefer afternoon slots (P6-8)
             .find((a) => {
               if (a.subject === pe) return false;
               // Avoid consecutive placement with existing PE periods

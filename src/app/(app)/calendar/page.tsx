@@ -124,7 +124,7 @@ export default function AcademicCalendarPage() {
   };
 
   return (
-    <div className="space-y-6">
+    <div id="printable-timetable-container" className="space-y-6">
       {/* ── Enterprise SaaS Academic Calendar Header ── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
         <div className="flex items-center gap-4">
@@ -137,7 +137,7 @@ export default function AcademicCalendarPage() {
                 Academic Calendar & School Milestones
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Delhi Public School (DPS)
+                Takshila School
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
@@ -147,7 +147,7 @@ export default function AcademicCalendarPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <Button variant="outline" size="sm" onClick={() => window.print()} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
+          <Button variant="outline" size="sm" onClick={() => { document.title = 'Takshila School — Academic Calendar'; window.print(); }} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
             <Printer className="w-4 h-4 text-[#2563EB]" /> Print Calendar
           </Button>
           <Button

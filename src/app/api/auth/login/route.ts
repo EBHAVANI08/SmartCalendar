@@ -167,10 +167,17 @@ export async function POST(request: Request) {
         });
       }
 
-      const DEMO_TEACHER_EMAIL = 'afreen.deshmukh@takshilaschool.edu';
-      if (cleanEmail === DEMO_TEACHER_EMAIL) {
+      const DEMO_TEACHER_EMAILS = [
+        'megha.lohade@takshilaschool.edu',
+        'teacher@takshilaschool.edu',
+        'afreen.deshmukh@takshilaschool.edu',
+      ];
+      if (DEMO_TEACHER_EMAILS.includes(cleanEmail)) {
         const takshilaTeacher = await db.teacher.findFirst({
-          where: { schoolId: takshilaSchool.id, email: DEMO_TEACHER_EMAIL },
+          where: {
+            schoolId: takshilaSchool.id,
+            email: { in: [cleanEmail, 'megha.lohade@takshilaschool.edu'] },
+          },
         }).catch(() => null);
 
         if (takshilaTeacher) {

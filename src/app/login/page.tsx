@@ -23,7 +23,7 @@ export default function LoginPage() {
   const { toast } = useToast();
 
   const [email, setEmail] = useState('admin@takshilaschool.edu');
-  const [password, setPassword] = useState('school123');
+  const [password, setPassword] = useState('admin123');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
@@ -623,13 +623,13 @@ export default function LoginPage() {
                       type="button"
                       onClick={async () => {
                         setEmail('admin@takshilaschool.edu');
-                        setPassword('school123');
+                        setPassword('admin123');
                         setLoading(true);
                         try {
                           const res = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'admin@takshilaschool.edu', password: 'school123' }),
+                            body: JSON.stringify({ email: 'admin@takshilaschool.edu', password: 'admin123' }),
                           });
                           const data = await res.json();
                           if (res.ok && data?.success) {
@@ -656,21 +656,21 @@ export default function LoginPage() {
                     <button
                       type="button"
                       onClick={async () => {
-                        setEmail('afreen.deshmukh@takshilaschool.edu');
+                        setEmail('megha.lohade@takshilaschool.edu');
                         setPassword('teacher123');
                         setLoading(true);
                         try {
                           const res = await fetch('/api/auth/login', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ email: 'afreen.deshmukh@takshilaschool.edu', password: 'teacher123' }),
+                            body: JSON.stringify({ email: 'megha.lohade@takshilaschool.edu', password: 'teacher123' }),
                           });
                           const data = await res.json();
                           if (res.ok && data?.success) {
                             localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user: data.user, role: 'teacher' }));
                             sessionStorage.setItem('sc_user', JSON.stringify(data.user));
                             if (data.token) sessionStorage.setItem('sc_token', data.token);
-                            toast({ title: 'Teacher Logged In', description: 'Logged in as Afreen Deshmukh' });
+                            toast({ title: 'Teacher Logged In', description: 'Logged in as Megha Lohade (3-Jasmine CT)' });
                             router.push('/dashboard');
                           } else {
                             setError(data.error || 'Takshila teacher login failed.');
@@ -684,7 +684,7 @@ export default function LoginPage() {
                       className="p-2.5 rounded-xl bg-emerald-950/40 border border-emerald-500/30 hover:border-emerald-400 text-left transition-all group cursor-pointer"
                     >
                       <span className="text-emerald-300 font-extrabold text-[11px] block truncate group-hover:text-emerald-200">Teacher</span>
-                      <span className="text-[9px] text-emerald-400/80 block font-mono">Afreen Deshmukh</span>
+                      <span className="text-[9px] text-emerald-400/80 block font-mono">Class Teacher</span>
                     </button>
                   </div>
                 </div>
