@@ -250,17 +250,21 @@ export default function TimetablePage() {
 
   const [studioSettings, setStudioSettings] = useState({
     startTime: '08:00',
-    endTime: '15:00',
-    periodDuration: '45',
+    endTime: '13:45',
+    periodDuration: '40',
     totalPeriods: '8',
     saturdayType: 'half', // 'full' | 'half' | 'off'
-    saturdayPeriods: '4',
-    shortBreakAfter: '2',
+    saturdayPeriods: '5',
+    shortBreakAfter: '3',
     lunchBreakAfter: '4',
     bulkAll: true,
-    startGrade: 'Grade 1',
-    endGrade: 'Grade 12',
+    startGrade: 'Grade 3',
+    endGrade: 'Grade 8',
     sectionsCount: '3',
+    preventConsecutiveDouble: true,
+    enableWedPtSports: true,
+    anchorClassTeacherP1: true,
+    customPrompt: '',
   });
 
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
@@ -394,6 +398,12 @@ export default function TimetablePage() {
               lunchAfter: parseInt(studioSettings.lunchBreakAfter, 10),
               startTime: studioSettings.startTime,
               endTime: studioSettings.endTime,
+              startGrade: studioSettings.startGrade,
+              endGrade: studioSettings.endGrade,
+              preventConsecutiveDouble: studioSettings.preventConsecutiveDouble,
+              enableWedPtSports: studioSettings.enableWedPtSports,
+              anchorClassTeacherP1: studioSettings.anchorClassTeacherP1,
+              customPrompt: studioSettings.customPrompt,
             },
           }),
         });
@@ -1284,20 +1294,69 @@ const isDemoSchool = () => {
                 </div>
               </div>
 
-              {/* Custom Rules & Break Placement */}
+              {/* Custom Rules & Pedagogical Constraints Matrix */}
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
-                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
-                  <Utensils className="w-4 h-4 text-blue-700" />
-                  Pedagogical Rules & Break Placement
+                <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-500" />
+                    AI Pedagogical Rules & Custom Constraints
+                  </span>
+                  <Badge variant="outline" className="text-[10px] bg-blue-50 text-blue-800 border-blue-200 font-bold">
+                    Active Rules Config
+                  </Badge>
                 </h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">Break Placement</Label>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  {/* Rule 1 Toggle */}
+                  <label className="flex items-start gap-2.5 p-2.5 bg-white rounded-lg border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={studioSettings.preventConsecutiveDouble}
+                      onChange={(e) => setStudioSettings({ ...studioSettings, preventConsecutiveDouble: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-blue-600 rounded cursor-pointer accent-blue-600"
+                    />
+                    <div>
+                      <span className="text-[11px] font-bold text-slate-800 block">Rule 1: Non-Consecutive Double Periods</span>
+                      <span className="text-[10px] text-slate-500">Same subject 2 periods in a day are separated</span>
+                    </div>
+                  </label>
+
+                  {/* Rule 2 & 3 Toggle */}
+                  <label className="flex items-start gap-2.5 p-2.5 bg-white rounded-lg border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={studioSettings.enableWedPtSports}
+                      onChange={(e) => setStudioSettings({ ...studioSettings, enableWedPtSports: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-blue-600 rounded cursor-pointer accent-blue-600"
+                    />
+                    <div>
+                      <span className="text-[11px] font-bold text-slate-800 block">Rule 2 & 3: Wednesday PT & Sports</span>
+                      <span className="text-[10px] text-slate-500">Wed P1 PT + Afternoon Sports (Grade 3–5)</span>
+                    </div>
+                  </label>
+
+                  {/* Rule 4 Toggle */}
+                  <label className="flex items-start gap-2.5 p-2.5 bg-white rounded-lg border border-slate-200 cursor-pointer hover:border-blue-300 transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={studioSettings.anchorClassTeacherP1}
+                      onChange={(e) => setStudioSettings({ ...studioSettings, anchorClassTeacherP1: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-blue-600 rounded cursor-pointer accent-blue-600"
+                    />
+                    <div>
+                      <span className="text-[11px] font-bold text-slate-800 block">Rule 4: Period 1 Class Teacher</span>
+                      <span className="text-[10px] text-slate-500">Anchor Period 1 to Class Teacher (Grade 3–8)</span>
+                    </div>
+                  </label>
+
+                  {/* Break Placement Selector */}
+                  <div className="p-2.5 bg-white rounded-lg border border-slate-200 space-y-1">
+                    <Label className="text-[11px] font-bold text-slate-800">Recess Break Placement</Label>
                     <Select
                       value={studioSettings.shortBreakAfter}
                       onValueChange={(val) => setStudioSettings({ ...studioSettings, shortBreakAfter: val })}
                     >
-                      <SelectTrigger className="h-8 text-xs">
+                      <SelectTrigger className="h-7 text-xs border-slate-200">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1307,12 +1366,21 @@ const isDemoSchool = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <div className="flex flex-col justify-center space-y-1 bg-white p-2.5 rounded-lg border border-slate-200">
-                    <span className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                      <Trophy className="w-3.5 h-3.5 text-teal-600" /> Wednesday PT & Sports Rule
-                    </span>
-                    <span className="text-[10px] text-slate-500">Fixed Wed P1 PT + Afternoon Sports for Grade 3–5</span>
-                  </div>
+                </div>
+
+                {/* Custom AI Directives Prompt Area */}
+                <div className="pt-1 space-y-1">
+                  <Label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
+                    <span>Custom AI School Directives & Prompt (Optional)</span>
+                    <span className="text-[10px] text-slate-400 font-normal">Natural language AI instructions</span>
+                  </Label>
+                  <textarea
+                    rows={2}
+                    value={studioSettings.customPrompt}
+                    onChange={(e) => setStudioSettings({ ...studioSettings, customPrompt: e.target.value })}
+                    placeholder='e.g. "Assign Morning Assembly on Monday Period 1. Keep Robotics in afternoon slots. Do not schedule heavy core subjects right after lunch."'
+                    className="w-full p-2.5 text-xs rounded-lg border border-slate-200 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500 font-sans resize-none"
+                  />
                 </div>
               </div>
 
