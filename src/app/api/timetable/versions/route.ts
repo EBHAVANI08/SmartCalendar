@@ -1,27 +1,37 @@
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { requireCapability } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
 const createSchema = z.object({
-  schoolId: z.string().min(1), academicYearId: z.string().min(1), academicTermId: z.string().optional(),
+  academicYearId: z.string().min(1), academicTermId: z.string().optional(),
   campusId: z.string().optional(), name: z.string().min(1), timetableType: z.string().default('regular'),
   effectiveFrom: z.string().datetime().optional(), effectiveTo: z.string().datetime().optional(),
   basedOnId: z.string().optional(), createdBy: z.string().min(1),
 });
 
+// Both handlers are pinned to the caller's school. schoolId used to be read
+// from the query string / request body, so any signed-in user could list a
+// different school's timetable versions or create one inside that school.
 export async function GET(request: Request) {
-  const url = new URL(request.url); const schoolId = url.searchParams.get('schoolId');
-  if (!schoolId) return NextResponse.json({ error: 'schoolId is required' }, { status: 400 });
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
   const versions = await db.timetableVersion.findMany({ where: { schoolId }, orderBy: { updatedAt: 'desc' } });
   return NextResponse.json({ success: true, versions });
 }
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'timetable.version.transition');
+  if (denied) return denied;
+
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
   const parsed = createSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: 'Invalid timetable version', details: parsed.error.flatten() }, { status: 400 });
-  const input = parsed.data;
+  const input = { ...parsed.data, schoolId };
   const previous = await db.timetableVersion.findFirst({ where: { schoolId: input.schoolId, academicYearId: input.academicYearId, name: input.name }, orderBy: { version: 'desc' } });
   const created = await db.$transaction(async (tx) => {
     const version = await tx.timetableVersion.create({ data: { ...input, version: (previous?.version || 0) + 1, effectiveFrom: input.effectiveFrom ? new Date(input.effectiveFrom) : null, effectiveTo: input.effectiveTo ? new Date(input.effectiveTo) : null } });

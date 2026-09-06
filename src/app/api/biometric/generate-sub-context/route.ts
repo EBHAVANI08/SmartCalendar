@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 // Call AI chat completions using ZAI helper from z-ai-web-dev-sdk
 async function callAIChat(messages: { role: string; content: string }[], maxTokens: number = 4000) {
@@ -21,6 +22,9 @@ async function callAIChat(messages: { role: string; content: string }[], maxToke
 // Generate comprehensive substitute teacher context using AI
 // Enhanced to fetch yesterday's lesson plan and generate popup-ready context
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'attendance.write');
+  if (denied) return denied;
+
   try {
     let body: { substitutionId?: string };
     try {

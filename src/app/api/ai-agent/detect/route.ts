@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { detectAndCreateSubstitutionRequests } from '@/lib/services/ai-agent';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(req: NextRequest) {
+  const denied = requireCapability(req, 'substitution.assign');
+  if (denied) return denied;
+
   try {
     const { date } = await req.json();
     if (!date) return NextResponse.json({ success: false, error: 'Date required' }, { status: 400 });

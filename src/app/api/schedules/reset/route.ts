@@ -1,7 +1,11 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'owner.console');
+  if (denied) return denied;
+
   try {
     const body = await request.json().catch(() => ({}));
     const { schoolId, reason, clearTeachers = false } = body;
@@ -98,6 +102,9 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
+  const denied = requireCapability(request, 'owner.console');
+  if (denied) return denied;
+
   return POST(request);
 }
 

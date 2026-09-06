@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { requireCapability } from '@/lib/authz';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const MAX_PERIODS_PER_DAY = 8;
@@ -55,6 +56,9 @@ interface ReassignmentPlan {
 }
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'analytics.read');
+  if (denied) return denied;
+
   try {
     const { teacherIds, targetMaxPeriods = OVERLOAD_THRESHOLD } = await request.json();
 

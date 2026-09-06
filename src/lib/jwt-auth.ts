@@ -11,19 +11,53 @@ export interface UserSessionPayload {
   exp?: number;
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'smart-calendar-saas-secret-key-2026-production';
 const TOKEN_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
+const MIN_SECRET_LENGTH = 32;
+const encoder = new TextEncoder();
+
+/**
+ * JWT_SECRET is required. There is deliberately no fallback value: a default
+ * secret in source would let anyone mint a valid superadmin session offline.
+ * Read lazily (not at module load) so `next build` can collect routes without
+ * the runtime secret present — signing and verification still fail closed.
+ */
+function getSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < MIN_SECRET_LENGTH) {
+    throw new Error(
+      `JWT_SECRET is not configured. Set it to a random value of at least ${MIN_SECRET_LENGTH} characters before issuing or verifying sessions.`
+    );
+  }
+  return secret;
+}
+
+let cachedKey: { secret: string; key: CryptoKey } | null = null;
+
+async function getKey(): Promise<CryptoKey> {
+  const secret = getSecret();
+  if (cachedKey && cachedKey.secret === secret) return cachedKey.key;
+  const key = await crypto.subtle.importKey(
+    'raw',
+    encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  cachedKey = { secret, key };
+  return key;
+}
+
+function base64UrlFromBinary(bin: string): string {
+  return btoa(bin).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
 
 function base64UrlEncode(str: string): string {
-  const bytes = new TextEncoder().encode(str);
+  const bytes = encoder.encode(str);
   let bin = '';
   for (let i = 0; i < bytes.byteLength; i++) {
     bin += String.fromCharCode(bytes[i]);
   }
-  return btoa(bin)
-    .replace(/=/g, '')
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_');
+  return base64UrlFromBinary(bin);
 }
 
 function base64UrlDecode(str: string): string {
@@ -39,21 +73,34 @@ function base64UrlDecode(str: string): string {
   return new TextDecoder().decode(bytes);
 }
 
-function hmacSha256Sync(key: string, data: string): string {
-  let hash = 0;
-  const combined = data + '|' + key;
-  for (let i = 0; i < combined.length; i++) {
-    hash = (hash << 5) - hash + combined.charCodeAt(i);
-    hash |= 0;
+/** Real HMAC-SHA256 via WebCrypto — available in both the Edge and Node runtimes. */
+async function hmacSha256(data: string): Promise<string> {
+  const signature = await crypto.subtle.sign('HMAC', await getKey(), encoder.encode(data));
+  const bytes = new Uint8Array(signature);
+  let bin = '';
+  for (let i = 0; i < bytes.byteLength; i++) {
+    bin += String.fromCharCode(bytes[i]);
   }
-  const hashStr = Math.abs(hash).toString(36);
-  return base64UrlEncode(`sig_v2_${hashStr}`);
+  return base64UrlFromBinary(bin);
+}
+
+/** Length-independent comparison, so a mismatch leaks no timing information. */
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) {
+    diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  }
+  return diff === 0;
 }
 
 /**
- * Sign a lightweight, standard JWT token compatible with Node.js and Edge Runtime
+ * Sign a standard HS256 JWT. Compatible with Node.js and the Edge Runtime.
  */
-export function signJwt(payload: UserSessionPayload, expiresInSeconds: number = TOKEN_MAX_AGE): string {
+export async function signJwt(
+  payload: UserSessionPayload,
+  expiresInSeconds: number = TOKEN_MAX_AGE
+): Promise<string> {
   const header = { alg: 'HS256', typ: 'JWT' };
   const now = Math.floor(Date.now() / 1000);
   const fullPayload: UserSessionPayload = {
@@ -62,37 +109,36 @@ export function signJwt(payload: UserSessionPayload, expiresInSeconds: number = 
     exp: now + expiresInSeconds,
   };
 
-  const encodedHeader = base64UrlEncode(JSON.stringify(header));
-  const encodedPayload = base64UrlEncode(JSON.stringify(fullPayload));
+  const dataToSign = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(
+    JSON.stringify(fullPayload)
+  )}`;
 
-  const dataToSign = `${encodedHeader}.${encodedPayload}`;
-  const signature = hmacSha256Sync(JWT_SECRET, dataToSign);
-
-  return `${dataToSign}.${signature}`;
+  return `${dataToSign}.${await hmacSha256(dataToSign)}`;
 }
 
 /**
- * Verify and parse a JWT token in any environment (Node.js & Edge Runtime)
+ * Verify and parse a JWT. Returns null for anything untrusted — a bad or absent
+ * signature, an unexpected algorithm, a malformed payload, or an expired token.
  */
-export function verifyJwt(token: string): UserSessionPayload | null {
+export async function verifyJwt(token: string): Promise<UserSessionPayload | null> {
   if (!token || typeof token !== 'string') return null;
   const parts = token.split('.');
   if (parts.length !== 3) return null;
 
   const [encodedHeader, encodedPayload, signature] = parts;
-  const dataToSign = `${encodedHeader}.${encodedPayload}`;
-  const expectedSignature = hmacSha256Sync(JWT_SECRET, dataToSign);
-
-  if (signature !== expectedSignature) {
-    return null;
-  }
 
   try {
+    // Pin the algorithm: never let the token itself select "none" or a weaker alg.
+    const header = JSON.parse(base64UrlDecode(encodedHeader));
+    if (header?.alg !== 'HS256' || header?.typ !== 'JWT') return null;
+
+    const expected = await hmacSha256(`${encodedHeader}.${encodedPayload}`);
+    if (!timingSafeEqual(signature, expected)) return null;
+
     const payload: UserSessionPayload = JSON.parse(base64UrlDecode(encodedPayload));
     const now = Math.floor(Date.now() / 1000);
-    if (payload.exp && payload.exp < now) {
-      return null;
-    }
+    if (payload.exp && payload.exp < now) return null;
+    if (!payload.userId || !payload.role) return null;
     return payload;
   } catch {
     return null;

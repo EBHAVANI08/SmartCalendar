@@ -12,7 +12,7 @@ import {
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
 
   const { searchParams } = new URL(request.url);
   const q = (searchParams.get('q') || '').trim();
@@ -43,7 +43,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   await ensureDefaultPlans();
 
   const body = await request.json();

@@ -6,14 +6,14 @@ import { getWebsiteSettings } from '@/lib/website';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const settings = await getWebsiteSettings();
   const media = await db.websiteMedia.findMany({ orderBy: { createdAt: 'desc' } });
   return NextResponse.json({ settings, media });
 }
 
 export async function PUT(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   const allowed = [
     'siteName', 'tagline', 'heroBadge', 'heroTitle', 'heroSubtitle', 'ctaPrimary', 'ctaSecondary',

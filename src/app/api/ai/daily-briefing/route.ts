@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const dayName = new Date().toLocaleDateString('en-IN', { weekday: 'long' });
 
     const teacherWhere = schoolId ? { schoolId } : {};
-    const subWhere = schoolId ? { absentTeacher: { schoolId } } : {};
+    const subWhere = schoolId ? { schoolId, absentTeacher: { schoolId } } : {};
     const leaveWhere = schoolId
       ? { teacher: { schoolId }, status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } }
       : { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } };

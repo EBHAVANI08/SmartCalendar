@@ -1,8 +1,12 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 // POST /api/notifications/ai-send - AI identifies and sends curriculum/lesson plans to matching teachers
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'support.write');
+  if (denied) return denied;
+
   try {
     const { type, referenceIds, grades, subjects } = await request.json();
 

@@ -6,8 +6,8 @@ import { signJwt } from '@/lib/jwt-auth';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
-function createLoginResponse(user: any) {
-  const token = signJwt({
+async function createLoginResponse(user: any) {
+  const token = await signJwt({
     userId: user.id,
     email: user.email,
     role: user.role,
@@ -40,7 +40,9 @@ async function verifyPassword(
   stored: string,
   onPlainMatchUpgrade?: (newHash: string) => Promise<void>
 ): Promise<boolean> {
-  if (!stored) return true;
+  // An account with no stored password can never be authenticated. Previously
+  // this returned true, which let any password sign in to such an account.
+  if (!stored) return false;
   if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
     return await bcrypt.compare(provided, stored);
   }
@@ -112,9 +114,16 @@ export async function POST(request: Request) {
     }
 
     // ── Platform SuperAdmin (owner console) ──
-    const SUPERADMIN_EMAIL = 'sp@kamglobalai.com';
-    const SUPERADMIN_PASSWORD = 'P@ssw0rd123';
-    if (cleanEmail === SUPERADMIN_EMAIL || cleanEmail === 'superadmin') {
+    // Credentials come from the environment. When unset this branch is skipped
+    // entirely and the owner authenticates through the Admin table below, so
+    // there is no owner credential in source.
+    const SUPERADMIN_EMAIL = (process.env.SUPERADMIN_EMAIL || '').trim().toLowerCase();
+    const SUPERADMIN_PASSWORD = process.env.SUPERADMIN_PASSWORD || '';
+    if (
+      SUPERADMIN_EMAIL &&
+      SUPERADMIN_PASSWORD &&
+      (cleanEmail === SUPERADMIN_EMAIL || cleanEmail === 'superadmin')
+    ) {
       if (password !== SUPERADMIN_PASSWORD) {
         return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
       }
@@ -156,6 +165,32 @@ export async function POST(request: Request) {
         email.toUpperCase() === 'TAKSHILA2025';
 
       if (isTakshilaAdmin) {
+        // This demo tenant previously issued an admin session on an email match
+        // alone. A password is now required — either the school's own password,
+        // or that of the Admin record sharing this email (the demo credential).
+        let verified = await verifyPassword(password, takshilaSchool.password, async (newHash) => {
+          await db.school
+            .update({ where: { id: takshilaSchool.id }, data: { password: newHash } })
+            .catch(() => null);
+        });
+
+        if (!verified) {
+          const demoAdmin = await db.admin
+            .findFirst({ where: { email: takshilaSchool.email } })
+            .catch(() => null);
+          if (demoAdmin) {
+            verified = await verifyPassword(password, demoAdmin.password, async (newHash) => {
+              await db.admin
+                .update({ where: { id: demoAdmin.id }, data: { password: newHash } })
+                .catch(() => null);
+            });
+          }
+        }
+
+        if (!verified) {
+          return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+        }
+
         return createLoginResponse({
           id: takshilaSchool.id,
           name: takshilaSchool.contactName || 'Takshila School Principal',
@@ -181,6 +216,15 @@ export async function POST(request: Request) {
         }).catch(() => null);
 
         if (takshilaTeacher) {
+          const verified = await verifyPassword(password, takshilaTeacher.password, async (newHash) => {
+            await db.teacher
+              .update({ where: { id: takshilaTeacher.id }, data: { password: newHash } })
+              .catch(() => null);
+          });
+          if (!verified) {
+            return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
+          }
+
           return createLoginResponse({
             id: takshilaTeacher.id,
             name: takshilaTeacher.name,

@@ -16,7 +16,12 @@
     "db:reset": "prisma migrate reset",
     "typecheck:smart-calendar": "node node_modules/typescript/bin/tsc -p tsconfig.smart-calendar.json",
     "test:smart-calendar": "node --test tests/smart-calendar.test.mjs",
-    "postinstall": "node node_modules/prisma/build/index.js generate"
+    "postinstall": "node node_modules/prisma/build/index.js generate",
+    "test:integration": "node --env-file=.env --test tests/integration.test.mjs",
+    "test:authz": "node --env-file=.env --test tests/authz.test.mjs",
+    "test:readiness": "node --env-file=.env --test tests/migration-readiness.test.mjs",
+    "test:nav": "node --env-file=.env --test tests/navigation-faculty.test.mjs",
+    "test:all": "npm run test:smart-calendar && npm run test:integration && npm run test:authz && npm run test:readiness && npm run test:nav"
   },
   "dependencies": {
     "@types/node": "^20.18.0",

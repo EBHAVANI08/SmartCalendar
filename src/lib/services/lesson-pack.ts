@@ -1,101 +1,185 @@
 /**
- * Lesson Pack Generator — Feature 2.2
+ * Lesson context for a substitute teacher.
  *
- * Auto-generates lesson continuity packs for substitute teachers.
- * Uses z-ai-web-dev-sdk to generate a 40-min lesson plan.
+ * What a substitute needs before walking into a class they do not normally
+ * teach: which class, which period, who they are covering, and what to actually
+ * do for those 40 minutes.
+ *
+ * Three rules shape this:
+ *
+ *  1. A real LessonPlan written for that grade and subject always wins. AI is a
+ *     fallback, not the default.
+ *  2. Generated content is labelled as generated. The substitute must be able to
+ *     tell a teacher's plan from a machine's suggestion.
+ *  3. Nothing is invented. No student roster and no emergency contacts are
+ *     fabricated - the previous version queried an orphaned `Student` model with
+ *     no tenant scoping and filled empty topics with "Introduction to Chapter".
  */
 
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
 
-interface LessonPackData {
+export type LessonContextSource = 'lesson_plan' | 'ai_generated' | 'none';
+
+export interface LessonContext {
   assignmentId: string;
-  previousTopics: string[];
-  generatedPlan: string;
-  rosterSnapshot: any[];
-  emergencyContacts: any[];
+  /** Where the teaching content came from, so the UI can label it honestly. */
+  source: LessonContextSource;
+
+  date: string;
+  period: number;
+  grade: string;
+  section: string;
+  subject: string;
+
+  regularTeacher: { id: string; name: string; email: string } | null;
+  substituteTeacher: { id: string; name: string; email: string } | null;
+
+  /** Only present when the school actually recorded them. */
+  topic: string | null;
+  previousTopic: string | null;
+
+  objectives: string[];
+  warmUp: string | null;
+  mainActivity: string | null;
+  assessment: string | null;
+  homework: string | null;
+  resources: string[];
+  keyVocabulary: string[];
+
+  /** Set when nothing could be offered, so the UI explains rather than shows a blank card. */
+  note: string | null;
 }
 
+const asList = (raw: string | null | undefined): string[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return raw.split(/[;\n]/).map((s) => s.trim()).filter(Boolean);
+  }
+};
+
+/** Lesson plans store some sections as JSON, some as prose. Render either. */
+const asText = (raw: string | null | undefined): string | null => {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return trimmed;
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed === 'string') return parsed;
+    if (Array.isArray(parsed)) return parsed.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join('\n');
+    if (parsed && typeof parsed === 'object') {
+      return Object.entries(parsed)
+        .map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`)
+        .join('\n');
+    }
+    return trimmed;
+  } catch {
+    return trimmed;
+  }
+};
+
 /**
- * Generate a lesson pack for a substitution assignment.
+ * Build the context for one substitution.
+ *
+ * `schoolId` is required and enforced against the absent teacher, so this can
+ * never return another school's lesson material.
  */
-export async function generateLessonPack(assignmentId: string): Promise<LessonPackData | null> {
-  const substitution = await db.substitution.findUnique({
-    where: { id: assignmentId },
+export async function generateLessonPack(
+  assignmentId: string,
+  schoolId: string
+): Promise<LessonContext | null> {
+  const substitution = await db.substitution.findFirst({
+    where: { id: assignmentId, schoolId, absentTeacher: { schoolId } },
     include: {
-      absentTeacher: true,
-      substitute: true,
+      absentTeacher: { select: { id: true, name: true, email: true } },
+      substitute: { select: { id: true, name: true, email: true } },
     },
   });
 
   if (!substitution) return null;
 
-  // Get student roster snapshot
-  const students = await db.student.findMany({
-    where: {
-      grade: substitution.grade,
-      section: substitution.section,
-    },
-    orderBy: { rollNo: 'asc' },
-    take: 40,
-  });
-
-  const rosterSnapshot = students.map(s => ({
-    name: s.name,
-    rollNo: s.rollNo,
-    grade: s.grade,
-    section: s.section,
-  }));
-
-  const emergencyContacts = [
-    {
-      name: substitution.absentTeacher.name,
-      role: 'Absent Teacher',
-      email: substitution.absentTeacher.email,
-      phone: substitution.absentTeacher.phone || 'N/A',
-    },
-  ];
-
-  if (substitution.substitute) {
-    emergencyContacts.push({
-      name: substitution.substitute.name,
-      role: 'Substitute Teacher',
-      email: substitution.substitute.email,
-      phone: substitution.substitute.phone || 'N/A',
-    });
-  }
-
-  const previousTopics = [
-    substitution.yesterdayTopic || 'Introduction to Chapter',
-    substitution.todayTopic || 'Core concepts and problem solving',
-  ];
-
-  let generatedPlan = substitution.lessonDNA || '';
-
-  if (!generatedPlan) {
-    try {
-      const zai = await ZAI.create();
-      const prompt = `Create a detailed 40-minute substitute lesson plan for ${substitution.grade} ${substitution.section} ${substitution.subject}.
-Yesterday's topic: ${substitution.yesterdayTopic || 'Chapter overview'}
-Today's target topic: ${substitution.todayTopic || 'Lesson continuation'}
-
-Provide structured JSON output with fields: warmUp (5 min), mainActivity (25 min), assessment (10 min).`;
-
-      const response = await zai.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      generatedPlan = response.choices?.[0]?.message?.content || 'Standard Substitute Plan: Review previous chapter notes and conduct practice problems.';
-    } catch {
-      generatedPlan = 'Standard Substitute Plan: Review previous chapter notes and conduct practice problems.';
-    }
-  }
-
-  return {
+  const base = {
     assignmentId,
-    previousTopics,
-    generatedPlan,
-    rosterSnapshot,
-    emergencyContacts,
+    date: substitution.date,
+    period: substitution.period,
+    grade: substitution.grade,
+    section: substitution.section,
+    subject: substitution.subject,
+    regularTeacher: substitution.absentTeacher ?? null,
+    substituteTeacher: substitution.substitute ?? null,
+    topic: substitution.todayTopic || null,
+    previousTopic: substitution.yesterdayTopic || null,
+  };
+
+  // 1. A real plan for this class and subject, most recent first. Prefer one the
+  //    absent teacher wrote, then any plan for the same grade + subject.
+  const plan =
+    (await db.lessonPlan.findFirst({
+      where: {
+        teacherId: substitution.absentTeacherId,
+        grade: substitution.grade,
+        subject: substitution.subject,
+      },
+      orderBy: { updatedAt: 'desc' },
+    })) ??
+    (await db.lessonPlan.findFirst({
+      where: {
+        grade: substitution.grade,
+        subject: substitution.subject,
+        teacher: { schoolId },
+      },
+      orderBy: { updatedAt: 'desc' },
+    }));
+
+  if (plan) {
+    return {
+      ...base,
+      source: 'lesson_plan',
+      topic: base.topic ?? plan.topic ?? null,
+      objectives: asList(plan.objectives),
+      warmUp: asText(plan.warmUp),
+      mainActivity: asText(plan.mainContent),
+      assessment: asText(plan.assessment),
+      homework: asText(plan.homework),
+      resources: asList(plan.resources),
+      keyVocabulary: asList(plan.keyVocabulary),
+      note: null,
+    };
+  }
+
+  // 2. Anything the school already attached to this substitution.
+  const stored = asText(substitution.lessonDNA);
+  if (stored) {
+    return {
+      ...base,
+      source: 'ai_generated',
+      objectives: [],
+      warmUp: null,
+      mainActivity: stored,
+      assessment: null,
+      homework: null,
+      resources: [],
+      keyVocabulary: [],
+      note: 'Generated guidance, not a plan written by the regular teacher.',
+    };
+  }
+
+  // 3. Nothing to show. Say so plainly rather than inventing a lesson.
+  return {
+    ...base,
+    source: 'none',
+    objectives: [],
+    warmUp: null,
+    mainActivity: null,
+    assessment: null,
+    homework: null,
+    resources: [],
+    keyVocabulary: [],
+    note:
+      `No lesson plan exists for ${substitution.grade} ${substitution.subject}. ` +
+      'Ask the regular teacher for the current topic, or create a plan in Lesson Plans.',
   };
 }

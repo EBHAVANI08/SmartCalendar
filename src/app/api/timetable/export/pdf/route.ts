@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { resolveSchoolId } from '@/lib/school-helper';
+import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 
 /**
  * GET /api/timetable/export/pdf
@@ -13,12 +13,13 @@ export async function GET(request: NextRequest) {
     const grade = searchParams.get('grade') || 'Grade 10';
     const section = searchParams.get('section') || 'A';
     const teacherId = searchParams.get('teacherId');
-    const rawSchoolId = searchParams.get('schoolId');
-    const schoolId = await resolveSchoolId(rawSchoolId);
+  // Pinned to the caller's school. schoolId used to be resolved from client
+  // input, so any signed-in user could act on another school's data.
+    const schoolId = await getTenantSchoolId(request);
 
     const school = schoolId ? await db.school.findUnique({ where: { id: schoolId } }) : await db.school.findFirst();
-    const schoolName = school?.name || 'Delhi Public School';
-    const schoolCode = school?.code || 'DPS2025';
+    const schoolName = school?.name || 'Takshila School';
+    const schoolCode = school?.code || 'TAKSHILA2025';
 
     const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];

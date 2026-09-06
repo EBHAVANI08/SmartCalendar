@@ -1,19 +1,22 @@
 import { db } from '@/lib/db';
+import { getSession } from '@/lib/session';
 import { NextResponse } from 'next/server';
 
-export function isSuperAdminRequest(request: Request): boolean {
-  const role = request.headers.get('x-user-role');
-  if (role === 'superadmin') return true;
+/**
+ * Platform-owner gate. The session token is verified here rather than trusting
+ * the `x-user-role` header, so this holds even if middleware is bypassed.
+ * The only other accepted credential is SUPERADMIN_TOKEN, which is
+ * environment-configured — there are deliberately no token literals in source.
+ */
+export async function isSuperAdminRequest(request: Request): Promise<boolean> {
+  const session = await getSession(request);
+  if (session?.role === 'superadmin') return true;
+
+  const configuredToken = process.env.SUPERADMIN_TOKEN;
+  if (!configuredToken || configuredToken.length < 32) return false;
 
   const { searchParams } = new URL(request.url);
-  const token = searchParams.get('token');
-  if (!token) return false;
-
-  return (
-    token === process.env.SUPERADMIN_TOKEN ||
-    token === 'sa_dev_token_2026' ||
-    token === 'sa_master_key_2026_dps_delhi'
-  );
+  return searchParams.get('token') === configuredToken;
 }
 
 export function unauthorized() {

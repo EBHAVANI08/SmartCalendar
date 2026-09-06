@@ -1,13 +1,19 @@
 import { db } from '@/lib/db';
-import { resolveSchoolId } from '@/lib/school-helper';
+import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 // AI-powered absence detection — OPTIMIZED with batch queries
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'attendance.write');
+  if (denied) return denied;
+
   try {
     const body = await request.json().catch(() => ({}));
     const detectDate = body.date || new Date().toISOString().split('T')[0];
-    const schoolId = await resolveSchoolId(body.schoolId);
+  // Pinned to the caller's school. schoolId used to be resolved from client
+  // input, so any signed-in user could act on another school's data.
+    const schoolId = await getTenantSchoolId(request);
 
     // Get day of week
     const dateObj = new Date(detectDate + 'T00:00:00');
@@ -215,6 +221,7 @@ export async function POST(request: Request) {
           const todayTopic = sched.topic || curriculumMatch?.topic || `${sched.subject} — Continuation`;
 
           newSubstitutionsData.push({
+            schoolId,
             date: detectDate, period: sched.period, absentTeacherId: teacher.id,
             grade: sched.grade, section: sched.section, subject: sched.subject,
             reason, yesterdayTopic, todayTopic, source: 'biometric' as const, status: 'pending' as const,

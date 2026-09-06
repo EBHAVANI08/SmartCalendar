@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireCapability } from '@/lib/authz';
 
 const HARDCODED_CURRICULUMS = [
   {
@@ -113,6 +114,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = requireCapability(req, 'lessonplan.write');
+  if (denied) return denied;
+
   try {
     const body = await req.json();
     const { code, name, description, subjects, grades } = body;

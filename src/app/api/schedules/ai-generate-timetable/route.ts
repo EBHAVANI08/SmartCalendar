@@ -1,6 +1,12 @@
 import { db } from '@/lib/db';
+import { readList } from '@/lib/faculty';
+import { getTenantSchoolId } from '@/lib/school-helper';
+import { getDayConfig } from '@/lib/timetable-config';
+import { getPublishedVersion } from '@/lib/timetable-lifecycle';
+import { periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
 import { NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { requireCapability } from '@/lib/authz';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const MAX_PERIODS_PER_DAY = 5; // Max 5 periods per teacher per day (leave 3 free for prep/substitution)
@@ -42,8 +48,16 @@ interface TeacherInfo {
   id: string;
   name: string;
   subject: string;
+  /** Every subject this teacher is qualified for (one record, many subjects). */
+  subjects: string[];
   grades: string[];
   existingScheduleCount: number;
+}
+
+/** Is this teacher actually qualified for the subject, not merely free? */
+function teachesSubject(teacher: TeacherInfo, subject: string): boolean {
+  const target = subject.trim().toLowerCase();
+  return teacher.subjects.some((s) => s.trim().toLowerCase() === target);
 }
 
 interface GeneratedSchedule {
@@ -79,8 +93,23 @@ interface GeneratedSchedule {
  * Pass 6: Notifications — Inform affected teachers
  */
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'timetable.generate');
+  if (denied) return denied;
+
   try {
-    const { grade, section, schoolId, dryRun = false, setup = {}, bulkAll = false } = await request.json();
+    const { grade, section, dryRun = false, setup = {}, bulkAll = false } = await request.json();
+
+    // The tenant comes from the verified session, never the request body.
+    // Previously an absent body schoolId made Prisma drop the filter, so the
+    // deleteMany below spanned every school and rows were written with a null
+    // schoolId.
+    const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json(
+        { error: 'No school context. Please sign in again.' },
+        { status: 401 }
+      );
+    }
 
     // Validate required parameters
     if ((!grade || !section) && !bulkAll) {
@@ -90,11 +119,52 @@ export async function POST(request: Request) {
       );
     }
 
+    // Generation writes into the editable draft when the school uses
+    // versioning. A published timetable is never regenerated in place - the
+    // Admin must create a revision first.
+    const draftVersion = await db.timetableVersion.findFirst({
+      where: { schoolId, status: { in: ['draft', 'review'] } },
+      orderBy: { version: 'desc' },
+      select: { id: true, version: true },
+    });
+    const publishedVersion = await getPublishedVersion(schoolId);
+    if (!draftVersion && publishedVersion) {
+      return NextResponse.json(
+        {
+          error: `Timetable v${publishedVersion.version} is published and cannot be regenerated in place. Create a revision first, then generate into it.`,
+          code: 'VERSION_LOCKED',
+          versionId: publishedVersion.id,
+        },
+        { status: 409 }
+      );
+    }
+    const targetVersionId = draftVersion?.id ?? null;
+    // Occupancy and writes are confined to this one timetable context.
+    const versionScope = targetVersionId
+      ? { timetableVersionId: targetVersionId }
+      : { OR: [{ timetableVersionId: null }, { timetableVersionId: { isSet: false } }] };
+
     const targetGrade = (grade || 'Grade 10') as string;
     const targetSection = (section || 'A') as string;
-    const periodsPerDay = Math.min(10, Math.max(4, Number(setup.periodsPerDay) || 8));
-    const workingDays = Number(setup.workingDays) === 5 ? 5 : 6;
-    const saturdayPeriods = Math.min(periodsPerDay, Math.max(1, Number(setup.saturdayPeriods) || 4));
+    // Per-day shape is read from the stored school configuration so the
+    // generator, manual editing, revisions, leave lookup and substitution all
+    // agree. The request body is only a fallback for a school that has never
+    // configured one, and is persisted below so it becomes the shared truth.
+    const storedConfig = await getDayConfig(schoolId);
+    const periodsPerDay = storedConfig.configured
+      ? storedConfig.periodsPerDay
+      : Math.min(10, Math.max(4, Number(setup.periodsPerDay) || 8));
+    const workingDays = storedConfig.configured
+      ? storedConfig.workingDays
+      : (Number(setup.workingDays) === 5 ? 5 : 6);
+    const dayShapeConfig = storedConfig.configured
+      ? storedConfig
+      : {
+          workingDays,
+          periodsPerDay,
+          saturdayPeriods: Math.min(periodsPerDay, Math.max(1, Number(setup.saturdayPeriods) || 4)),
+        };
+    const saturdayPeriods = periodsForDay('Saturday', dayShapeConfig);
     const breakAfter = Math.min(periodsPerDay - 1, Math.max(1, Number(setup.breakAfter) || 2));
     const lunchAfter = Math.min(periodsPerDay - 1, Math.max(breakAfter + 1, Number(setup.lunchAfter) || 4));
     const breakEnabled = setup.breakEnabled !== false && Number(setup.breakMinutes) > 0;
@@ -110,7 +180,7 @@ export async function POST(request: Request) {
     const periodMinutes = Math.floor(teachingMinutes / periodsPerDay);
     const extraPeriodMinutes = teachingMinutes % periodsPerDay;
     if (periodMinutes < 25) return NextResponse.json({ error: 'The selected day is too short for the periods and breaks. Increase the end time or reduce periods/break durations.' }, { status: 400 });
-    const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].slice(0, workingDays);
+    const DAYS = workingDayNames(dayShapeConfig) as string[];
     let cursor = startMinutes;
     const TIME_SLOTS = Array.from({ length: periodsPerDay }, (_, index) => {
       const period = index + 1; const start = cursor; cursor += periodMinutes + (index < extraPeriodMinutes ? 1 : 0); const end = cursor;
@@ -124,7 +194,8 @@ export async function POST(request: Request) {
     // ─── Step 1: Load teachers who teach THIS grade ───
     const allTeachers = await db.teacher.findMany({
       where: { schoolId },
-      include: { schedules: true },
+      // Occupancy must come from THIS school and THIS timetable version only.
+      include: { schedules: { where: { schoolId, ...versionScope } } },
     });
 
     // Filter to only teachers who teach this grade (from their grades JSON field)
@@ -133,24 +204,83 @@ export async function POST(request: Request) {
       return grades.includes(targetGrade);
     });
 
-    const teacherInfo: TeacherInfo[] = gradeTeachers.map((t) => ({
+    const toTeacherInfo = (t: (typeof allTeachers)[number]): TeacherInfo => ({
       id: t.id,
       name: t.name,
       subject: t.subject,
+      subjects: readList(t.subjects ?? t.subject),
       grades: JSON.parse(t.grades || '[]') as string[],
       existingScheduleCount: t.schedules.length,
-    }));
+    });
+
+    const teacherInfo: TeacherInfo[] = gradeTeachers.map(toTeacherInfo);
 
     // Also load ALL teachers as fallback for subjects with no grade-specific teacher
-    const allTeacherInfo: TeacherInfo[] = allTeachers.map((t) => ({
-      id: t.id,
-      name: t.name,
-      subject: t.subject,
-      grades: JSON.parse(t.grades || '[]') as string[],
-      existingScheduleCount: t.schedules.length,
-    }));
+    const allTeacherInfo: TeacherInfo[] = allTeachers.map(toTeacherInfo);
 
-    const subjects = SUBJECTS_BY_GRADE[targetGrade] || SUBJECTS_BY_GRADE['Grade 1'];
+    // Subjects and their scheduling rules come from this school's own
+    // grade configuration. The hardcoded CBSE map is only a fallback for a
+    // school that has not configured anything yet, so two tenants can run
+    // completely different curricula.
+    const gradeSubjectConfigs = await db.gradeSubjectConfig.findMany({
+      where: { schoolId, grade: targetGrade, active: true },
+      orderBy: { subjectName: 'asc' },
+    });
+    const usingConfiguredSubjects = gradeSubjectConfigs.length > 0;
+    const subjects = usingConfiguredSubjects
+      ? gradeSubjectConfigs.map((c) => c.subjectName)
+      : (SUBJECTS_BY_GRADE[targetGrade] || SUBJECTS_BY_GRADE['Grade 1']);
+    const subjectRules = new Map(gradeSubjectConfigs.map((c) => [c.subjectName.toLowerCase(), c]));
+    /** Weekly period target per subject, when configured. */
+    const weeklyTargetFor = (subject: string) =>
+      subjectRules.get(subject.toLowerCase())?.weeklyPeriods ?? null;
+    /** Max occurrences of a subject on one day, from config where present. */
+    const configuredMaxPerDay = (subject: string) =>
+      subjectRules.get(subject.toLowerCase())?.maxPeriodsPerDay ?? null;
+    const allowsConsecutive = (subject: string) =>
+      subjectRules.get(subject.toLowerCase())?.allowConsecutive ?? false;
+    const priorityRank = (subject: string) => {
+      const p = subjectRules.get(subject.toLowerCase())?.priority ?? 'Normal';
+      return { Core: 3, High: 2, Normal: 1, Low: 0 }[p as string] ?? 1;
+    };
+    /** Weekly placements so far, so weeklyPeriods is not exceeded. */
+    const weeklyPlaced = new Map<string, number>();
+
+    /**
+     * Per-subject caps, shared by the day planner and by the relocation path
+     * in the placement loop. Both must apply the same limits or a subject can
+     * be swapped into far more periods than it is configured for.
+     */
+    const subjectDailyLimitFor = (subject: string, day: string): number => {
+      const configured = configuredMaxPerDay(subject);
+      if (configured !== null) return configured;
+      if (subject === 'Physical Education' && day === 'Wednesday') {
+        if (['Grade 3', 'Grade 4', 'Grade 5'].includes(targetGrade)) return 2;
+        return 1;
+      }
+      return 2;
+    };
+
+    /**
+     * Is this subject already in an adjacent period for this class on this day?
+     * Back-to-back placement is only allowed when the subject is configured for
+     * double periods.
+     */
+    const wouldBeConsecutive = (subject: string, day: string, period: number): boolean => {
+      if (allowsConsecutive(subject)) return false;
+      return generatedSchedules.some(
+        (row) =>
+          row.day === day &&
+          row.subject === subject &&
+          (row.period === period - 1 || row.period === period + 1)
+      );
+    };
+
+    const weeklyExhaustedFor = (subject: string): boolean => {
+      const target = weeklyTargetFor(subject);
+      if (target === null) return false;
+      return (weeklyPlaced.get(subject.toLowerCase()) ?? 0) >= target;
+    };
 
     // ─── Step 2: Build constraint-satisfaction engine ───
     const teacherBusyMap = new Map<string, Set<string>>(); // teacherId -> Set<"day-period">
@@ -202,7 +332,7 @@ export async function POST(request: Request) {
       period: number,
       subjectTeacherHistory: Map<string, Map<string, string>> // subject -> day -> teacherId
     ): { score: number; matchLabel: string } => {
-      const teachesSubject = teacher.subject === subject;
+      const isSubjectQualified = teachesSubject(teacher, subject);
       const teachesGrade = teacher.grades.includes(grade);
       const teachesSimilarGrade = teacher.grades.some((g) => {
         const gNum = parseInt(g.replace(/\D/g, ''));
@@ -213,76 +343,62 @@ export async function POST(request: Request) {
       const dayWorkload = getTeacherDayCount(teacher.id, day);
       const totalWorkload = getTeacherTotalLoad(teacher.id);
 
-      let score = 0;
-      let matchLabel = '';
-
-      // Priority 1: Perfect Match — teaches both subject AND grade
-      if (teachesSubject && teachesGrade) {
-        score += 1000;
-        matchLabel = 'Perfect Match';
-      }
-      // Priority 2: Subject specialist who can teach the grade
-      else if (teachesSubject && teachesSimilarGrade) {
-        score += 800;
-        matchLabel = 'Subject Specialist';
-      }
-      // Priority 2b: Subject specialist (without grade match)
-      else if (teachesSubject) {
-        score += 600;
-        matchLabel = 'Subject Specialist';
-      }
-      // Priority 3: Grade-familiar teacher (has taught this grade in other schedules)
-      else if (teachesGrade) {
-        score += 400;
-        matchLabel = 'Grade Teacher';
-      }
-      // Similar grade
-      else if (teachesSimilarGrade) {
-        score += 200;
-        matchLabel = 'Similar Grade';
-      }
-      // Available but no direct match
-      else {
-        score += 50;
-        matchLabel = 'Available';
+      // Hard constraint 1: Must be qualified for the subject
+      if (!isSubjectQualified) {
+        return { score: -Infinity, matchLabel: 'Unqualified Subject' };
       }
 
-      // Priority 4: Workload balancing — strongly prefer teachers with fewer periods
-      // Both daily and total workload matter
-      const dailyCapacityPenalty = dayWorkload * 30;
-      const totalLoadPenalty = totalWorkload * 5;
-      score -= dailyCapacityPenalty;
-      score -= totalLoadPenalty;
-
-      // Bonus for teachers well within capacity
-      if (dayWorkload < 3) score += 40;
-      if (totalWorkload < 15) score += 30;
-
-      // Hard constraint: can't exceed max periods per day
+      // Hard constraint 2: Cannot exceed max periods per day
       if (dayWorkload >= getTeacherDayLimit(teacher.id, day)) {
         return { score: -Infinity, matchLabel: 'Overloaded' };
       }
 
-      // Priority 5: Pedagogical considerations
-      // Prefer teachers with adjacent periods (continuity — reduces transition time)
-      const prevBusy = isTeacherBusy(teacher.id, day, period - 1);
-      const nextBusy = isTeacherBusy(teacher.id, day, period + 1);
-      if (prevBusy || nextBusy) score += 20;
+      let score = 0;
+      let matchLabel = '';
 
-      // Priority 6: Teacher continuity — prefer same teacher for same subject across days
+      // Priority 1: Perfect Match — qualified for subject AND designated for this grade
+      if (teachesGrade) {
+        score += 1200;
+        matchLabel = 'Perfect Match';
+      }
+      // Priority 2: Subject specialist who teaches adjacent grades
+      else if (teachesSimilarGrade) {
+        score += 900;
+        matchLabel = 'Subject Specialist (Adjacent Grade)';
+      }
+      // Priority 3: Subject specialist qualified in the school
+      else {
+        score += 700;
+        matchLabel = 'Subject Specialist';
+      }
+
+      // Priority 4: Teacher Section Continuity — STRONGLY prefer the same teacher for this subject throughout the week
+      // (e.g. Mrs. Sharma takes all Math periods for Grade 10-A, not switching between multiple teachers)
       const subjectHistory = subjectTeacherHistory.get(subject);
       if (subjectHistory) {
-        const previousTeacher = subjectHistory.get(day);
-        if (previousTeacher === teacher.id) {
-          score += 50; // Strong preference for same teacher on different days for same subject
-        }
-        // Check if this teacher teaches this subject on other days
-        let taughtOnOtherDays = 0;
+        let assignedDaysCount = 0;
         for (const [, tid] of subjectHistory.entries()) {
-          if (tid === teacher.id) taughtOnOtherDays++;
+          if (tid === teacher.id) assignedDaysCount++;
         }
-        score += taughtOnOtherDays * 15; // Bonus for continuity across days
+        if (assignedDaysCount > 0) {
+          score += 1500 + (assignedDaysCount * 200); // Massive boost for keeping the same teacher across the week
+        }
       }
+
+      // Priority 5: Workload balancing — distribute periods evenly across available staff
+      const dailyCapacityPenalty = dayWorkload * 40;
+      const totalLoadPenalty = totalWorkload * 8;
+      score -= dailyCapacityPenalty;
+      score -= totalLoadPenalty;
+
+      // Bonus for teachers with light current workload today
+      if (dayWorkload < 3) score += 50;
+      if (totalWorkload < 12) score += 40;
+
+      // Priority 6: Pedagogical schedule flow — prefer contiguous schedule blocks rather than scattered single periods
+      const prevBusy = isTeacherBusy(teacher.id, day, period - 1);
+      const nextBusy = isTeacherBusy(teacher.id, day, period + 1);
+      if (prevBusy || nextBusy) score += 25;
 
       return { score, matchLabel };
     };
@@ -319,6 +435,62 @@ export async function POST(request: Request) {
       pMap.set(subject, (pMap.get(subject) || 0) + 1);
     };
 
+    // Soft rule: for Grades 3-8 keep the period-1 teacher consistent across the
+    // week (acts as the "class teacher"). Declared here because teacher
+    // selection below consults it.
+    const isClassTeacherRuleGrade = ['Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8'].includes(targetGrade);
+    let period1AnchorTeacherId: string | null = null;
+
+    /**
+     * The single place a teacher is chosen for a (subject, day, period).
+     *
+     * Every hard constraint is applied here — teacher already busy, daily/period
+     * limits, subject and grade eligibility — so no caller can place a lesson
+     * that cannot actually be staffed. Returns null when the slot is not
+     * feasible; it never returns an unavailable teacher.
+     *
+     * Pure: it inspects state but does not reserve anything. The caller commits
+     * with markTeacherBusy() once it decides to use the result.
+     */
+    const pickTeacher = (
+      subject: string,
+      day: string,
+      period: number,
+      options: { requireSubjectMatch?: boolean } = {}
+    ): (TeacherInfo & { score: number; matchLabel: string }) | null => {
+      for (const pool of [teacherInfo, allTeacherInfo]) {
+        const candidates = pool
+          .filter((t) => {
+            // Must be strictly qualified for this subject
+            if (!teachesSubject(t, subject)) return false;
+            // Must NOT be busy in any other class/grade during this (day, period) slot
+            if (isTeacherBusy(t.id, day, period)) return false;
+            // Must NOT exceed daily workload limits
+            if (getTeacherDayCount(t.id, day) >= getTeacherDayLimit(t.id, day)) return false;
+            return true;
+          })
+          .map((t) => ({ ...t, ...scoreTeacher(t, subject, targetGrade, day, period, subjectTeacherHistory) }))
+          .filter((t) => t.score > -Infinity)
+          .sort((a, b) => b.score - a.score);
+
+        if (candidates.length > 0) {
+          const preferAnchor = isClassTeacherRuleGrade && period === 1 && period1AnchorTeacherId;
+          return preferAnchor
+            ? candidates.find((c) => c.id === period1AnchorTeacherId) ?? candidates[0]
+            : candidates[0];
+        }
+      }
+      return null;
+    };
+
+    /**
+     * A pedagogical preference is honoured only when a genuinely qualified
+     * teacher is free in that slot. This is what stops "PE for Grades 3-5 on
+     * Wednesday P1" from stacking every section onto the same moment.
+     */
+    const canStaff = (subject: string, day: string, period: number) =>
+      pickTeacher(subject, day, period, { requireSubjectMatch: true }) !== null;
+
     // Build subject order per day that respects pedagogical constraints + JUMBLED period placement
     const buildSubjectOrderForDay = (day: string): { period: number; subject: string }[] => {
       const assignments: { period: number; subject: string }[] = [];
@@ -326,13 +498,8 @@ export async function POST(request: Request) {
       const isPTGrade = ['Grade 3', 'Grade 4', 'Grade 5'].includes(targetGrade);
       const dayIdx = DAYS.indexOf(day);
 
-      const subjectDailyLimit = (subject: string): number => {
-        if (subject === 'Physical Education' && day === 'Wednesday') {
-          if (['Grade 3', 'Grade 4', 'Grade 5'].includes(targetGrade)) return 2;
-          return 1;
-        }
-        return 2;
-      };
+      const subjectDailyLimit = (subject: string): number => subjectDailyLimitFor(subject, day);
+      const weeklyExhausted = (subject: string): boolean => weeklyExhaustedFor(subject);
 
       // Rotate and jumble subject lists dynamically per day using day index and period hashing
       const rotateAndJumble = <T,>(items: T[], dayOffset: number) => {
@@ -363,11 +530,15 @@ export async function POST(request: Request) {
       for (const slot of morningSlots) {
         let assigned = false;
 
-        // Rule: PT (Physical Education) for Grades 3–5 must be Period 1 on Wednesday.
+        // Preference (NOT a hard rule): PT for Grades 3-5 on Wednesday Period 1.
+        // Only honoured when a PE teacher is genuinely free in that slot —
+        // otherwise PE is placed elsewhere in the week by the normal path.
+        // Forcing it here is what previously put one PE teacher in front of
+        // ten Grade 3-5 sections at the same moment.
         if (slot.period === 1 && day === 'Wednesday' && isPTGrade) {
           const pe = 'Physical Education';
           const currentCount = usedSubjects.get(pe) || 0;
-          if (currentCount < subjectDailyLimit(pe)) {
+          if (currentCount < subjectDailyLimit(pe) && canStaff(pe, day, slot.period)) {
             assignments.push({ period: slot.period, subject: pe });
             usedSubjects.set(pe, currentCount + 1);
             recordPeriodSubject(slot.period, pe);
@@ -378,6 +549,10 @@ export async function POST(request: Request) {
 
         // Candidate subjects sorted by LEAST used in this period on prior days (jumble optimization)
         const candidates = [...coreSubs, ...otherSubs].sort((a, b) => {
+          if (usingConfiguredSubjects) {
+            const byPriority = priorityRank(b) - priorityRank(a);
+            if (byPriority !== 0) return byPriority;
+          }
           const timesInThisPeriodA = getPeriodSubjectCount(slot.period, a);
           const timesInThisPeriodB = getPeriodSubjectCount(slot.period, b);
           if (timesInThisPeriodA !== timesInThisPeriodB) return timesInThisPeriodA - timesInThisPeriodB;
@@ -387,6 +562,7 @@ export async function POST(request: Request) {
         for (const sub of candidates) {
           const currentCount = usedSubjects.get(sub) || 0;
           if (currentCount >= subjectDailyLimit(sub)) continue;
+          if (weeklyExhausted(sub)) continue;
 
           // PE should not be in period 1 (except PT rule above)
           if (sub === 'Physical Education' && slot.period === 1) {
@@ -396,7 +572,7 @@ export async function POST(request: Request) {
 
           // Check if we already assigned this subject recently (avoid consecutive same)
           const lastAssigned = assignments[assignments.length - 1];
-          if (lastAssigned && lastAssigned.subject === sub) continue;
+          if (lastAssigned && lastAssigned.subject === sub && !allowsConsecutive(sub)) continue;
 
           assignments.push({ period: slot.period, subject: sub });
           usedSubjects.set(sub, (usedSubjects.get(sub) || 0) + 1);
@@ -410,12 +586,13 @@ export async function POST(request: Request) {
           for (const sub of subjects) {
             const currentCount = usedSubjects.get(sub) || 0;
             if (currentCount >= subjectDailyLimit(sub)) continue;
+          if (weeklyExhausted(sub)) continue;
             if (sub === 'Physical Education' && slot.period === 1) {
               const allowed = day === 'Wednesday' && isPTGrade;
               if (!allowed) continue;
             }
             const lastAssigned = assignments[assignments.length - 1];
-            if (lastAssigned && lastAssigned.subject === sub) continue;
+            if (lastAssigned && lastAssigned.subject === sub && !allowsConsecutive(sub)) continue;
             assignments.push({ period: slot.period, subject: sub });
             usedSubjects.set(sub, (usedSubjects.get(sub) || 0) + 1);
             assigned = true;
@@ -424,7 +601,7 @@ export async function POST(request: Request) {
         }
 
         if (!assigned) {
-          const unused = subjects.find((subject) => (usedSubjects.get(subject) || 0) < subjectDailyLimit(subject));
+          const unused = subjects.find((subject) => (usedSubjects.get(subject) || 0) < subjectDailyLimit(subject) && !weeklyExhausted(subject));
           if (unused) {
             assignments.push({ period: slot.period, subject: unused });
             usedSubjects.set(unused, (usedSubjects.get(unused) || 0) + 1);
@@ -441,9 +618,10 @@ export async function POST(request: Request) {
         for (const sub of afternoonQueue) {
           const currentCount = usedSubjects.get(sub) || 0;
           if (currentCount >= subjectDailyLimit(sub)) continue;
+          if (weeklyExhausted(sub)) continue;
 
           const lastAssigned = assignments[assignments.length - 1];
-          if (lastAssigned && lastAssigned.subject === sub) continue;
+          if (lastAssigned && lastAssigned.subject === sub && !allowsConsecutive(sub)) continue;
 
           assignments.push({ period: slot.period, subject: sub });
           usedSubjects.set(sub, (usedSubjects.get(sub) || 0) + 1);
@@ -452,7 +630,7 @@ export async function POST(request: Request) {
         }
 
         if (!assigned) {
-          const unused = subjects.find((subject) => (usedSubjects.get(subject) || 0) < subjectDailyLimit(subject));
+          const unused = subjects.find((subject) => (usedSubjects.get(subject) || 0) < subjectDailyLimit(subject) && !weeklyExhausted(subject));
           if (unused) {
             assignments.push({ period: slot.period, subject: unused });
             usedSubjects.set(unused, (usedSubjects.get(unused) || 0) + 1);
@@ -475,7 +653,8 @@ export async function POST(request: Request) {
               if (a.subject === pe) return false;
               // Avoid consecutive placement with existing PE periods
               if (hasPeAt(a.period - 1) || hasPeAt(a.period + 1)) return false;
-              return true;
+              // Only swap in PE where a PE teacher is actually free.
+              return canStaff(pe, day, a.period);
             });
           if (candidate) {
             candidate.subject = pe;
@@ -487,44 +666,49 @@ export async function POST(request: Request) {
     };
 
     // ─── Step 5: Generate timetable for this specific grade+section ───
-    // Rule: for Grades 3–8, keep period-1 teacher consistent across the week (acts as the "class teacher").
-    const isClassTeacherRuleGrade = ['Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8'].includes(targetGrade);
-    let period1AnchorTeacherId: string | null = null;
     for (const day of DAYS) {
       const dayPlan = buildSubjectOrderForDay(day).filter((slot) => day !== 'Saturday' || slot.period <= saturdayPeriods);
 
       for (const slotAssignment of dayPlan) {
-        const subject = slotAssignment.subject;
+        let subject = slotAssignment.subject;
         const period = slotAssignment.period;
         const timeSlot = TIME_SLOTS.find((t) => t.period === period);
 
         if (!timeSlot) continue;
 
-        // Try grade-specific teachers first, then fall back to all teachers
-        const candidatePools = [teacherInfo, allTeacherInfo];
+        // Automatic generation only ever assigns a teacher who is mapped to the
+        // subject. Order:
+        //   1. qualified for this subject, and for this grade  (teacherInfo pool)
+        //   2. qualified for this subject, any grade           (allTeacherInfo pool)
+        //   3. swap in another subject that still needs slots and HAS a
+        //      qualified teacher free in this period
+        //   4. otherwise leave the period unresolved for an Admin to handle
+        //
+        // There is deliberately no "any free teacher" fallback: filling a
+        // period by putting the Maths teacher in front of a PE class is worse
+        // than reporting the gap. Unqualified staffing is a manual, audited
+        // override only.
+        // Re-check the caps at commit time: the day plan was built before any
+        // of this week's placements were counted.
+        let bestCandidate =
+          weeklyExhaustedFor(subject) ||
+          getDaySubjectCount(day, subject) >= subjectDailyLimitFor(subject, day) ||
+          wouldBeConsecutive(subject, day, period)
+            ? null
+            : pickTeacher(subject, day, period, { requireSubjectMatch: true });
 
-        let bestCandidate: (TeacherInfo & { score: number; matchLabel: string }) | null = null;
-
-        for (const pool of candidatePools) {
-          const candidates = pool
-            .filter((t) => {
-              if (isTeacherBusy(t.id, day, period)) return false;
-              if (getTeacherDayCount(t.id, day) >= getTeacherDayLimit(t.id, day)) return false;
-              return true;
-            })
-            .map((t) => ({
-              ...t,
-              ...scoreTeacher(t, subject, targetGrade, day, period, subjectTeacherHistory),
-            }))
-            .filter((t) => t.score > -Infinity)
-            .sort((a, b) => b.score - a.score);
-
-          if (candidates.length > 0) {
-            const preferAnchor = isClassTeacherRuleGrade && period === 1 && period1AnchorTeacherId;
-            bestCandidate = preferAnchor
-              ? candidates.find((c) => c.id === period1AnchorTeacherId) ?? candidates[0]
-              : candidates[0];
-            break; // Use the first pool that has candidates (prefer grade teachers)
+        if (!bestCandidate) {
+          for (const alternative of subjects) {
+            if (alternative === subject) continue;
+            if (getDaySubjectCount(day, alternative) >= subjectDailyLimitFor(alternative, day)) continue;
+            if (weeklyExhaustedFor(alternative)) continue;
+            if (wouldBeConsecutive(alternative, day, period)) continue;
+            const candidate = pickTeacher(alternative, day, period, { requireSubjectMatch: true });
+            if (candidate) {
+              subject = alternative;
+              bestCandidate = candidate;
+              break;
+            }
           }
         }
 
@@ -536,6 +720,7 @@ export async function POST(request: Request) {
 
           markTeacherBusy(bestCandidate.id, day, period);
           incrementDaySubjectCount(day, subject);
+          weeklyPlaced.set(subject.toLowerCase(), (weeklyPlaced.get(subject.toLowerCase()) ?? 0) + 1);
 
           // Track teacher-subject continuity
           if (!subjectTeacherHistory.has(subject)) {
@@ -628,7 +813,7 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
           {
             role: 'system',
             content:
-              'You are a highly experienced school timetable architect with 20+ years in CBSE/ICSE/IB school calendar management. You understand pedagogical flow, teacher workload balance, student attention patterns, and educational best practices. You create timetables that optimize learning outcomes while ensuring teacher wellbeing. Return only a JSON array of suggestion strings.',
+              'You are a premier school timetable architect specializing in CBSE, ICSE, and IB academic scheduling. Your core principles: (1) Zero Teacher Double-Booking: A teacher can NEVER teach two classes simultaneously in the same period; (2) Strict Subject Qualification: Teachers must only be assigned to subjects they are qualified to teach; (3) Teacher Continuity: The same subject in a section must be taught by the same teacher throughout the week; (4) Workload Balancing: Spread periods evenly across days without daily overload. Return only a JSON array of 3-5 brief, actionable optimization suggestions.',
           },
           { role: 'user', content: aiPrompt },
         ],
@@ -702,8 +887,10 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
 
     // ─── Step 9: Write to database ───
     // Only clear existing schedules for THIS specific grade+section
+    // Confined to the target version so a revision never clears the
+    // published timetable it was copied from.
     await db.schedule.deleteMany({
-      where: { schoolId, grade: targetGrade, section: targetSection },
+      where: { schoolId, grade: targetGrade, section: targetSection, ...versionScope },
     });
 
     // Batch insert new schedules
@@ -720,6 +907,7 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
       startTime: s.startTime,
       endTime: s.endTime,
       roomId: `R-${s.grade.replace('Grade ', '')}${s.section}-${s.period}`,
+      timetableVersionId: targetVersionId,
     }));
 
     for (let i = 0; i < scheduleDataList.length; i += 100) {
@@ -785,15 +973,26 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
     }
 
     // ─── Step 12: Final verification ───
+    // Verify school-wide, not just within this class: a teacher clash by
+    // definition spans two different class sections, so a same-class query
+    // could never have detected one.
     const dbSchedules = await db.schedule.findMany({
-      where: { schoolId, teacherId: { not: null }, grade: targetGrade, section: targetSection },
+      where: { schoolId, teacherId: { not: null }, ...versionScope },
+      select: { teacherId: true, day: true, period: true, grade: true, section: true },
     });
-    const dbMap = new Map<string, number>();
+    const dbMap = new Map<string, { grade: string; section: string }[]>();
     for (const s of dbSchedules) {
       const key = `${s.teacherId}|${s.day}|${s.period}`;
-      dbMap.set(key, (dbMap.get(key) || 0) + 1);
+      if (!dbMap.has(key)) dbMap.set(key, []);
+      dbMap.get(key)!.push({ grade: s.grade, section: s.section });
     }
-    const dbClashes = [...dbMap.entries()].filter(([, count]) => count > 1).length;
+    const clashingKeys = [...dbMap.entries()].filter(([, rows]) => rows.length > 1);
+    const dbClashes = clashingKeys.length;
+    // Only clashes that involve the class we just wrote are attributable here;
+    // pre-existing ones elsewhere are reported separately, not silently owned.
+    const introducedClashes = clashingKeys.filter(([, rows]) =>
+      rows.some((r) => r.grade === targetGrade && r.section === targetSection)
+    ).length;
 
     return NextResponse.json({
       success: true,
@@ -814,6 +1013,8 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
           (s) => AFTERNOON_PREFERRED.includes(s.subject) && AFTERNOON_PERIODS.includes(s.period)
         ).length,
         teacherContinuity: [...subjectTeacherHistory.entries()].filter(([, days]) => days.size >= 3).length,
+        clashesIntroducedByThisRun: introducedClashes,
+        preExistingClashesElsewhere: dbClashes - introducedClashes,
         notificationsSent: notificationDataList.length,
         teachersAssigned: affectedTeacherIds.size,
         startTime: setup.startTime || '09:30',
@@ -821,9 +1022,9 @@ Return a JSON array of 3-5 brief suggestion strings. Example: ["Consider hiring 
         workingDays,
         saturdayPeriods: workingDays === 6 ? saturdayPeriods : 0,
       },
-      unassignedSlots: unassignedSlots.slice(0, 10),
+      unassignedSlots: unassignedSlots.slice(0, 100),
       aiSuggestions,
-      verificationPassed: dbClashes === 0,
+      verificationPassed: introducedClashes === 0,
     });
   } catch (error) {
     console.error('Error in AI timetable generation:', error);

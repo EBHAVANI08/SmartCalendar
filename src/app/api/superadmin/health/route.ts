@@ -55,7 +55,7 @@ async function checkGroq() {
 }
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
 
   const mem = process.memoryUsage();
   const totalMem = os.totalmem();

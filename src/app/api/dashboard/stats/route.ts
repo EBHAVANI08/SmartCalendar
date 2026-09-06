@@ -1,23 +1,38 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { requireCapability, roleOf } from '@/lib/authz';
 
 export async function GET(request: Request) {
+  // School-wide staffing figures are an administrator's view. Teachers have
+  // their own endpoint at /api/teacher/dashboard.
+  if (roleOf(request) === 'teacher') {
+    return NextResponse.json(
+      {
+        error: 'Use /api/teacher/dashboard for your own classes and cover.',
+        code: 'USE_TEACHER_DASHBOARD',
+      },
+      { status: 403 }
+    );
+  }
+  const denied = requireCapability(request, 'faculty.read');
+  if (denied) return denied;
+
   try {
     const schoolId = await getTenantSchoolId(request);
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
     const teacherWhere = schoolId ? { schoolId } : {};
-    const subWhere = schoolId ? { absentTeacher: { schoolId } } : {};
+    const subWhere = schoolId ? { schoolId, absentTeacher: { schoolId } } : {};
     const notifWhere = schoolId ? { teacher: { schoolId } } : {};
     const leaveWhere = schoolId
       ? { teacher: { schoolId }, status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } }
       : { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } };
 
     const [
+      school,
       totalTeachers,
-      totalStudents,
       absentToday,
       pendingSubs,
       resolvedToday,
@@ -26,8 +41,8 @@ export async function GET(request: Request) {
       totalSchedules,
       scheduleGrades,
     ] = await Promise.all([
+      schoolId ? db.school.findUnique({ where: { id: schoolId }, select: { name: true, code: true } }).catch(() => null) : null,
       db.teacher.count({ where: teacherWhere }),
-      db.student.count(),
       db.leaveApplication.count({ where: leaveWhere }),
       db.substitution.count({ where: { ...subWhere, status: 'pending' } }),
       db.substitution.count({ where: { ...subWhere, date: todayStr, status: 'completed' } }),
@@ -42,8 +57,9 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       data: {
+        schoolName: school?.name || 'Takshila School',
+        schoolCode: school?.code || 'TAKSHILA2025',
         totalTeachers,
-        totalStudents,
         absentToday,
         onLeaveToday: absentToday,
         pendingSubstitutions: pendingSubs,

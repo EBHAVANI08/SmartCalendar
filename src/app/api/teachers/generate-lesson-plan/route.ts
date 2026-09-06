@@ -1,7 +1,11 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'lessonplan.write');
+  if (denied) return denied;
+
   try {
     const { teacherId, grade, section, subject, topic, day, period } = await request.json();
 

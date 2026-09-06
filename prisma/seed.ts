@@ -112,7 +112,6 @@ async function main() {
   await prisma.leaveApplication.deleteMany();
   await prisma.substitution.deleteMany();
   await prisma.schedule.deleteMany();
-  await prisma.student.deleteMany();
   await prisma.curriculumTopic.deleteMany();
   await prisma.curriculumDocument.deleteMany();
   await prisma.curriculum.deleteMany();

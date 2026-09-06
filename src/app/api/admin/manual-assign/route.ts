@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireCapability } from '@/lib/authz';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(req: NextRequest) {
   try {
@@ -31,6 +33,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = requireCapability(req, 'substitution.assign');
+  if (denied) return denied;
+
+  const tenantSchoolId = await getTenantSchoolId(req);
+
   try {
     const { scheduleId, teacherId, date, assignedBy } = await req.json();
 
@@ -43,6 +50,7 @@ export async function POST(req: NextRequest) {
 
     const substitution = await db.substitution.create({
       data: {
+        schoolId: tenantSchoolId,
         date: date || new Date().toISOString().split('T')[0],
         period: schedule.period,
         absentTeacherId: schedule.teacherId || '',

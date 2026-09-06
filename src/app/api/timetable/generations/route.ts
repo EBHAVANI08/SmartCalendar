@@ -2,8 +2,12 @@ import { db } from '@/lib/db';
 import { generateCandidates } from '@/lib/timetable-generator';
 import { can } from '@/lib/timetable-permissions';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
+
   const { schoolId, timetableVersionId, createdBy, role, solveTimeSeconds = 60, alternatives = 3, allowPartial = false } = await request.json();
   if (!can(role, 'generate')) return NextResponse.json({ error: 'You do not have permission to generate timetables.' }, { status: 403 });
   const version = await db.timetableVersion.findFirst({ where: { id: timetableVersionId, schoolId } }); if (!version || version.status !== 'draft') return NextResponse.json({ error: 'A draft timetable version is required.' }, { status: 409 });

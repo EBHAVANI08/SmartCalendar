@@ -1,13 +1,14 @@
 import { db } from '@/lib/db';
-import { resolveSchoolId } from '@/lib/school-helper';
+import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   try {
-    const rawSchoolId = new URL(request.url).searchParams.get('schoolId');
-    const schoolId = await resolveSchoolId(rawSchoolId);
+  // Pinned to the caller's school. schoolId used to be resolved from client
+  // input, so any signed-in user could act on another school's data.
+    const schoolId = await getTenantSchoolId(request);
     if (!schoolId) {
       return NextResponse.json({
         school: null,

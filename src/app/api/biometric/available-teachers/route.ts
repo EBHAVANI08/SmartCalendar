@@ -1,10 +1,14 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 const MAX_PERIODS_PER_DAY = 8;
 
 // Get available substitute teachers for a specific substitution
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'attendance.write');
+  if (denied) return denied;
+
   try {
     const { substitutionId, date, period, subject, grade, absentTeacherId } = await request.json();
 

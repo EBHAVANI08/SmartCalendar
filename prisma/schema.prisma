@@ -17,6 +17,11 @@ model School {
   status        String              @default("active") // active | suspended | cancelled
   contactName   String?
   phone         String?
+  /// Affiliation board (CBSE / ICSE / IB / Cambridge / State). Optional: existing
+  /// tenants keep a null value until an Admin fills it in.
+  board         String?
+  /// Campus address, shown on printed timetables. Optional for the same reason.
+  address       String?
   notes         String?
   includedSeats Int                 @default(5)
   extraSeats    Int                 @default(0)
@@ -25,6 +30,7 @@ model School {
   teachers      Teacher[]
   schedules     Schedule[]
   featureFlags  SchoolFeatureFlags?
+  preferences   SchoolPreferences?
   subscriptions Subscription[]
   payments      Payment[]
   invoices      Invoice[]
@@ -37,10 +43,16 @@ model School {
 model Teacher {
   id                      String                @id @default(auto()) @map("_id") @db.ObjectId
   name                    String
-  email                   String                @unique
+  /// Unique WITHIN a school, not globally. Two schools may legitimately
+  /// employ people with the same address; a global key also leaked the
+  /// existence of another school's staff through "email already exists".
+  email                   String
   password                String                @default("teacher123")
   phone                   String?
-  subject                 String
+  employeeId              String?               // School's own staff ID; first key used for duplicate detection
+  subject                 String                // Primary subject, kept for existing readers
+  subjects                String?               // JSON array — one teacher may teach several subjects
+  sections                String?               // JSON array of sections, when a school scopes teachers that way
   grades                  String                @default("[]") // JSON array of grades like ["Grade 1","Grade 2"]
   availability            String                @default("[]") // JSON array of available periods
   role                    String                @default("teacher")
@@ -55,16 +67,8 @@ model Teacher {
   notifications           TeacherNotification[]
   biometricAttendance     BiometricAttendance[]
   leaveApplications       LeaveApplication[]
-}
 
-model Student {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String
-  grade     String
-  section   String
-  rollNo    Int
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  @@unique([schoolId, email])
 }
 
 model Schedule {
@@ -80,16 +84,69 @@ model Schedule {
   roomId    String?
   startTime String // e.g., "08:00"
   endTime   String // e.g., "08:45"
+  // Binds this row to a TimetableVersion so draft/published lifecycle applies.
+  // Null means a legacy row created before versioning; those keep working.
+  timetableVersionId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
   school    School?  @relation(fields: [schoolId], references: [id])
 
-  @@unique([schoolId, grade, section, day, period])
+  // Scoped to the version so a draft revision can hold its own copy of a
+  // slot while the published version keeps serving. For existing rows
+  // (timetableVersionId = null) this enforces exactly the old constraint.
+  @@unique([schoolId, timetableVersionId, grade, section, day, period])
+  @@index([schoolId, timetableVersionId])
+  @@index([schoolId, teacherId, day, period])
+}
+
+/// Per-day period configuration for a school. This is the single source of
+/// truth for "how many periods does Saturday have" — day limits are never
+/// inferred from existing Schedule rows.
+model SchoolDayPeriodConfig {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId      String   @unique @db.ObjectId
+  workingDays   Int      @default(6) // counted from Monday
+  perDayPeriods String   @default("{}") // JSON: {"Monday":8,...,"Saturday":5}
+  startTime     String   @default("08:00")
+  endTime       String   @default("15:00")
+  breakAfter    Int      @default(2)
+  breakMinutes  Int      @default(15)
+  lunchAfter    Int      @default(4)
+  lunchMinutes  Int      @default(30)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// Grade-level subject rules for one school. SubjectRequirement covers a
+/// specific class section inside one timetable version; this is the reusable
+/// grade-wide template that feeds generation and is what Admins edit.
+model GradeSubjectConfig {
+  id                 String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId           String   @db.ObjectId
+  grade              String
+  subjectName        String
+  weeklyPeriods      Int      @default(4)
+  maxPeriodsPerDay   Int      @default(2)
+  allowConsecutive   Boolean  @default(false)
+  priority           String   @default("Normal") // Core | High | Normal | Low
+  /// Room type this subject requires for this grade, e.g. "physics_lab".
+  /// Null means any room. Data, so lab requirements are never hardcoded.
+  requiredRoomType   String?
+  active             Boolean  @default(true)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([schoolId, grade, subjectName])
+  @@index([schoolId, grade])
 }
 
 model Substitution {
   id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  /// Explicit tenant. Added optional first and backfilled from
+  /// absentTeacher.schoolId, so no existing row could fail the change.
+  /// Relation checks through absentTeacher are kept as defence in depth.
+  schoolId        String?  @db.ObjectId
   date            String
   period          Int
   absentTeacherId String   @db.ObjectId
@@ -104,10 +161,21 @@ model Substitution {
   subContext      String? // Full JSON context for substitute teacher
   source          String   @default("manual") // manual, biometric, ai-agent
   status          String   @default("pending") // pending, assigned, completed
+  /// The Schedule row this cover is for. A substitution never edits
+  /// that row - it records who stands in on one date only.
+  scheduleId      String?  @db.ObjectId
+  leaveId         String?  @db.ObjectId
+  /// True when an Admin knowingly assigned a teacher not mapped to the subject.
+  manualOverride  Boolean  @default(false)
+  overrideReason  String?
+  assignedBy      String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   absentTeacher   Teacher  @relation("AbsentTeacher", fields: [absentTeacherId], references: [id])
   substitute      Teacher? @relation("SubstituteTeacher", fields: [substituteId], references: [id])
+
+  @@index([schoolId, date])
+  @@index([schoolId, status])
 }
 
 model BiometricAttendance {
@@ -136,6 +204,52 @@ model Admin {
   isSuperAdmin Boolean  @default(false)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+}
+
+/// School-controlled preferences.
+///
+/// Deliberately separate from SchoolFeatureFlags, which is the PLATFORM OWNER's
+/// entitlement model (plan, trial, seat and grade limits). A School Admin editing
+/// entitlements could lift their own plan limits, so the two must never share a
+/// table.
+///
+/// Only preferences with real behaviour behind them belong here. Notification and
+/// biometric preferences are deliberately absent: no messaging provider and no
+/// device adapter exist, so a switch for either would do nothing.
+/// An Admin's decision about a possible duplicate pair.
+///
+/// "Keep Separate" and "Review Later" are only meaningful if they persist -
+/// otherwise the same pair reappears on the next scan and the decision was
+/// theatre. Keyed on the two teacher ids sorted, so the pair is stable
+/// regardless of which record is shown as A.
+model FacultyDuplicateDecision {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId   String   @db.ObjectId
+  /// "<smallerId>|<largerId>"
+  pairKey    String
+  /// keep_separate | review_later
+  decision   String
+  teacherAId String   @db.ObjectId
+  teacherBId String   @db.ObjectId
+  decidedBy  String?
+  note       String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([schoolId, pairKey])
+  @@index([schoolId, decision])
+}
+
+model SchoolPreferences {
+  id                          String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId                    String   @unique @db.ObjectId
+  school                      School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  /// Offer a ranked substitute automatically when cover is needed.
+  autoSubstituteRecommendations Boolean @default(true)
+  /// Show substitutes the lesson context for the period they are covering.
+  lessonContextEnabled        Boolean  @default(true)
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
 }
 
 model SchoolFeatureFlags {
@@ -440,6 +554,9 @@ model Room {
   type              String
   capacity          Int
   supportedSubjects Json?
+  /// JSON map of day -> period numbers the room cannot be used (maintenance,
+  /// assembly, external booking). Null means always available.
+  unavailablePeriods Json?
   active            Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -499,6 +616,10 @@ model TimetableVersion {
   approvedAt       DateTime?
   publishedBy      String?
   publishedAt      DateTime?
+  changeNotes      String?
+  /// Set on the old version when a newer one is published.
+  supersededById   String?
+  supersededAt     DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -677,7 +798,19 @@ model ValidationIssue {
   field              String?
   message            String
   suggestedValue     String?
+  /// Where the issue is, so the Admin can act on it without hunting. All
+  /// optional and additive: existing rows keep null values.
+  grade              String?
+  section            String?
+  day                String?
+  period             Int?
+  subject            String?
+  teacherId          String?
+  teacherName        String?
+  /// Only warnings may be acknowledged. Errors block publication regardless.
   acknowledged       Boolean  @default(false)
+  acknowledgedBy     String?
+  acknowledgedAt     DateTime?
   createdAt          DateTime @default(now())
 
   @@index([schoolId, timetableVersionId, severity])

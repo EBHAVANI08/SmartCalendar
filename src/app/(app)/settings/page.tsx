@@ -1,77 +1,227 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
-  Settings, Building2, Sliders, ShieldCheck, Bell,
-  Sparkles, Save, CheckCircle2, RefreshCw, Key,
-  Clock, Calendar, Cpu, Smartphone, Database, Check
+  Settings, Building2, Sliders, ShieldCheck,
+  Sparkles, Save, RefreshCw, AlertTriangle,
+  CalendarClock, ArrowRight, Info, Check,
+  Layers, BookOpen, DoorOpen
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import SubjectManagementPage from '../subjects/page';
+import DayConfigPage from '../day-config/page';
+import RoomsPage from '../rooms/page';
+import { DetectedStructure } from '@/components/school-setup/detected-structure';
+import { SetupChecklistFull } from '@/components/dashboard/setup-checklist';
 
-export default function SchoolSettingsPage() {
+interface SchoolProfile {
+  id: string;
+  name: string;
+  code: string;
+  /** Displayed only. The login identity is not editable here. */
+  email: string;
+  board: string;
+  phone: string;
+  address: string;
+  contactName: string;
+  status: string;
+}
+
+const BOARDS = ['CBSE', 'ICSE', 'IB', 'Cambridge', 'State Board'];
+
+interface DayConfig {
+  workingDays: number;
+  startTime: string;
+  endTime: string;
+  breakAfter: number;
+  breakMinutes: number;
+  lunchAfter: number;
+  lunchMinutes: number;
+}
+
+interface FeatureFlags {
+  planName: string;
+  maxTeachers: number;
+  maxGrades: number;
+  maxPeriodsPerDay: number;
+  aiTimetableEnabled: boolean;
+  bulkImportEnabled: boolean;
+  substitutionEnabled: boolean;
+  autoSubstitutionEnabled: boolean;
+  workloadAnalyticsEnabled: boolean;
+  teacherNotifyEnabled: boolean;
+  trialEndsAt?: string | null;
+}
+
+/** A control we deliberately do not render as an editable switch, because
+ *  nothing behind it would run. Showing the reason beats showing a toggle. */
+function ComingSoon({ title, why }: { title: string; why: string }) {
+  return (
+    <div className="flex items-start justify-between p-3.5 rounded-2xl border border-slate-200 bg-slate-50/70">
+      <div className="space-y-0.5 pr-4">
+        <p className="text-xs font-bold text-slate-700">{title}</p>
+        <p className="text-[11px] text-slate-500 max-w-xl">{why}</p>
+      </div>
+      <Badge variant="outline" className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-500 border-slate-300">
+        Coming soon
+      </Badge>
+    </div>
+  );
+}
+
+function ReadOnlyRow({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+      <span className="text-xs text-slate-500">{label}</span>
+      <span className="text-xs font-bold text-slate-900">{value}</span>
+    </div>
+  );
+}
+
+export type SettingsTabId = 'profile' | 'timetable' | 'automation' | 'security';
+export type TimetableSubTabId = 'days' | 'structure' | 'subjects' | 'rooms' | 'summary';
+
+function SchoolSettingsContent({
+  pageTitle = 'School Settings',
+  pageDescription = 'Institutional profile and timetable structure settings in one place.',
+  headerExtra,
+}: {
+  pageTitle?: string;
+  pageDescription?: string;
+  headerExtra?: React.ReactNode;
+} = {}) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<'profile' | 'timetable' | 'ai' | 'security'>('profile');
-  const [saving, setSaving] = useState(false);
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
+  const [timetableSubTab, setTimetableSubTab] = useState<TimetableSubTabId>('days');
 
-  // Profile States
-  const [schoolName, setSchoolName] = useState('Client Pilot School');
-  const [schoolCode, setSchoolCode] = useState('CLIENTPILOT');
-  const [board, setBoard] = useState('CBSE');
-  const [adminEmail, setAdminEmail] = useState('pilot@client.school');
-  const [phone, setPhone] = useState('+91 98765 43210');
-  const [address, setAddress] = useState('Sector 14, Educational City, New Delhi - 110001');
-
-  // Timetable Engine States
-  const [periodsPerDay, setPeriodsPerDay] = useState('8');
-  const [periodDuration, setPeriodDuration] = useState('45');
-  const [morningAssembly, setMorningAssembly] = useState('08:00');
-  const [recessDuration, setRecessDuration] = useState('30');
-  const [workingDays, setWorkingDays] = useState('6'); // Mon-Sat
-
-  // AI & Automation Feature Flags
-  const [autoSubstitution, setAutoSubstitution] = useState(true);
-  const [biometricSync, setBiometricSync] = useState(true);
-  const [whatsAppAlerts, setWhatsAppAlerts] = useState(true);
-  const [lessonDNA, setLessonDNA] = useState(true);
-  const [maxTeacherPeriods, setMaxTeacherPeriods] = useState('5');
-
-  // Load saved session info
   useEffect(() => {
-    try {
-      const userRaw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
-      if (userRaw) {
-        const parsed = JSON.parse(userRaw);
-        const u = parsed.user || parsed;
-        if (u.schoolName) setSchoolName(u.schoolName);
-        if (u.schoolCode) setSchoolCode(u.schoolCode);
-        if (u.email) setAdminEmail(u.email);
+    const t = searchParams.get('tab');
+    const s = searchParams.get('sub');
+    if (t === 'structure' || t === 'days' || t === 'subjects' || t === 'rooms') {
+      setActiveTab('timetable');
+      setTimetableSubTab(t as TimetableSubTabId);
+    } else if (t === 'timetable') {
+      setActiveTab('timetable');
+      if (s && ['days', 'structure', 'subjects', 'rooms', 'summary'].includes(s)) {
+        setTimetableSubTab(s as TimetableSubTabId);
       }
-    } catch {}
+    } else if (t === 'profile' || t === 'automation' || t === 'security') {
+      setActiveTab(t as SettingsTabId);
+    }
+  }, [searchParams]);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const [profile, setProfile] = useState<SchoolProfile | null>(null);
+  const [form, setForm] = useState({ name: '', board: '', phone: '', address: '', contactName: '' });
+  const [dayConfig, setDayConfig] = useState<DayConfig | null>(null);
+  const [dayRows, setDayRows] = useState<{ day: string; periods: number }[]>([]);
+  const [totalWeekly, setTotalWeekly] = useState<number>(0);
+  const [flags, setFlags] = useState<FeatureFlags | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [pRes, dRes, fRes] = await Promise.all([
+        fetch('/api/school/profile'),
+        fetch('/api/school/day-config'),
+        fetch('/api/school/feature-flags'),
+      ]);
+
+      const pData = await pRes.json().catch(() => ({}));
+      if (!pRes.ok) throw new Error(pData?.error || 'Could not load the school profile.');
+      setProfile(pData.profile);
+      setForm({
+        name: pData.profile?.name ?? '',
+        board: pData.profile?.board ?? '',
+        phone: pData.profile?.phone ?? '',
+        address: pData.profile?.address ?? '',
+        contactName: pData.profile?.contactName ?? '',
+      });
+
+      if (dRes.ok) {
+        const dData = await dRes.json().catch(() => ({}));
+        setDayConfig(dData.config ?? null);
+        setDayRows(Array.isArray(dData.days) ? dData.days : []);
+        setTotalWeekly(dData.totalWeeklyPeriods ?? 0);
+      }
+      if (fRes.ok) {
+        const fData = await fRes.json().catch(() => ({}));
+        setFlags(fData.flags ?? null);
+      }
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Could not load settings.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleSaveSettings = async (e: React.FormEvent) => {
+  useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (activeTab === 'timetable' && timetableSubTab === 'summary') {
+      load();
+    }
+  }, [activeTab, timetableSubTab, load]);
+
+  const dirty = Boolean(
+    profile &&
+    (form.name !== profile.name ||
+     form.board !== (profile.board ?? '') ||
+     form.phone !== (profile.phone ?? '') ||
+     form.address !== (profile.address ?? '') ||
+     form.contactName !== (profile.contactName ?? ''))
+  );
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-
+    setSaveError(null);
     try {
-      // Simulate save delay & persistent notification
-      await new Promise((r) => setTimeout(r, 600));
+      const res = await fetch('/api/school/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json().catch(() => ({}));
 
-      toast({
-        title: 'Settings Successfully Saved',
-        description: 'School institutional parameters & AI rules have been updated in the database.',
+      // Success is claimed only after the server confirms the write.
+      if (!res.ok) {
+        setSaveError(data?.error || `Save failed (HTTP ${res.status}).`);
+        toast({
+          title: 'Not saved',
+          description: data?.error || `The server rejected the change (HTTP ${res.status}).`,
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      setProfile(data.profile);
+      setForm({
+        name: data.profile.name,
+        board: data.profile.board ?? '',
+        phone: data.profile.phone ?? '',
+        address: data.profile.address ?? '',
+        contactName: data.profile.contactName ?? '',
       });
-    } catch {
-      toast({
-        title: 'Notice',
-        description: 'Settings saved locally.',
-      });
+      toast({ title: 'School profile saved', description: 'Reload the page and these values will still be here.' });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Network error.';
+      setSaveError(message);
+      toast({ title: 'Not saved', description: message, variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -79,55 +229,71 @@ export default function SchoolSettingsPage() {
 
   return (
     <div className="w-full space-y-6">
-      {/* ── Enterprise SaaS School Settings Header ── */}
+      {/* ── Header ── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
         <div className="flex items-center gap-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-800 to-slate-900 flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-500/20">
             <Settings className="w-6 h-6 text-white" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
-                School Settings & Operations Console
-              </h1>
-              <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Delhi Public School (DPS)
-              </Badge>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">{pageTitle}</h1>
+              {profile && (
+                <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
+                  {profile.name}
+                </Badge>
+              )}
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
-              Configure institutional profile, timetable slot structures, and autonomous AI automation rules.
+              {pageDescription}
             </p>
           </div>
         </div>
 
-        <Button
-          onClick={handleSaveSettings}
-          disabled={saving}
-          className="gap-2 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold h-9 shadow-md text-xs px-3.5 border-none"
-        >
-          {saving ? <RefreshCw className="w-4 h-4 animate-spin text-amber-300" /> : <Save className="w-4 h-4 text-amber-300" />}
-          <span>{saving ? 'Saving...' : 'Save Configuration'}</span>
-        </Button>
+        <div className="flex items-center gap-3 flex-wrap">
+          {headerExtra}
+          {activeTab === 'profile' && (
+            <Button
+              onClick={handleSave}
+              disabled={saving || loading || !dirty}
+              data-testid="save-school-profile"
+              className="gap-2 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold h-9 shadow-md text-xs px-3.5 border-none disabled:opacity-50"
+            >
+              {saving ? <RefreshCw className="w-4 h-4 animate-spin text-amber-300" /> : <Save className="w-4 h-4 text-amber-300" />}
+              <span>{saving ? 'Saving…' : dirty ? 'Save Profile' : 'Saved'}</span>
+            </Button>
+          )}
+        </div>
       </div>
 
-      {/* Settings Navigation Tabs */}
+      {loadError && (
+        <div className="flex items-start gap-3 p-4 rounded-2xl border border-red-200 bg-red-50">
+          <AlertTriangle className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-xs font-bold text-red-900">Could not load settings</p>
+            <p className="text-[11px] text-red-800 mt-0.5">{loadError}</p>
+            <Button size="sm" variant="outline" className="mt-2 h-7 text-[11px]" onClick={load}>Try again</Button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Tabs ── */}
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-3">
         {[
-          { id: 'profile', label: 'Institutional Profile', icon: Building2 },
-          { id: 'timetable', label: 'Timetable Constraints', icon: Sliders },
-          { id: 'ai', label: 'AI & Automation Engine', icon: Sparkles },
-          { id: 'security', label: 'Tenant Isolation & Security', icon: ShieldCheck },
+          { id: 'profile', label: 'Institutional Profile', icon: Building2, testId: 'school-setup-tab-profile' },
+          { id: 'timetable', label: 'Timetable Structure', icon: Sliders, testId: 'school-setup-tab-timetable' },
+          { id: 'automation', label: 'Plan & Automation', icon: Sparkles, testId: 'school-setup-tab-automation' },
+          { id: 'security', label: 'Tenant Isolation & Security', icon: ShieldCheck, testId: 'school-setup-tab-security' },
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              data-testid={tab.testId}
+              onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
-                isActive
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                isActive ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -137,204 +303,287 @@ export default function SchoolSettingsPage() {
         })}
       </div>
 
-      {/* ── Tab 1: Profile ── */}
+      {/* ── Tab 1: Profile (the only editable tab) ── */}
       {activeTab === 'profile' && (
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="p-5 pb-3">
             <CardTitle className="text-base font-bold text-slate-900">Official Institution Profile</CardTitle>
             <CardDescription className="text-xs text-slate-500">
-              Basic identification details used for PDF timetable printouts and official notifications.
+              Saved to your school record. Used on printed timetables and official notifications.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 pt-2 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">School Official Name</Label>
-                <Input value={schoolName} onChange={(e) => setSchoolName(e.target.value)} className="h-9 text-xs" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Tenant Identifier Code</Label>
-                <Input value={schoolCode} onChange={(e) => setSchoolCode(e.target.value)} className="h-9 text-xs font-mono" />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Affiliation Board</Label>
-                <Select value={board} onValueChange={setBoard}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="CBSE">CBSE (India)</SelectItem>
-                    <SelectItem value="ICSE">ICSE / ISC</SelectItem>
-                    <SelectItem value="IB">IB World School</SelectItem>
-                    <SelectItem value="Cambridge">Cambridge IGCSE</SelectItem>
-                    <SelectItem value="State">State Board</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Principal / Admin Email</Label>
-                <Input value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} className="h-9 text-xs" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Contact Phone</Label>
-                <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="h-9 text-xs" />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">Campus Address</Label>
-              <Input value={address} onChange={(e) => setAddress(e.target.value)} className="h-9 text-xs" />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Tab 2: Timetable Constraints ── */}
-      {activeTab === 'timetable' && (
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="p-5 pb-3">
-            <CardTitle className="text-base font-bold text-slate-900">Master Schedule Parameters</CardTitle>
-            <CardDescription className="text-xs text-slate-500">
-              Configure daily period counts, time slots, and instructional duration for AI generator.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-5 pt-2 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Periods Per Day</Label>
-                <Select value={periodsPerDay} onValueChange={setPeriodsPerDay}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="6">6 Periods / Day</SelectItem>
-                    <SelectItem value="7">7 Periods / Day</SelectItem>
-                    <SelectItem value="8">8 Periods / Day (Standard)</SelectItem>
-                    <SelectItem value="9">9 Periods / Day</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Period Duration (Minutes)</Label>
-                <Select value={periodDuration} onValueChange={setPeriodDuration}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="35">35 Minutes</SelectItem>
-                    <SelectItem value="40">40 Minutes</SelectItem>
-                    <SelectItem value="45">45 Minutes (Standard)</SelectItem>
-                    <SelectItem value="50">50 Minutes</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Working Days Per Week</Label>
-                <Select value={workingDays} onValueChange={setWorkingDays}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="5">5 Days (Mon - Fri)</SelectItem>
-                    <SelectItem value="6">6 Days (Mon - Sat)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Morning Assembly Start Time</Label>
-                <Input type="time" value={morningAssembly} onChange={(e) => setMorningAssembly(e.target.value)} className="h-9 text-xs" />
-              </div>
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">Lunch / Recess Break Duration</Label>
-                <Input value={`${recessDuration} minutes`} disabled className="h-9 text-xs bg-slate-50" />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* ── Tab 3: AI & Automation ── */}
-      {activeTab === 'ai' && (
-        <Card className="border-slate-200 shadow-sm">
-          <CardHeader className="p-5 pb-3">
-            <CardTitle className="text-base font-bold text-slate-900">Autonomous Operations Engine</CardTitle>
-            <CardDescription className="text-xs text-slate-500">
-              Toggle automatic IoT triggers, substitution workflows, and faculty workload limits.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="p-5 pt-2 space-y-4">
-            <div className="space-y-3">
-              {[
-                {
-                  id: 'auto-sub',
-                  title: 'Autonomous Teacher Substitution Engine',
-                  desc: 'Instantly allocate the highest-scoring qualified substitute teacher without manual admin intervention.',
-                  checked: autoSubstitution,
-                  toggle: () => setAutoSubstitution((v) => !v),
-                },
-                {
-                  id: 'biometric-sync',
-                  title: 'Biometric Attendance Hardware Push Sync',
-                  desc: 'Automatically ingest unpunched morning biometric scans at 08:15 AM and trigger absence workflows.',
-                  checked: biometricSync,
-                  toggle: () => setBiometricSync((v) => !v),
-                },
-                {
-                  id: 'whatsapp-alerts',
-                  title: 'WhatsApp & Push Period Notifications',
-                  desc: 'Dispatch formatted substitution duty messages to substitute teachers instantly.',
-                  checked: whatsAppAlerts,
-                  toggle: () => setWhatsAppAlerts((v) => !v),
-                },
-                {
-                  id: 'lesson-dna',
-                  title: 'AI LessonDNA™ Syllabus Handover',
-                  desc: 'Generate warm-up activities and Bloom taxonomy objectives for substitute teachers in real time.',
-                  checked: lessonDNA,
-                  toggle: () => setLessonDNA((v) => !v),
-                },
-              ].map((item) => (
-                <div
-                  key={item.id}
-                  onClick={item.toggle}
-                  className="flex items-start justify-between p-3.5 rounded-2xl border border-slate-200 bg-slate-50 hover:bg-slate-100/70 transition-colors cursor-pointer"
-                >
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-bold text-slate-900">{item.title}</p>
-                    <p className="text-[11px] text-slate-500 max-w-xl">{item.desc}</p>
+            {loading ? (
+              <p className="text-xs text-slate-400 py-6 text-center">Loading school profile…</p>
+            ) : (
+              <>
+                {saveError && (
+                  <div className="flex items-start gap-2.5 p-3 rounded-xl border border-red-200 bg-red-50">
+                    <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                    <p className="text-[11px] text-red-800">{saveError}</p>
                   </div>
-                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 border transition-all ${
-                    item.checked ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
-                  }`}>
-                    {item.checked && <Check className="w-4 h-4" />}
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">School Official Name</Label>
+                    <Input
+                      data-testid="settings-school-name"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Tenant Identifier Code</Label>
+                    <Input value={profile?.code ?? ''} disabled className="h-9 text-xs font-mono bg-slate-50" />
+                    <p className="text-[10px] text-slate-400">
+                      Issued by the platform and used to identify your data. Contact support to change it.
+                    </p>
                   </div>
                 </div>
-              ))}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Affiliation Board</Label>
+                    <Select
+                      value={form.board || 'none'}
+                      onValueChange={(v) => setForm({ ...form, board: v === 'none' ? '' : v })}
+                    >
+                      <SelectTrigger className="h-9 text-xs" data-testid="settings-school-board">
+                        <SelectValue placeholder="Select a board…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not specified</SelectItem>
+                        {BOARDS.map((b) => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold">Contact Phone</Label>
+                    <Input
+                      data-testid="settings-school-phone"
+                      value={form.phone}
+                      onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                      className="h-9 text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Campus Address</Label>
+                  <Input
+                    data-testid="settings-school-address"
+                    value={form.address}
+                    onChange={(e) => setForm({ ...form, address: e.target.value })}
+                    placeholder="Street, city, state, PIN"
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Primary Contact Name</Label>
+                  <Input
+                    data-testid="settings-contact-name"
+                    value={form.contactName}
+                    onChange={(e) => setForm({ ...form, contactName: e.target.value })}
+                    placeholder="Principal or administrator"
+                    className="h-9 text-xs"
+                  />
+                </div>
+
+                {/* Login identity. Deliberately not editable from a school-details
+                    Save action — changing it changes how the Admin signs in. */}
+                <div className="pt-3 border-t border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <Label className="text-xs font-semibold">Admin Login Email</Label>
+                    <Badge variant="outline" className="text-[10px] font-bold text-slate-500 border-slate-300">
+                      Login identity — managed separately
+                    </Badge>
+                  </div>
+                  <Input
+                    data-testid="settings-school-email"
+                    type="email"
+                    value={profile?.email ?? ''}
+                    disabled
+                    readOnly
+                    className="h-9 text-xs bg-slate-50"
+                  />
+                  <p className="text-[10px] text-slate-400">
+                    This is the address you sign in with. Changing it needs re-authentication and
+                    confirmation, so it is handled by a separate secure workflow rather than this form.
+                  </p>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Tab 2: Timetable structure (Houses all 4 modules: Days & Periods, Academic Structure, Subjects, Rooms) ── */}
+      <div className={activeTab === 'timetable' ? 'space-y-4' : 'hidden'}>
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="p-5 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <CardTitle className="text-base font-bold text-slate-900">Timetable Structure</CardTitle>
+                <CardDescription className="text-xs text-slate-500 mt-0.5">
+                  Configure teaching days, academic structure, subjects, and rooms in one unified workspace.
+                </CardDescription>
+              </div>
             </div>
 
-            <div className="pt-2 border-t border-slate-200">
-              <div className="space-y-1.5 max-w-xs">
-                <Label className="text-xs font-semibold">Max Consecutive Periods Per Teacher</Label>
-                <Select value={maxTeacherPeriods} onValueChange={setMaxTeacherPeriods}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="3">3 Periods (Light Workload)</SelectItem>
-                    <SelectItem value="4">4 Periods</SelectItem>
-                    <SelectItem value="5">5 Periods (Recommended)</SelectItem>
-                    <SelectItem value="6">6 Periods (Maximum)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+            {/* Sub-tabs: Days & Periods, Academic Structure, Subjects, Rooms, Weekly Summary */}
+            <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100 mt-3">
+              {[
+                { id: 'days', label: 'Days & Periods', icon: CalendarClock, desc: 'Working days & breaks' },
+                { id: 'structure', label: 'Academic Structure', icon: Layers, desc: 'Grades & sections' },
+                { id: 'subjects', label: 'Subjects', icon: BookOpen, desc: 'Subject rules & allocation' },
+                { id: 'rooms', label: 'Rooms', icon: DoorOpen, desc: 'Capacity & types' },
+                { id: 'summary', label: 'Weekly Summary', icon: Info, desc: 'Teaching hours overview' },
+              ].map((st) => {
+                const SubIcon = st.icon;
+                const isSubActive = timetableSubTab === st.id;
+                return (
+                  <button
+                    key={st.id}
+                    type="button"
+                    data-testid={`school-setup-tab-${st.id}`}
+                    onClick={() => setTimetableSubTab(st.id as TimetableSubTabId)}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all border ${
+                      isSubActive
+                        ? 'border-blue-600 bg-blue-50 text-blue-700 shadow-xs'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <SubIcon className={`w-3.5 h-3.5 ${isSubActive ? 'text-blue-600' : 'text-slate-400'}`} />
+                    <span>{st.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </CardHeader>
+        </Card>
+
+        {/* Selected sub-module */}
+        <div className="pt-1">
+          {timetableSubTab === 'days' && <DayConfigPage onSaved={load} />}
+          {timetableSubTab === 'structure' && <DetectedStructure />}
+          {timetableSubTab === 'subjects' && <SubjectManagementPage />}
+          {timetableSubTab === 'rooms' && <RoomsPage />}
+          {timetableSubTab === 'summary' && (
+            <div className="space-y-4">
+              <SetupChecklistFull />
+              <Card className="border-slate-200 shadow-sm">
+                <CardHeader className="p-5 pb-3">
+                  <CardTitle className="text-sm font-bold text-slate-900">Teaching Week Overview</CardTitle>
+                  <CardDescription className="text-xs text-slate-500">
+                    Calculated from your working days and period counts.
+                  </CardDescription>
+                </CardHeader>
+              <CardContent className="p-5 pt-2 space-y-4">
+                {dayConfig ? (
+                  <>
+                    <div className="rounded-2xl border border-slate-200 p-4">
+                      <ReadOnlyRow label="Working days per week" value={dayConfig.workingDays} />
+                      <ReadOnlyRow label="School hours" value={`${dayConfig.startTime} – ${dayConfig.endTime}`} />
+                      <ReadOnlyRow label="Short break" value={`${dayConfig.breakMinutes} min, after period ${dayConfig.breakAfter}`} />
+                      <ReadOnlyRow label="Lunch" value={`${dayConfig.lunchMinutes} min, after period ${dayConfig.lunchAfter}`} />
+                      <ReadOnlyRow label="Total teaching periods per week" value={totalWeekly} />
+                    </div>
+
+                    {dayRows.length > 0 && (
+                      <div className="rounded-2xl border border-slate-200 p-4">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Periods per day</p>
+                        <div className="flex flex-wrap gap-2">
+                          {dayRows.map((d) => (
+                            <span key={d.day} className="px-2.5 py-1 rounded-lg bg-slate-100 text-[11px] font-semibold text-slate-700">
+                              {d.day}: {d.periods}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 p-4">
+                    <p className="text-xs font-bold text-amber-900">Your teaching week is not configured yet.</p>
+                    <p className="text-[11px] text-amber-800 mt-1">
+                      Configure your working days and period counts in Days &amp; Periods tab above.
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Tab 3: Plan & automation ── */}
+      {activeTab === 'automation' && (
+        <Card className="border-slate-200 shadow-sm">
+          <CardHeader className="p-5 pb-3">
+            <CardTitle className="text-base font-bold text-slate-900">Plan &amp; Automation</CardTitle>
+            <CardDescription className="text-xs text-slate-500">
+              What your current plan includes. These entitlements are set by the platform, not from this page.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="p-5 pt-2 space-y-4">
+            {flags ? (
+              <>
+                <div className="rounded-2xl border border-slate-200 p-4">
+                  <ReadOnlyRow label="Plan" value={<span className="capitalize">{flags.planName}</span>} />
+                  <ReadOnlyRow label="Faculty limit" value={flags.maxTeachers} />
+                  <ReadOnlyRow label="Grade limit" value={flags.maxGrades} />
+                  <ReadOnlyRow label="Max periods per day" value={flags.maxPeriodsPerDay} />
+                  {flags.trialEndsAt && (
+                    <ReadOnlyRow label="Trial ends" value={new Date(flags.trialEndsAt).toLocaleDateString()} />
+                  )}
+                </div>
+
+                <div className="rounded-2xl border border-slate-200 p-4 space-y-1">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Included capabilities</p>
+                  {[
+                    ['AI timetable generation', flags.aiTimetableEnabled],
+                    ['Bulk import', flags.bulkImportEnabled],
+                    ['Substitution management', flags.substitutionEnabled],
+                    ['Automatic substitute recommendation', flags.autoSubstitutionEnabled],
+                    ['Workload analytics', flags.workloadAnalyticsEnabled],
+                    ['Teacher notifications', flags.teacherNotifyEnabled],
+                  ].map(([label, on]) => (
+                    <div key={String(label)} className="flex items-center justify-between py-1.5 border-b border-slate-100 last:border-0">
+                      <span className="text-xs text-slate-600">{label}</span>
+                      {on
+                        ? <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700"><Check className="w-3.5 h-3.5" />Included</span>
+                        : <span className="text-[11px] font-bold text-slate-400">Not in plan</span>}
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-slate-500">
+                  To change a limit or add a capability, raise a request in{' '}
+                  <Link href="/support" className="font-semibold text-blue-700 underline">Support &amp; Tickets</Link>.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-slate-400 py-4 text-center">Loading plan…</p>
+            )}
+
+            <div className="pt-3 border-t border-slate-200 space-y-2">
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Per-school preferences</p>
+              <ComingSoon
+                title="Biometric device sync"
+                why="No attendance device adapter exists yet. The Attendance page generates simulated punches and is labelled as such."
+              />
+              <ComingSoon
+                title="WhatsApp and SMS notifications"
+                why="No messaging provider is connected. Notifications are recorded in the app but are not sent anywhere."
+              />
+              <ComingSoon
+                title="Per-school automation preferences"
+                why="Turning included capabilities on and off for your own school needs a preferences store that does not exist yet. Until then these follow your plan."
+              />
             </div>
           </CardContent>
         </Card>
@@ -344,33 +593,60 @@ export default function SchoolSettingsPage() {
       {activeTab === 'security' && (
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="p-5 pb-3">
-            <CardTitle className="text-base font-bold text-slate-900">Tenant Data Isolation & Security</CardTitle>
+            <CardTitle className="text-base font-bold text-slate-900">Tenant Isolation &amp; Security</CardTitle>
             <CardDescription className="text-xs text-slate-500">
-              Cryptographic separation guarantee and role access controls.
+              What is actually in place today. Nothing on this tab is editable.
             </CardDescription>
           </CardHeader>
           <CardContent className="p-5 pt-2 space-y-4">
             <div className="p-4 bg-blue-50 rounded-2xl border border-blue-200 flex items-start gap-3.5">
               <ShieldCheck className="w-5 h-5 text-blue-700 shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-bold text-blue-950">Single-Domain Tenant Data Boundary Active</p>
+                <p className="text-xs font-bold text-blue-950">Tenant scoping</p>
                 <p className="text-[11px] text-blue-800 mt-0.5 leading-relaxed">
-                  All timetable allocations, substitution histories, and biometric records are cryptographically tagged with School ID <code className="font-mono bg-blue-100 px-1 rounded text-blue-900">{schoolCode}</code>. Cross-tenant access is strictly blocked at the database middleware layer.
+                  Your timetable, faculty, leave, substitution and attendance records are tagged with
+                  school ID{' '}
+                  <code className="font-mono bg-blue-100 px-1 rounded text-blue-900">{profile?.code ?? '—'}</code>.
+                  Each API request derives your school from the signed session rather than from anything
+                  the browser sends, so a request cannot ask for another school&apos;s data.
                 </p>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Session Encryption</span>
-                <p className="text-xs font-bold text-slate-900">HMAC-SHA256 Signed JWT</p>
-                <p className="text-[11px] text-slate-500">Auto-expires after 7 days of inactivity</p>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Session security</span>
+                <p className="text-xs font-bold text-slate-900">HMAC-SHA256 signed JWT</p>
+                <p className="text-[11px] text-slate-500">Expires 7 days after issue</p>
               </div>
               <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Biometric Webhook Security</span>
-                <p className="text-xs font-bold text-slate-900">HMAC Signature Verification</p>
-                <p className="text-[11px] text-slate-500">Prevents spoofed IoT device punches</p>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Passwords</span>
+                <p className="text-xs font-bold text-slate-900">bcrypt hashed</p>
+                <p className="text-[11px] text-slate-500">Changing a password requires the current one</p>
               </div>
+              <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Attendance webhook</span>
+                <p className="text-xs font-bold text-slate-900">Disabled</p>
+                <p className="text-[11px] text-slate-500">
+                  Requires an HMAC-signed request and a configured secret. No device is connected.
+                </p>
+              </div>
+              <div className="p-3.5 rounded-2xl border border-slate-200 bg-slate-50 space-y-1">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Audit trail</span>
+                <p className="text-xs font-bold text-slate-900">Recorded</p>
+                <p className="text-[11px] text-slate-500">
+                  Timetable edits, faculty changes and overrides are logged with the actor
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-start gap-3 p-3.5 rounded-2xl border border-amber-300 bg-amber-50">
+              <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+              <p className="text-[11px] text-amber-900">
+                Role separation is still being rolled out. Anyone who can sign in to your school can
+                currently reach the administrative screens, so only issue accounts to staff you intend
+                to have full access.
+              </p>
             </div>
           </CardContent>
         </Card>
@@ -378,3 +654,16 @@ export default function SchoolSettingsPage() {
     </div>
   );
 }
+
+export default function SchoolSettingsPage(props: {
+  pageTitle?: string;
+  pageDescription?: string;
+  headerExtra?: React.ReactNode;
+}) {
+  return (
+    <Suspense fallback={<div className="p-6 text-xs text-slate-400">Loading settings…</div>}>
+      <SchoolSettingsContent {...props} />
+    </Suspense>
+  );
+}
+

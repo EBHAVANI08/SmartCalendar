@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability, ownTeacherId } from '@/lib/authz';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(request: Request) {
   try {
@@ -11,7 +13,18 @@ export async function GET(request: Request) {
     const board = searchParams.get('board');
     const search = searchParams.get('search');
 
-    const where: Record<string, unknown> = {};
+    // LessonPlan has no schoolId of its own; tenancy runs through teacherId.
+    // This route previously had NO scoping at all and returned every school's
+    // plans to anyone signed in.
+    const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+    }
+    const mine = await ownTeacherId(request, schoolId);
+
+    const where: Record<string, unknown> = mine
+      ? { teacherId: mine }
+      : { teacher: { schoolId } };
     if (subject) where.subject = subject;
     if (grade) where.grade = grade;
     if (board) where.board = board;
@@ -42,6 +55,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'lessonplan.write');
+  if (denied) return denied;
+
   try {
     const { teacherId, grade, section, subject, topic, board } = await request.json();
 

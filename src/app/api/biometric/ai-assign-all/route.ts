@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { requireCapability } from '@/lib/authz';
 
 const MAX_PERIODS_PER_DAY = 8;
 
@@ -9,6 +10,9 @@ const MAX_PERIODS_PER_DAY = 8;
 // 1. Algorithmic scoring for fast, deterministic filtering (subject, grade, workload, familiarity)
 // 2. AI reasoning for context-aware, pedagogically intelligent final selection
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'substitution.assign');
+  if (denied) return denied;
+
   try {
     const { date } = await request.json();
     const assignDate = date || new Date().toISOString().split('T')[0];

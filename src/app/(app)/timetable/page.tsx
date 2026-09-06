@@ -10,8 +10,7 @@ import {
   Coffee, Utensils, ChevronRight, Layers, Building2,
   Upload, FileSpreadsheet, FileText, ArrowRight, Check,
   ArrowLeftRight, Calculator, FlaskConical, Zap, Dna,
-  Languages, Globe, Cpu, Trophy, Palette, Music, Library
-} from 'lucide-react';
+  Languages, Globe, Cpu, Trophy, Palette, Music, Library, AlertTriangle } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -20,6 +19,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { GenerationResult, type GenerationResultData } from '@/components/timetable/generation-result';
+import { VersionBanner } from '@/components/timetable/version-banner';
+import { SlotEditor } from '@/components/timetable/slot-editor';
+import { ImportPreviewDialog, type ImportReport } from '@/components/timetable/import-preview';
 
 interface Teacher {
   id: string;
@@ -242,6 +245,8 @@ const calculatePeriods = (
 
 export default function TimetablePage() {
   const { toast } = useToast();
+  // Post-generation report, including requirements the solver could not place.
+  const [genResult, setGenResult] = useState<GenerationResultData | null>(null);
   const [selectedGrade, setSelectedGrade] = useState('Grade 10');
   const [selectedSection, setSelectedSection] = useState('A');
   const [schedules, setSchedules] = useState<Schedule[]>([]);
@@ -292,6 +297,8 @@ export default function TimetablePage() {
   });
 
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [importReport, setImportReport] = useState<ImportReport | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
 
   // Cell Editing & Period Swapping Modal States
   const [cellEditOpen, setCellEditOpen] = useState(false);
@@ -305,21 +312,55 @@ export default function TimetablePage() {
     room: string;
   } | null>(null);
 
-  const [swapTargetDay, setSwapTargetDay] = useState('Tuesday');
-  const [swapTargetPeriod, setSwapTargetPeriod] = useState('3');
 
   // Drag-and-Drop state
   const [draggedSlot, setDraggedSlot] = useState<{ id?: string; day: string; period: number } | null>(null);
 
   // Fetch Schedules & Teachers
+  // Occupancy across the WHOLE school for the active version, keyed by
+  // teacher+day+period. A timetable cell is only correct in the context of
+  // every other class, so this is fetched school-wide, not per section.
+  const [occupancy, setOccupancy] = useState<Record<string, { grade: string; section: string; subject: string }[]>>({});
+
+  const fetchOccupancy = useCallback(async () => {
+    try {
+      const r = await fetch('/api/schedules');
+      if (!r.ok) return;
+      const rows = await r.json();
+      if (!Array.isArray(rows)) return;
+      const map: Record<string, { grade: string; section: string; subject: string }[]> = {};
+      for (const row of rows) {
+        if (!row.teacherId) continue;
+        const key = `${row.teacherId}|${row.day}|${row.period}`;
+        (map[key] ||= []).push({ grade: row.grade, section: row.section, subject: row.subject });
+      }
+      setOccupancy(map);
+    } catch {
+      /* the grid still renders without clash badges */
+    }
+  }, []);
+
+  /** Other classes this teacher is already booked into at the same day+period. */
+  const clashesFor = (teacherId: string | undefined, day: string, period: number) => {
+    if (!teacherId) return [];
+    return (occupancy[`${teacherId}|${day}|${period}`] || []).filter(
+      (x) => !(x.grade === selectedGrade && x.section === selectedSection)
+    );
+  };
+
   const fetchSchedules = useCallback(async () => {
     setLoading(true);
+    // Drop the previous class's rows immediately. Without this the grid keeps
+    // rendering the old section while the new fetch is in flight.
+    setSchedules([]);
     try {
       const r = await fetch(`/api/schedules?grade=${selectedGrade}&section=${selectedSection}`);
       if (r.ok) {
         const data = await r.json();
         setSchedules(Array.isArray(data) ? data : []);
       }
+    } catch (err) {
+      console.error('fetchSchedules error:', err);
     } finally {
       setLoading(false);
     }
@@ -339,12 +380,104 @@ export default function TimetablePage() {
     }
   }, []);
 
+  const fetchDayConfig = useCallback(async () => {
+    try {
+      const r = await fetch('/api/school/day-config');
+      if (!r.ok) return;
+      const data = await r.json();
+      if (data.success && data.config) {
+        const c = data.config;
+        if (c.configured) {
+          const periods = calculatePeriods(
+            c.startTime || '08:00',
+            '40',
+            String(c.periodsPerDay || 8),
+            String(c.breakAfter || 2),
+            String(c.lunchAfter || 4),
+            String(c.breakMinutes || 15),
+            String(c.lunchMinutes || 30),
+            c.breakMinutes > 0,
+            c.lunchMinutes > 0
+          );
+          setActivePeriods(periods);
+          setStudioSettings((prev) => ({
+            ...prev,
+            startTime: c.startTime || prev.startTime,
+            endTime: c.endTime || prev.endTime,
+            totalPeriods: String(c.periodsPerDay || prev.totalPeriods),
+            saturdayType: c.workingDays === 5 ? 'off' : 'half',
+            saturdayPeriods: String(c.saturdayPeriods || 4),
+            shortBreakAfter: String(c.breakAfter || prev.shortBreakAfter),
+            shortBreakMins: String(c.breakMinutes || prev.shortBreakMins),
+            lunchBreakAfter: String(c.lunchAfter || prev.lunchBreakAfter),
+            lunchBreakMins: String(c.lunchMinutes || prev.lunchBreakMins),
+            enableShortBreak: (c.breakMinutes || 0) > 0,
+            enableLunchBreak: (c.lunchMinutes || 0) > 0,
+          }));
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
   useEffect(() => {
     fetchSchedules();
     fetchTeachers();
-  }, [fetchSchedules, fetchTeachers]);
+    fetchOccupancy();
+    fetchDayConfig();
+  }, [fetchSchedules, fetchTeachers, fetchOccupancy, fetchDayConfig]);
 
   // Unified Master Studio Submit Handler (Handles both File Upload & AI Bulk Generation)
+  /**
+   * One upload call. `validate` reports on the whole file without writing;
+   * `commit` re-validates server-side and writes atomically.
+   */
+  const runImport = useCallback(async (file: File, mode: 'validate' | 'commit') => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('mode', mode);
+    formData.append('grade', selectedGrade);
+    formData.append('section', selectedSection);
+
+    const res = await fetch('/api/timetable/bulk-upload', { method: 'POST', body: formData });
+    const data = await res.json().catch(() => ({}));
+
+    // A validation failure comes back as a structured report, not a toast.
+    if (!res.ok && res.status !== 422) {
+      toast({
+        title: 'Upload failed',
+        description: data?.error || `The server rejected the file (HTTP ${res.status}).`,
+        variant: 'destructive',
+      });
+      return null;
+    }
+    return data;
+  }, [selectedGrade, selectedSection, toast]);
+
+  const confirmImport = useCallback(async () => {
+    if (!selectedUploadFile) return;
+    const data = await runImport(selectedUploadFile, 'commit');
+    if (!data) return;
+
+    if (!data.success) {
+      // Re-validated on commit and something changed underneath: show why.
+      setImportReport((prev) => (prev ? { ...prev, ...data, canImport: false } : prev));
+      toast({
+        title: 'Import refused',
+        description: data.error || 'The file no longer validates.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    toast({ title: 'Timetable imported', description: data.message });
+    setImportOpen(false);
+    setImportReport(null);
+    setSelectedUploadFile(null);
+    fetchSchedules();
+  }, [selectedUploadFile, runImport, toast, fetchSchedules]);
+
   const handleStudioSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setIsProcessing(true);
@@ -357,48 +490,31 @@ export default function TimetablePage() {
           return;
         }
 
-        // schoolId is resolved server-side automatically from DB — no need to fetch it here
-        const formData = new FormData();
-        formData.append('file', selectedUploadFile);
-        formData.append('startTime', studioSettings.startTime);
-        formData.append('periodDuration', studioSettings.periodDuration);
-        formData.append('totalPeriods', studioSettings.totalPeriods);
-        formData.append('saturdayType', studioSettings.saturdayType);
-        formData.append('saturdayPeriods', studioSettings.saturdayPeriods);
-        formData.append('shortBreakAfter', studioSettings.shortBreakAfter);
-        formData.append('shortBreakMins', '30');
-        formData.append('lunchBreakAfter', studioSettings.lunchBreakAfter);
-        formData.append('lunchBreakMins', '30');
-        formData.append('startGrade', studioSettings.startGrade);
-        formData.append('endGrade', studioSettings.endGrade);
-        formData.append('sectionsCount', studioSettings.sectionsCount);
-        formData.append('grade', selectedGrade);
-        formData.append('section', selectedSection);
+        // Preview first: the file is parsed and fully validated, and nothing is
+        // written until the Admin confirms. Bell timings, working days and period
+        // counts all come from Day & Period Setup server-side, so the studio's
+        // own settings are no longer posted here.
+        const data = await runImport(selectedUploadFile, 'validate');
+        if (!data) return;
 
-        const res = await fetch('/api/timetable/bulk-upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        const data = await res.json();
-        if (res.ok && data.success) {
-          toast({
-            title: 'Bulk Timetable Upload Approved!',
-            description: `${data.message} (${data.schedulesCreated} slots processed with bell timings).`,
-          });
-          setStudioOpen(false);
-          setSelectedUploadFile(null);
-          fetchSchedules();
-        } else {
-          toast({ title: 'Upload Failed', description: data.error || 'Failed to process upload.', variant: 'destructive' });
-        }
+        setImportReport(data as ImportReport);
+        setImportOpen(true);
+        setStudioOpen(false);
       } else {
         // AI Generator Mode
         const schoolRes = await fetch('/api/teacher/me');
-        let schoolId = '6a8bf21c3359da9c7c8a7b02';
+        let schoolId = '';
         if (schoolRes.ok) {
           const sData = await schoolRes.json();
-          if (sData?.schoolId) schoolId = sData.schoolId;
+          schoolId = sData?.schoolId || sData?.data?.schoolId || '';
+        }
+        if (!schoolId) {
+          toast({
+            title: 'No school context',
+            description: 'Could not determine your school. Please sign in again.',
+            variant: 'destructive',
+          });
+          return; // `finally` below resets the processing state
         }
 
         const r = await fetch('/api/schedules/ai-generate-timetable', {
@@ -428,6 +544,7 @@ export default function TimetablePage() {
         });
 
         const d = await r.json();
+        setGenResult(d);
         if (r.ok && d.success) {
           toast({
             title: studioSettings.bulkAll ? 'School-Wide Bulk Master Timetable Approved!' : 'AI Master Timetable Generated!',
@@ -448,137 +565,21 @@ export default function TimetablePage() {
           fetchSchedules();
         }
       }
-    } catch {
+    } catch (err) {
+      console.error('Master Studio error:', err);
       toast({
-        title: 'Timetable Published',
-        description: 'Master timetable created and saved to MongoDB Atlas.',
+        title: 'Process Error',
+        description: err instanceof Error ? err.message : 'Could not complete timetable process. Please check connection and try again.',
+        variant: 'destructive',
       });
-      setStudioOpen(false);
-      fetchSchedules();
     } finally {
       setIsProcessing(false);
     }
   };
 
   // Cell Edit Save Action (Updates DB, State, and Teacher Directory)
-  const handleSaveCellEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingCell) return;
-
-    try {
-      if (editingCell.id && !editingCell.id.startsWith('custom-')) {
-        const res = await fetch(`/api/schedules/${editingCell.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            subject: editingCell.subject,
-            teacherId: editingCell.teacherId || null,
-            roomId: editingCell.room,
-            startTime: PERIODS.find((p) => p.num === editingCell.period)?.time.split(' - ')[0] || '08:00',
-            endTime: PERIODS.find((p) => p.num === editingCell.period)?.time.split(' - ')[1] || '08:45',
-          }),
-        });
-
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          toast({
-            title: 'Update Conflict',
-            description: errData.error || 'Could not update slot.',
-            variant: 'destructive',
-          });
-        }
-      }
-
-      // Update state array so change renders immediately on screen even for fallback slots
-      setSchedules((prev) => {
-        const existingIdx = prev.findIndex((s) => s.day === editingCell.day && s.period === editingCell.period);
-        const pSlot = PERIODS.find((p) => p.num === editingCell.period);
-        const startTime = pSlot?.time.split(' - ')[0] || '08:00';
-        const endTime = pSlot?.time.split(' - ')[1] || '08:45';
-        const updatedSlot: Schedule = {
-          id: editingCell.id || `custom-${editingCell.day}-${editingCell.period}`,
-          grade: selectedGrade,
-          section: selectedSection,
-          day: editingCell.day,
-          period: editingCell.period,
-          subject: editingCell.subject,
-          teacherId: editingCell.teacherId,
-          teacher: {
-            id: editingCell.teacherId || 'custom-teacher-id',
-            name: editingCell.teacher,
-            subject: editingCell.subject,
-            email: 'teacher@school.edu',
-          },
-          roomId: editingCell.room,
-          startTime,
-          endTime,
-        };
-        if (existingIdx >= 0) {
-          const copy = [...prev];
-          copy[existingIdx] = updatedSlot;
-          return copy;
-        }
-        return [...prev, updatedSlot];
-      });
-
-      toast({
-        title: 'Slot Assignment Saved!',
-        description: `${editingCell.day} Period ${editingCell.period}: ${editingCell.subject} (${editingCell.teacher}). Reflects in teacher directory!`,
-      });
-      setCellEditOpen(false);
-    } catch {
-      toast({
-        title: 'Slot Updated',
-        description: `${editingCell.day} Period ${editingCell.period} updated to ${editingCell.subject}.`,
-      });
-      setCellEditOpen(false);
-    }
-  };
 
   // Period Swapping Execution (Modal or Drag & Drop)
-  const executeSwap = async (
-    fromDay: string,
-    fromPeriod: number,
-    toDay: string,
-    toPeriod: number,
-    fromId?: string,
-    toId?: string
-  ) => {
-    try {
-      const res = await fetch('/api/schedules/swap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          fromId,
-          toId,
-          fromDay,
-          fromPeriod,
-          toDay,
-          toPeriod: Number(toPeriod),
-          grade: selectedGrade,
-          section: selectedSection,
-        }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.success) {
-        toast({
-          title: 'Period Swapped Successfully!',
-          description: `Swapped ${fromDay} P${fromPeriod} ↔ ${toDay} P${toPeriod} for ${selectedGrade} Section ${selectedSection}.`,
-        });
-        fetchSchedules();
-      } else {
-        toast({
-          title: 'Slot Position Updated',
-          description: `Swapped ${fromDay} P${fromPeriod} with ${toDay} P${toPeriod}.`,
-        });
-        fetchSchedules();
-      }
-    } catch {
-      toast({ title: 'Slot Swapped', description: 'Schedule updated successfully.' });
-      fetchSchedules();
-    }
-  };
 
   // Download Excel Format Template for School Setup
   const handleDownloadTemplate = () => {
@@ -654,19 +655,37 @@ export default function TimetablePage() {
     e.dataTransfer.setData('text/plain', JSON.stringify(slot));
   };
 
+  // Drag and drop is a MOVE through the validated slot API, not a raw swap:
+  // the destination is checked for teacher clash, class clash and the day's
+  // configured period count, and the backend refuses anything invalid.
   const handleDrop = async (e: React.DragEvent, targetSlot: { id?: string; day: string; period: number }) => {
     e.preventDefault();
-    if (!draggedSlot || (draggedSlot.day === targetSlot.day && draggedSlot.period === targetSlot.period)) return;
-
-    await executeSwap(
-      draggedSlot.day,
-      draggedSlot.period,
-      targetSlot.day,
-      targetSlot.period,
-      draggedSlot.id,
-      targetSlot.id
-    );
+    const dragged = draggedSlot;
     setDraggedSlot(null);
+    if (!dragged?.id || String(dragged.id).startsWith('custom-')) return;
+    if (dragged.day === targetSlot.day && dragged.period === targetSlot.period) return;
+
+    try {
+      const res = await fetch(`/api/schedules/${dragged.id}/slot`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ day: targetSlot.day, period: targetSlot.period }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({
+          title: 'Move blocked',
+          description: data.error || 'The destination is not available.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      toast({ title: 'Period moved', description: data.message });
+      fetchSchedules();
+      fetchOccupancy();
+    } catch {
+      toast({ title: 'Move failed', description: 'The request could not be completed.', variant: 'destructive' });
+    }
   };
 
 const isDemoSchool = () => {
@@ -689,7 +708,16 @@ const isDemoSchool = () => {
   // Helper to get slot info for Day & Period from DB or fallback
   const getSlot = (day: string, periodNum: number) => {
     const fallback = FALLBACK_WEEK_SCHEDULE[day]?.[periodNum];
-    const dbMatch = schedules.find((s) => s.day === day && s.period === periodNum);
+    // A timetable cell is identified by class AND time. Matching on day+period
+    // alone let one section render another section's lesson whenever the state
+    // array held rows for more than the selected class.
+    const dbMatch = schedules.find(
+      (s) =>
+        s.day === day &&
+        s.period === periodNum &&
+        s.grade === selectedGrade &&
+        s.section === selectedSection
+    );
 
     if (dbMatch) {
       const rawTeacher = dbMatch.teacher?.name;
@@ -707,12 +735,17 @@ const isDemoSchool = () => {
       };
     }
 
-    if (isDemo && fallback) return { ...fallback, teacherId: undefined };
+    // Only the demo tenant's Section A shows illustrative content; any other
+    // section with no rows renders as genuinely empty rather than inventing a
+    // lesson that looks real.
+    if (isDemo && fallback && selectedSection === 'A') return { ...fallback, teacherId: undefined };
     return { subject: 'Unassigned Period', teacher: '—', room: '—', teacherId: undefined };
   };
 
   return (
     <div className="bg-[#F6F8FC] min-h-screen p-4 sm:p-6 lg:p-8 space-y-6 text-[#172033]">
+      <VersionBanner onChanged={fetchSchedules} />
+      <GenerationResult result={genResult} onDismiss={() => setGenResult(null)} />
       {/* ── Enterprise SaaS Workspace Header ── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
         <div className="flex items-center gap-4">
@@ -848,7 +881,13 @@ const isDemoSchool = () => {
               <Clock className="w-3.5 h-3.5" /> Edit Timetable & Timings
             </Button>
             <Badge className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white border-none font-bold text-xs shadow-xs px-2.5 py-1">
-              {schedules.length > 0 ? `${schedules.length} Active Database Slots` : 'Preset ERP Schedule'}
+              {(() => {
+                // Count only rows belonging to the class actually on screen.
+                const visible = schedules.filter(
+                  (s) => s.grade === selectedGrade && s.section === selectedSection
+                ).length;
+                return visible > 0 ? `${visible} Scheduled Periods` : 'No Scheduled Periods';
+              })()}
             </Badge>
           </div>
         </div>
@@ -929,12 +968,15 @@ const isDemoSchool = () => {
 
                     const periodNum = p.num as number;
                     const slot = getSlot(day, periodNum);
+                    // Same teacher already booked into another class at this time.
+                    const cellClashes = clashesFor(slot.teacherId, day, periodNum);
                     const accent = getSubjectAccent(slot.subject);
                     const IconComp = accent.icon;
 
                     return (
                       <td
                         key={pIdx}
+                        data-testid={`slot-cell-${day}-${periodNum}`}
                         draggable={true}
                         onDragStart={(e) => handleDragStart(e, { id: slot.id, day, period: periodNum })}
                         onDragOver={(e) => e.preventDefault()}
@@ -949,13 +991,27 @@ const isDemoSchool = () => {
                             teacher: slot.teacher,
                             room: slot.room,
                           });
-                          setSwapTargetDay(day === 'Monday' ? 'Tuesday' : 'Monday');
-                          setSwapTargetPeriod(String(periodNum === 1 ? 2 : 1));
                           setCellEditOpen(true);
                         }}
                         className="p-1.5 border-b border-r border-[#E2E8F0] cursor-pointer transition-all duration-150 relative group bg-white hover:bg-slate-50/80"
                       >
                         <div className={`p-2 rounded-lg border border-[#E2E8F0] bg-white shadow-xs hover:shadow-md hover:border-blue-300 transition-all ${accent.border} space-y-1 h-full`}>
+                          {cellClashes.length > 0 && (
+                            <div
+                              title={`${slot.teacher} is also assigned to ${cellClashes
+                                .map((c) => `${c.grade}-${c.section} (${c.subject})`)
+                                .join(', ')} at ${day} Period ${periodNum}.`}
+                              className="mb-1 flex items-start gap-1 rounded-md border border-rose-300 bg-rose-50 px-1.5 py-1"
+                            >
+                              <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0 mt-[1px]" />
+                              <span className="text-[10px] font-bold text-rose-700 leading-tight">
+                                Teacher Clash
+                                <span className="block font-medium text-rose-600">
+                                  also in {cellClashes.map((c) => `${c.grade}-${c.section}`).join(', ')}
+                                </span>
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center justify-between gap-1">
                             <div className="flex items-center gap-1 min-w-0">
                               <IconComp className={`w-3.5 h-3.5 shrink-0 ${accent.iconColor}`} />
@@ -1026,157 +1082,16 @@ const isDemoSchool = () => {
         </Card>
       </div>
 
-      {/* ── Smart Cell Quick-Edit & Swap Modal ── */}
-      <Dialog open={cellEditOpen} onOpenChange={setCellEditOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-blue-950">
-              <Edit3 className="w-5 h-5 text-blue-700" />
-              Edit Slot Assignment — {editingCell?.day} P{editingCell?.period}
-            </DialogTitle>
-          </DialogHeader>
-
-          {editingCell && (
-            <form onSubmit={handleSaveCellEdit} className="space-y-4 py-2">
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex justify-between font-semibold text-slate-700">
-                <span>{editingCell.day}</span>
-                <span>Period {editingCell.period}</span>
-                <span>{selectedGrade} - {selectedSection}</span>
-              </div>
-
-              {/* 1. Subject Selector */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Select Subject</Label>
-                <Select
-                  value={editingCell.subject}
-                  onValueChange={(val) => {
-                    setEditingCell({
-                      ...editingCell,
-                      subject: val,
-                      teacher: val === 'Free Period / Library' ? '—' : editingCell.teacher,
-                    });
-                  }}
-                >
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    {ALL_SUBJECTS.map((s) => (
-                      <SelectItem key={s} value={s}>{s}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* 2. Filtered Teacher Selector */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Assigned Faculty (Filtered by Subject)</Label>
-                <Select
-                  value={editingCell.teacherId || editingCell.teacher}
-                  onValueChange={(val) => {
-                    const matchedTeacher = teachersList.find((t) => t.id === val || t.name === val);
-                    setEditingCell({
-                      ...editingCell,
-                      teacherId: matchedTeacher?.id || (val.length > 15 ? val : undefined),
-                      teacher: matchedTeacher?.name || val,
-                    });
-                  }}
-                >
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue placeholder="Select Teacher" />
-                  </SelectTrigger>
-                  <SelectContent className="max-h-60">
-                    <SelectItem value="—">— (No Teacher / Free Slot)</SelectItem>
-                    <SelectItem value="Assigned Faculty">Assigned Faculty (Generic)</SelectItem>
-
-                    {teachersList
-                      .filter((t) => !editingCell.subject || editingCell.subject === 'Free Period / Library' || t.subject === editingCell.subject)
-                      .map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name} ({t.subject})
-                        </SelectItem>
-                      ))}
-
-                    {teachersList.length > 0 && teachersList.filter((t) => t.subject === editingCell.subject).length === 0 && (
-                      teachersList.map((t) => (
-                        <SelectItem key={`all-${t.id}`} value={t.id}>
-                          {t.name} ({t.subject})
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* 3. Room Facility */}
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-700">Room / Facility Code</Label>
-                <Input
-                  value={editingCell.room}
-                  onChange={(e) => setEditingCell({ ...editingCell, room: e.target.value })}
-                  className="h-9 text-xs"
-                  placeholder="e.g. R-10A, Science Lab, Comp Lab 1"
-                  required
-                />
-              </div>
-
-              {/* 4. Swap Period Direct Action Section */}
-              <div className="p-3 bg-amber-50/70 rounded-xl border border-amber-200 space-y-2">
-                <Label className="text-xs font-bold text-amber-900 flex items-center gap-1.5">
-                  <ArrowLeftRight className="w-4 h-4 text-amber-600" />
-                  Swap This Slot With Another Period
-                </Label>
-                <div className="grid grid-cols-2 gap-2">
-                  <Select value={swapTargetDay} onValueChange={setSwapTargetDay}>
-                    <SelectTrigger className="h-8 text-xs bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DAYS.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-
-                  <Select value={swapTargetPeriod} onValueChange={setSwapTargetPeriod}>
-                    <SelectTrigger className="h-8 text-xs bg-white">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {[1, 2, 3, 4, 5, 6, 7, 8].map((p) => <SelectItem key={p} value={String(p)}>Period {p}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={async () => {
-                    await executeSwap(
-                      editingCell.day,
-                      editingCell.period,
-                      swapTargetDay,
-                      parseInt(swapTargetPeriod, 10),
-                      editingCell.id
-                    );
-                    setCellEditOpen(false);
-                  }}
-                  className="w-full h-8 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white border-none gap-1.5"
-                >
-                  <ArrowLeftRight className="w-3.5 h-3.5" /> Swap {editingCell.day} P{editingCell.period} ↔ {swapTargetDay} P{swapTargetPeriod}
-                </Button>
-              </div>
-
-              <DialogFooter className="pt-2">
-                <Button type="button" variant="outline" onClick={() => setCellEditOpen(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit" className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold shadow-md">
-                  Save Slot Assignment
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
+      {/* Validated slot editor: every change goes through the shared
+          constraint service, and a published version opens read-only. */}
+      <SlotEditor
+        slotId={editingCell?.id && !String(editingCell.id).startsWith('custom-') ? String(editingCell.id) : null}
+        grade={selectedGrade}
+        section={selectedSection}
+        open={cellEditOpen}
+        onOpenChange={setCellEditOpen}
+        onChanged={() => { fetchSchedules(); fetchOccupancy(); }}
+      />
 
       {/* ── UNIFIED Master Timetable Creator Studio (AI + Bulk Upload Combined) ── */}
       <Dialog open={studioOpen} onOpenChange={setStudioOpen}>
@@ -1982,6 +1897,13 @@ const isDemoSchool = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ImportPreviewDialog
+        report={importReport}
+        open={importOpen}
+        onOpenChange={(o) => { if (!o) { setImportOpen(false); setImportReport(null); } }}
+        onConfirm={confirmImport}
+      />
 
     </div>
   );

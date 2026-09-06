@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { requireCapability } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +34,7 @@ export async function GET(request: Request) {
 
     if (schoolId) {
       const teacherWhere = { schoolId };
-      const subWhere = { absentTeacher: { schoolId } };
+      const subWhere = { schoolId, absentTeacher: { schoolId } };
       const [pendingSubs, onLeave, pendingLeaves, messages, tickets] = await Promise.all([
         db.substitution.count({ where: { ...subWhere, status: 'pending' } }),
         db.leaveApplication.count({
@@ -152,6 +153,9 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const denied = requireCapability(request, 'profile.own');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const userId = request.headers.get('x-user-id') || '';

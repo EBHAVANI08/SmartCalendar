@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { ROOM_TYPES, roomTypeLabel } from '@/lib/room-types';
 
 interface Room {
   id: string;
@@ -18,28 +19,40 @@ interface Room {
   type: string;
   capacity: number;
   active: boolean;
+  /** False when the stored type is free text from before types were normalised. */
+  typeIsNormalised?: boolean;
+  /** A suggestion for the Admin to confirm. Never applied automatically. */
+  suggestedType?: { type: string; confidence: 'high' | 'review' } | null;
+  supportedSubjects?: string[];
+  unavailablePeriods?: Record<string, number[]>;
 }
 
-const ROOM_TYPES = ['classroom', 'lab', 'computer_lab', 'library', 'hall', 'gym', 'art_room', 'music_room'];
 const roomTypeIcon: Record<string, React.ElementType> = {
-  classroom: Building2, lab: Beaker, computer_lab: Monitor,
-  library: Building2, hall: Maximize2, gym: Maximize2,
+  classroom: Building2, physics_lab: Beaker, chemistry_lab: Beaker, biology_lab: Beaker,
+  computer_lab: Monitor, library: Building2, auditorium: Maximize2,
+  sports_ground: Maximize2, music_room: Building2, art_room: Building2, multipurpose: Maximize2,
 };
 const roomTypeColor: Record<string, string> = {
-  classroom:    'bg-blue-100 text-blue-700 border-blue-200',
-  lab:          'bg-orange-100 text-orange-700 border-orange-200',
-  computer_lab: 'bg-teal-100 text-teal-700 border-teal-200',
-  library:      'bg-violet-100 text-violet-700 border-violet-200',
-  hall:         'bg-slate-100 text-slate-600 border-slate-200',
-  gym:          'bg-emerald-100 text-emerald-700 border-emerald-200',
+  classroom:     'bg-blue-100 text-blue-700 border-blue-200',
+  physics_lab:   'bg-orange-100 text-orange-700 border-orange-200',
+  chemistry_lab: 'bg-orange-100 text-orange-700 border-orange-200',
+  biology_lab:   'bg-lime-100 text-lime-700 border-lime-200',
+  computer_lab:  'bg-teal-100 text-teal-700 border-teal-200',
+  library:       'bg-violet-100 text-violet-700 border-violet-200',
+  auditorium:    'bg-slate-100 text-slate-600 border-slate-200',
+  sports_ground: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+  music_room:    'bg-pink-100 text-pink-700 border-pink-200',
+  art_room:      'bg-rose-100 text-rose-700 border-rose-200',
+  multipurpose:  'bg-slate-100 text-slate-600 border-slate-200',
 };
 
 export default function RoomsPage() {
   const { toast } = useToast();
   const [rooms, setRooms] = useState<Room[]>([]);
-  const [stats, setStats] = useState<{ totalRooms: number; typeBreakdown: Record<string, number> }>({ totalRooms: 0, typeBreakdown: {} });
+  const [stats, setStats] = useState<{ totalRooms: number; typeBreakdown: Record<string, number>; needsTypeReview?: number }>({ totalRooms: 0, typeBreakdown: {} });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [pendingType, setPendingType] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ code: '', name: '', type: 'classroom', capacity: '30' });
   const [saving, setSaving] = useState(false);
@@ -57,6 +70,26 @@ export default function RoomsPage() {
   }, []);
 
   useEffect(() => { fetchRooms(); }, [fetchRooms]);
+
+  // Rooms whose stored type is not one of the normalised values.
+  const needsReview = rooms.filter((r) => r.typeIsNormalised === false);
+
+  const confirmType = async (room: Room) => {
+    const type = pendingType[room.id] ?? room.suggestedType?.type;
+    if (!type) return;
+    const res = await fetch('/api/rooms', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: room.id, type }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast({ title: 'Not saved', description: data?.error || `HTTP ${res.status}`, variant: 'destructive' });
+      return;
+    }
+    toast({ title: 'Room type set', description: `${room.name} is now a ${roomTypeLabel(type)}.` });
+    fetchRooms();
+  };
 
   const filtered = rooms.filter(r => {
     if (!search) return true;
@@ -102,7 +135,7 @@ export default function RoomsPage() {
                 Rooms, Laboratories & Facilities
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Delhi Public School (DPS)
+                Takshila School
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
@@ -125,11 +158,64 @@ export default function RoomsPage() {
       <div className="flex flex-wrap gap-3">
         {Object.entries(stats.typeBreakdown).map(([type, count]) => (
           <div key={type} className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border text-sm font-medium ${roomTypeColor[type] || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
-            <span className="capitalize">{type.replace('_', ' ')}</span>
+            <span>{roomTypeLabel(type)}</span>
             <span className="font-bold">{count}</span>
           </div>
         ))}
       </div>
+
+      {/* Rooms whose stored type predates the normalised list. A suggestion is
+          offered; nothing is rewritten until an Admin confirms it. */}
+      {needsReview.length > 0 && (
+        <Card className="border-amber-300 bg-amber-50/60" data-testid="room-type-review">
+          <CardContent className="p-4 space-y-3">
+            <div>
+              <p className="text-sm font-bold text-amber-900">
+                {needsReview.length} room{needsReview.length === 1 ? '' : 's'} need a room type
+              </p>
+              <p className="text-[11px] text-amber-800 mt-0.5">
+                These carry a free-text type from before types were standardised. Confirm each one — nothing
+                is changed automatically.
+              </p>
+            </div>
+            <div className="space-y-2">
+              {needsReview.map((room) => (
+                <div key={room.id} className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-white border border-amber-200">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-bold text-slate-900 truncate">{room.name}</p>
+                    <p className="text-[10px] text-slate-500 font-mono">
+                      {room.code} · stored as &ldquo;{room.type}&rdquo;
+                    </p>
+                  </div>
+                  <Select
+                    value={pendingType[room.id] ?? room.suggestedType?.type ?? ''}
+                    onValueChange={(v) => setPendingType((prev) => ({ ...prev, [room.id]: v }))}
+                  >
+                    <SelectTrigger className="h-8 w-44 text-xs"><SelectValue placeholder="Choose a type…" /></SelectTrigger>
+                    <SelectContent>
+                      {ROOM_TYPES.map((t) => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  {room.suggestedType && (
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      suggested: {roomTypeLabel(room.suggestedType.type)}
+                      {room.suggestedType.confidence === 'review' ? ' (uncertain)' : ''}
+                    </Badge>
+                  )}
+                  <Button
+                    size="sm"
+                    className="h-8 text-[11px] shrink-0"
+                    disabled={!(pendingType[room.id] ?? room.suggestedType?.type)}
+                    onClick={() => confirmType(room)}
+                  >
+                    Confirm
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Search */}
       <div className="relative">
@@ -170,7 +256,7 @@ export default function RoomsPage() {
                     </div>
                   </div>
                   <div className="flex items-center justify-between">
-                    <Badge className={`text-[10px] ${colorCls} capitalize`}>{room.type.replace('_', ' ')}</Badge>
+                    <Badge className={`text-[10px] ${colorCls}`}>{roomTypeLabel(room.type)}</Badge>
                     <div className="flex items-center gap-1.5 text-xs text-slate-500">
                       <Users className="w-3.5 h-3.5" />
                       <span>{room.capacity}</span>
@@ -211,7 +297,7 @@ export default function RoomsPage() {
               <Select value={form.type} onValueChange={v => setForm(f => ({ ...f, type: v }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ROOM_TYPES.map(t => <SelectItem key={t} value={t}>{t.replace('_', ' ')}</SelectItem>)}
+                  {ROOM_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import bcrypt from 'bcryptjs';
+import { requireCapability } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +65,9 @@ export async function GET(request: Request) {
 }
 
 export async function PATCH(request: Request) {
+  const denied = requireCapability(request, 'profile.own');
+  if (denied) return denied;
+
   const body = await request.json();
   const userId = request.headers.get('x-user-id') || '';
   const email = (request.headers.get('x-user-email') || '').toLowerCase();

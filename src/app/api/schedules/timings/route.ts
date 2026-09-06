@@ -1,12 +1,21 @@
 import { db } from '@/lib/db';
-import { resolveSchoolId } from '@/lib/school-helper';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export async function PATCH(request: Request) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
+
   try {
-    const { grade, section, schoolId, setup = {} } = await request.json();
+    const { grade, section, setup = {} } = await request.json();
     if (!grade || !section) return NextResponse.json({ error: 'Grade and section are required.' }, { status: 400 });
-    const targetSchoolId = schoolId ? await resolveSchoolId(schoolId) : null;
+  // Pinned to the caller's school. schoolId used to be resolved from client
+  // input, so any signed-in user could act on another school's data.
+    const targetSchoolId = await getTenantSchoolId(request);
+    if (!targetSchoolId) {
+      return NextResponse.json({ error: 'No school in session' }, { status: 401 });
+    }
 
     const currentGradeNumber = Number(String(grade).replace(/\D/g, '') || 0);
     const activeLevel = currentGradeNumber <= 5 ? 'primary' : currentGradeNumber <= 8 ? 'middle' : 'high';
@@ -70,9 +79,7 @@ export async function PATCH(request: Request) {
       grade: { in: gradeVariants },
       section: { equals: section, mode: 'insensitive' },
     };
-    if (schoolId && schoolId !== 'all') {
-      whereCondition.OR = [{ schoolId }, { schoolId: null }];
-    }
+    whereCondition.schoolId = targetSchoolId;
 
     const matchingSchedules = await db.schedule.findMany({
       where: whereCondition,

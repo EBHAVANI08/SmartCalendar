@@ -9,7 +9,7 @@ import {
   UsersRound, LifeBuoy, MessageSquare, Globe,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { hasModule, parseModules } from '@/lib/access';
+import { hasModule, resolveOwnerModules } from '@/lib/access';
 
 const nav = [
   { href: '/superadmin', label: 'Overview', icon: LayoutDashboard, exact: true, id: 'overview' },
@@ -93,7 +93,7 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
         </div>
 
         <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {nav.filter((item) => hasModule(parseModules(user?.modules), item.id)).map((item) => {
+          {nav.filter((item) => hasModule(resolveOwnerModules(user?.modules), item.id)).map((item) => {
             const active = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + '/');
             const Icon = item.icon;
             return (

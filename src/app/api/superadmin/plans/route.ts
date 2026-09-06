@@ -5,14 +5,14 @@ import { ensureDefaultPlans, isSuperAdminRequest, unauthorized, writeAudit } fro
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   await ensureDefaultPlans();
   const plans = await db.plan.findMany({ orderBy: { sortOrder: 'asc' } });
   return NextResponse.json({ plans });
 }
 
 export async function POST(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   if (!body.name || !body.displayName) {
     return NextResponse.json({ error: 'name and displayName are required' }, { status: 400 });
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   if (!body.id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   const plan = await db.plan.update({

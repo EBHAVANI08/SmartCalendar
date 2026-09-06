@@ -116,7 +116,7 @@ export default function AnalyticsPage() {
                 Analytics & Business Intelligence
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Delhi Public School (DPS)
+                Takshila School
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">

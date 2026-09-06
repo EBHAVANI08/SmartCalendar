@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { requireCapability } from '@/lib/authz';
 
 export const maxDuration = 120; // Allow up to 2 minutes for curriculum generation
 
@@ -8,6 +9,9 @@ export const maxDuration = 120; // Allow up to 2 minutes for curriculum generati
  * CurriculumArchitect AI — generates comprehensive, board-aligned, grade-specific annual curricula.
  */
 export async function POST(request: NextRequest) {
+  const denied = requireCapability(request, 'lessonplan.write');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const {

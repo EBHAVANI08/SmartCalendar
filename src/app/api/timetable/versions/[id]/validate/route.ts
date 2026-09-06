@@ -1,9 +1,17 @@
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
-export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
-  const { id } = await context.params; const { schoolId } = await request.json();
-  if (!schoolId) return NextResponse.json({ error: 'schoolId is required' }, { status: 400 });
+export async function POST(request: Request, context: {
+ params: Promise<{ id: string }> }) {
+  const denied = requireCapability(request, 'timetable.version.read');
+  if (denied) return denied;
+
+  // Pinned to the caller's school. schoolId came from the request body, so a
+  // signed-in user could rewrite another school's validation issues.
+  const { id } = await context.params; const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
   const [version, requirements, bellSlots, slots] = await Promise.all([
     db.timetableVersion.findFirst({ where: { id, schoolId } }), db.subjectRequirement.findMany({ where: { timetableVersionId: id, schoolId } }),
     db.bellScheduleSlot.findMany({ where: { timetableVersionId: id, schoolId, slotType: 'teaching' } }), db.timetableSlot.findMany({ where: { timetableVersionId: id, schoolId } }),

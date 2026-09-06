@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
-
-const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+import {
+  ClashTracker,
+  buildPeriodTimings,
+  periodsForDay,
+  workingDayNames,
+  type DayPeriodConfig,
+} from '@/lib/timetable-constraints';
+import { requireCapability } from '@/lib/authz';
 
 const SAMPLE_FACULTY = [
   { name: 'Dr. Priya Sharma', email: 'priya.sharma@school.edu', phone: '+91 98765 43210', subject: 'Mathematics', grades: '["Grade 9","Grade 10","Grade 11","Grade 12"]' },
@@ -17,25 +23,75 @@ const SAMPLE_FACULTY = [
   { name: 'Ravi Varma', email: 'ravi.v@school.edu', phone: '+91 98765 43219', subject: 'Music', grades: '["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5"]' },
 ];
 
-const PERIOD_TIMINGS = [
-  { p: 1, start: '08:00', end: '08:45' },
-  { p: 2, start: '08:45', end: '09:30' },
-  { p: 3, start: '09:45', end: '10:30' },
-  { p: 4, start: '10:30', end: '11:15' },
-  { p: 5, start: '11:45', end: '12:30' },
-  { p: 6, start: '12:30', end: '01:15' },
-  { p: 7, start: '01:15', end: '02:00' },
-  { p: 8, start: '02:00', end: '02:45' },
-];
-
 const SUBJECT_POOL = [
   'Mathematics', 'Science', 'English', 'Hindi', 'Social Science',
   'Physics', 'Chemistry', 'Biology', 'Computer Science', 'Physical Education'
 ];
 
 export async function POST(req: NextRequest) {
+  const denied = requireCapability(req, 'owner.console');
+  if (denied) return denied;
+
   try {
-    const schoolId = (await getTenantSchoolId(req)) || '6a8bf21c3359da9c7c8a7b02';
+    const schoolId = await getTenantSchoolId(req);
+    if (!schoolId) {
+      return NextResponse.json(
+        { success: false, error: 'No school context. Please sign in again.' },
+        { status: 401 }
+      );
+    }
+
+    const body = await req.json().catch(() => ({}));
+    const setup = body?.setup ?? body ?? {};
+
+    // This route loads *sample* faculty and timetable data. Running it against
+    // a school that already has real records mixes demo names into live data,
+    // which is how sample teachers ended up in a production tenant. Require an
+    // explicit confirm to seed a non-empty school.
+    const [existingTeachers, existingSchedules] = await Promise.all([
+      db.teacher.count({ where: { schoolId } }),
+      db.schedule.count({ where: { schoolId } }),
+    ]);
+    if ((existingTeachers > 0 || existingSchedules > 0) && body?.confirmOverwriteExisting !== true) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `This school already has ${existingTeachers} faculty member(s) and ${existingSchedules} timetable row(s). Loading sample data would mix demo records into real data.`,
+          code: 'SCHOOL_NOT_EMPTY',
+          existingTeachers,
+          existingSchedules,
+          hint: 'Re-send with confirmOverwriteExisting: true if you really want sample data added to this school.',
+        },
+        { status: 409 }
+      );
+    }
+
+    // Day/period shape is configurable; it is never assumed uniform across the
+    // week. Saturday in particular is usually shorter than a weekday.
+    const config: DayPeriodConfig = {
+      workingDays: Number(setup.workingDays) === 5 ? 5 : 6,
+      periodsPerDay: Number(setup.periodsPerDay) || 8,
+      saturdayPeriods: setup.saturdayPeriods !== undefined ? Number(setup.saturdayPeriods) : 4,
+      perDayPeriods: setup.perDayPeriods,
+    };
+    const timingsByCount = new Map<number, ReturnType<typeof buildPeriodTimings>>();
+    const timingsFor = (periods: number) => {
+      if (!timingsByCount.has(periods)) {
+        timingsByCount.set(
+          periods,
+          buildPeriodTimings({
+            periods,
+            startTime: setup.startTime || '08:00',
+            endTime: setup.endTime || '15:00',
+            breakAfter: Number(setup.breakAfter) || 2,
+            breakMinutes: Number(setup.breakMinutes) || 15,
+            lunchAfter: Number(setup.lunchAfter) || 4,
+            lunchMinutes: Number(setup.lunchMinutes) || 30,
+          })
+        );
+      }
+      return timingsByCount.get(periods)!;
+    };
 
     // 1. Create or upsert Faculty Members
     const createdTeachers: any[] = [];
@@ -59,16 +115,44 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Populate Master Timetable for Grades 1 to 12 (Section A)
+    // 2. Populate Master Timetable for the seeded grades (Section A)
     let totalSlotsCreated = 0;
+    let skippedForClash = 0;
     const gradesToSeed = ['Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
+    const days = workingDayNames(config);
+
+    // A teacher can only be in one place at a time. Previously this route picked
+    // the same subject teacher for every grade, so identical periods across
+    // Grades 9-12 all resolved to one person — the assignments it described as
+    // "clash-free" were in fact colliding. Seed existing rows too, so we do not
+    // collide with timetables that are already in place.
+    const tracker = new ClashTracker();
+    await tracker.loadExisting(schoolId);
 
     for (const grade of gradesToSeed) {
-      for (const day of DAYS) {
-        for (const timing of PERIOD_TIMINGS) {
-          const subjectIdx = (timing.p + DAYS.indexOf(day)) % SUBJECT_POOL.length;
+      for (const day of days) {
+        const periodsToday = periodsForDay(day, config);
+        const timings = timingsFor(periodsToday);
+
+        for (const timing of timings) {
+          const subjectIdx = (timing.period + days.indexOf(day)) % SUBJECT_POOL.length;
           const subject = SUBJECT_POOL[subjectIdx];
-          const matchingTeacher = createdTeachers.find((t) => t.subject === subject) || createdTeachers[0];
+
+          if (tracker.isClassBusy(grade, 'A', day, timing.period)) continue;
+
+          // Prefer a subject specialist, but fall back to any free teacher
+          // rather than double-booking the specialist.
+          const preferred = createdTeachers.filter((t) => t.subject === subject);
+          const others = createdTeachers.filter((t) => t.subject !== subject);
+          const teacher =
+            [...preferred, ...others].find(
+              (t) => t && !tracker.isTeacherBusy(t.id, day, timing.period)
+            ) || null;
+
+          if (!teacher) {
+            skippedForClash++;
+            continue;
+          }
 
           await db.schedule.create({
             data: {
@@ -76,24 +160,28 @@ export async function POST(req: NextRequest) {
               grade,
               section: 'A',
               day,
-              period: timing.p,
+              period: timing.period,
               subject,
-              startTime: timing.start,
-              endTime: timing.end,
-              teacherId: matchingTeacher?.id,
-              roomId: subject.includes('Science') || subject.includes('Physics') ? 'Sci-Lab' : 'R-10A',
+              startTime: timing.startTime,
+              endTime: timing.endTime,
+              teacherId: teacher.id,
+              roomId: subject.includes('Science') || subject.includes('Physics') ? 'Sci-Lab' : `R-${grade.replace('Grade ', '')}A`,
             },
           });
+          tracker.reserve({ teacherId: teacher.id, grade, section: 'A', day, period: timing.period });
           totalSlotsCreated++;
         }
       }
     }
 
+    const dayShape = days.map((day) => `${day} ${periodsForDay(day, config)}P`).join(', ');
     return NextResponse.json({
       success: true,
-      message: `Sample school data successfully loaded! Provisioned ${createdTeachers.length} faculty members and ${totalSlotsCreated} clash-free timetable slots across Grades 9-12.`,
+      message: `Sample school data loaded: ${createdTeachers.length} faculty and ${totalSlotsCreated} clash-free slots across Grades 9-12 (${dayShape}).${skippedForClash ? ` ${skippedForClash} slot(s) left unassigned — no free teacher available.` : ''}`,
       teachersCount: createdTeachers.length,
       schedulesCount: totalSlotsCreated,
+      unassigned: skippedForClash,
+      dayShape,
     });
   } catch (error: any) {
     console.error('[SEED SCHOOL DATA ERROR]', error);

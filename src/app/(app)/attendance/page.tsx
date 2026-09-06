@@ -74,9 +74,9 @@ export default function AttendancePage() {
       if (r.ok) {
         setSummary(d.summary);
         setRecords(d.records || []);
-        toast({ title: 'Biometric Synced', description: `${d.summary?.present} present, ${d.summary?.absent} absent, ${d.summary?.late} late` });
+        toast({ title: 'Simulated attendance generated', description: `${d.summary?.present} present, ${d.summary?.absent} absent, ${d.summary?.late} late (demo data, not from a device)` });
       } else {
-        toast({ title: 'Sync Failed', description: d.error, variant: 'destructive' });
+        toast({ title: 'Simulation failed', description: d.error, variant: 'destructive' });
       }
     } finally { setSyncing(false); }
   };
@@ -123,14 +123,18 @@ export default function AttendancePage() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
-                Biometric Attendance & Scanner Sync
+                Biometric Attendance
               </h1>
-              <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Delhi Public School (DPS)
+              <Badge
+                data-testid="attendance-demo-badge"
+                className="bg-amber-50 text-amber-800 border border-amber-300 font-bold text-[10px] uppercase tracking-wider"
+              >
+                Demo / Simulated
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
-              Real-time hardware scanner log ingestion, absence detection & automated substitution creation.
+              Absence detection and automated substitution creation. No attendance device is
+              connected yet, so punches below are generated for demonstration.
             </p>
           </div>
         </div>
@@ -139,7 +143,7 @@ export default function AttendancePage() {
           <Input type="date" value={date} onChange={e => setDate(e.target.value)} className="w-36 h-9 text-xs font-mono bg-white border-[#E2E8F0]" />
           <Button size="sm" variant="outline" onClick={handleSync} disabled={syncing} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
             <RefreshCw className={`w-3.5 h-3.5 text-[#2563EB] ${syncing ? 'animate-spin' : ''}`} />
-            {syncing ? 'Syncing Hardware…' : 'Sync Hardware Logs'}
+            {syncing ? 'Simulating…' : 'Simulate Attendance (Demo)'}
           </Button>
           <Button size="sm" onClick={handleDetect} disabled={detecting}
             className="gap-2 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold h-9 shadow-md text-xs px-3.5 border-none">
@@ -209,18 +213,21 @@ export default function AttendancePage() {
         <Card className="border-slate-200">
           <CardContent className="py-16 text-center">
             <RefreshCw className="w-8 h-8 mx-auto text-slate-300 animate-spin mb-3" />
-            <p className="text-slate-400">Loading biometric records…</p>
+            <p className="text-slate-400">Loading attendance records…</p>
           </CardContent>
         </Card>
       ) : filtered.length === 0 ? (
         <Card className="border-dashed border-slate-200">
           <CardContent className="py-16 text-center">
             <Fingerprint className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-            <p className="text-slate-600 font-medium">No biometric records for {date}</p>
-            <p className="text-slate-400 text-sm mt-1">Click <strong>Sync Devices</strong> to pull data from hardware.</p>
+            <p className="text-slate-600 font-medium">No attendance records for {date}</p>
+            <p className="text-slate-400 text-sm mt-1">
+              No device is connected. Use <strong>Simulate Attendance (Demo)</strong> to generate
+              sample punches for trying out absence detection.
+            </p>
             <Button size="sm" variant="outline" className="mt-3 gap-2" onClick={handleSync} disabled={syncing}>
               <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-              Sync Now
+              Simulate Attendance (Demo)
             </Button>
           </CardContent>
         </Card>

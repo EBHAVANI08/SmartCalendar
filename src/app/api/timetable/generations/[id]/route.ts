@@ -1,3 +1,7 @@
 import { db } from '@/lib/db'; import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) { const { id } = await context.params; const job = await db.generationJob.findUnique({ where: { id } }); if (!job) return NextResponse.json({ error: 'Job not found' }, { status: 404 }); const candidates = await db.timetableCandidate.findMany({ where: { generationJobId: id }, orderBy: [{ recommended: 'desc' }, { preferenceScore: 'desc' }] }); return NextResponse.json({ job, candidates }); }
-export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) { const { id } = await context.params; const job = await db.generationJob.update({ where: { id }, data: { cancelRequested: true, status: 'cancelled', stage: 'cancelled', completedAt: new Date() } }); return NextResponse.json({ success: true, job }); }
+export async function DELETE(_: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = requireCapability(_, 'timetable.write');
+  if (denied) return denied;
+ const { id } = await context.params; const job = await db.generationJob.update({ where: { id }, data: { cancelRequested: true, status: 'cancelled', stage: 'cancelled', completedAt: new Date() } }); return NextResponse.json({ success: true, job }); }

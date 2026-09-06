@@ -1,8 +1,12 @@
 import { NextRequest } from 'next/server';
 import { db } from '@/lib/db';
 import ZAI from 'z-ai-web-dev-sdk';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: NextRequest) {
+  const denied = requireCapability(request, 'profile.own');
+  if (denied) return denied;
+
   try {
     const { messages, date: dateParam } = await request.json();
     const today = dateParam || new Date().toISOString().split('T')[0];

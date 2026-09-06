@@ -1,7 +1,11 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
+
   const { schoolId, firstSlotId, secondSlotId, actorId, reason } = await request.json();
   const slots = await db.timetableSlot.findMany({ where: { schoolId, id: { in: [firstSlotId, secondSlotId] } } });
   if (slots.length !== 2 || slots[0].timetableVersionId !== slots[1].timetableVersionId) return NextResponse.json({ error: 'Select two slots from the same timetable version.' }, { status: 400 });

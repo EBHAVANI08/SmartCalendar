@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 // GET /api/notifications?teacherId=xxx - Get notifications for a teacher
 export async function GET(request: Request) {
@@ -32,6 +33,9 @@ export async function GET(request: Request) {
 
 // POST /api/notifications - Send notification(s) to teacher(s)
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'support.write');
+  if (denied) return denied;
+
   try {
     const { type, referenceId, teacherIds, sentBy, title, description } = await request.json();
 
@@ -88,6 +92,9 @@ export async function POST(request: Request) {
 
 // PATCH /api/notifications - Mark notification as read
 export async function PATCH(request: Request) {
+  const denied = requireCapability(request, 'support.write');
+  if (denied) return denied;
+
   try {
     const { notificationId, teacherId, markAllRead } = await request.json();
 

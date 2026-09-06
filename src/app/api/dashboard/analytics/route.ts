@@ -1,8 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { requireCapability } from '@/lib/authz';
 
+/**
+ * School-wide workload and staffing analytics.
+ *
+ * Not a teacher view: it aggregates every colleague's load. The page already
+ * redirected a teacher away; the API was still answering them.
+ */
 export async function GET(req: NextRequest) {
+  const denied = requireCapability(req, 'analytics.read');
+  if (denied) return denied;
+
   try {
     const date = req.nextUrl.searchParams.get('date') || new Date().toISOString().split('T')[0];
     const schoolId = await getTenantSchoolId(req);
@@ -11,12 +21,12 @@ export async function GET(req: NextRequest) {
       db.substitution.findMany({
         where: {
           date,
-          ...(schoolId ? { absentTeacher: { schoolId } } : {}),
+          ...(schoolId ? { schoolId, absentTeacher: { schoolId } } : {}),
         },
         include: { absentTeacher: true, substitute: true },
       }),
       db.substitution.findMany({
-        where: schoolId ? { absentTeacher: { schoolId } } : {},
+        where: schoolId ? { schoolId, absentTeacher: { schoolId } } : {},
         include: { absentTeacher: true, substitute: true },
         orderBy: { date: 'desc' },
         take: 200,

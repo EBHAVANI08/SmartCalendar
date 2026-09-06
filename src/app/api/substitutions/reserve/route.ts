@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
+import { requireCapability } from '@/lib/authz';
 
 // Structural compatibility type prevents stale editor Prisma declarations from
 // hiding delegates that are present in the generated runtime client.
@@ -17,6 +18,9 @@ const reservationDb = db as unknown as {
 const schema = z.object({ schoolId: z.string(), substitutionId: z.string(), teacherId: z.string(), idempotencyKey: z.string().min(8), actorId: z.string(), responseDueAt: z.string().datetime().optional() });
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'substitution.assign');
+  if (denied) return denied;
+
   const parsed = schema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ error: 'Invalid reservation', details: parsed.error.flatten() }, { status: 400 });
   const input = parsed.data;

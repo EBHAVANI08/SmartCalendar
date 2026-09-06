@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: NextRequest) {
+  const denied = requireCapability(request, 'substitution.assign');
+  if (denied) return denied;
+
   try {
     const { requestId } = await request.json();
     if (!requestId) {

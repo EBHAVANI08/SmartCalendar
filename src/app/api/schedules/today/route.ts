@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     const dayName = days[dayOfWeek] || 'Monday';
 
     const scheduleWhere = schoolId ? { schoolId, day: dayName } : { day: dayName };
-    const subWhere = schoolId ? { absentTeacher: { schoolId }, date } : { date };
+    const subWhere = schoolId ? { schoolId, absentTeacher: { schoolId }, date } : { date };
 
     const schedules = await db.schedule.findMany({
       where: scheduleWhere,

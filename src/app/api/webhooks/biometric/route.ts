@@ -1,6 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { resolveSchoolId } from '@/lib/school-helper';
+import { createHmac, timingSafeEqual } from 'crypto';
+
+/**
+ * Verify an HMAC-SHA256 signature over the raw body.
+ *
+ * This endpoint is unauthenticated by design - devices cannot hold a session -
+ * so the signature IS the authentication. Previously there was none, and the
+ * tenant was taken from `x-api-key`, which was matched against the school's
+ * public CODE rather than any secret. Knowing a school code was therefore enough
+ * to mark that school's teachers absent and drive substitution.
+ *
+ * Until per-school device secrets exist, a single deployment-wide secret gates
+ * the endpoint. With no secret configured the route is disabled rather than open.
+ */
+function verifySignature(rawBody: string, provided: string | null): boolean {
+  const secret = process.env.BIOMETRIC_WEBHOOK_SECRET;
+  if (!secret || secret.length < 32 || !provided) return false;
+  const expected = createHmac('sha256', secret).update(rawBody).digest('hex');
+  const a = Buffer.from(expected, 'utf8');
+  const b = Buffer.from(provided.trim().replace(/^sha256=/, ''), 'utf8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
 
 /**
  * POST /api/webhooks/biometric
@@ -11,14 +34,34 @@ import { resolveSchoolId } from '@/lib/school-helper';
 export async function POST(request: NextRequest) {
   try {
     const url = new URL(request.url);
-    const schoolCodeOrId = request.headers.get('x-school-code') || request.headers.get('x-api-key') || url.searchParams.get('schoolCode') || url.searchParams.get('schoolId') || 'DPS2025';
-    const schoolId = await resolveSchoolId(schoolCodeOrId);
 
-    if (!schoolId) {
-      return NextResponse.json({ error: 'Valid school tenant code or API key required' }, { status: 400 });
+    if (!process.env.BIOMETRIC_WEBHOOK_SECRET) {
+      return NextResponse.json(
+        { error: 'Biometric webhook is not configured. Set BIOMETRIC_WEBHOOK_SECRET to enable it.' },
+        { status: 503 }
+      );
     }
 
-    const body = await request.json().catch(() => ({}));
+    // Read the body once, as text, so the signature covers exactly what was sent.
+    const rawBody = await request.text();
+    if (!verifySignature(rawBody, request.headers.get('x-signature'))) {
+      return NextResponse.json({ error: 'Invalid or missing signature.' }, { status: 401 });
+    }
+
+    // No silent default tenant: an unrecognised code must fail, not fall through
+    // to whichever school happens to be called DPS2025.
+    const schoolCodeOrId =
+      request.headers.get('x-school-code') ||
+      url.searchParams.get('schoolCode') ||
+      url.searchParams.get('schoolId');
+    const schoolId = schoolCodeOrId ? await resolveSchoolId(schoolCodeOrId) : null;
+
+    if (!schoolId) {
+      return NextResponse.json({ error: 'Valid school tenant code required' }, { status: 400 });
+    }
+
+    let body: Record<string, unknown> = {};
+    try { body = JSON.parse(rawBody); } catch { body = {}; }
     const rawPunches = Array.isArray(body.punches) ? body.punches : Array.isArray(body) ? body : [body];
 
     if (rawPunches.length === 0 || !rawPunches[0] || Object.keys(rawPunches[0]).length === 0) {

@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { id } = await ctx.params;
 
   const tenant = await db.school.findUnique({
@@ -58,7 +58,7 @@ export async function GET(request: Request, ctx: Ctx) {
 }
 
 export async function PATCH(request: Request, ctx: Ctx) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   await ensureDefaultPlans();
   const { id } = await ctx.params;
   const body = await request.json();
@@ -154,7 +154,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
 }
 
 export async function DELETE(request: Request, ctx: Ctx) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { id } = await ctx.params;
   const school = await db.school.update({ where: { id }, data: { status: 'cancelled' } });
   await writeAudit(request, 'tenant.cancel', 'school', id);

@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, ctx: Ctx) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { id } = await ctx.params;
   const body = await request.json();
   if (!body.body) return NextResponse.json({ error: 'Reply body required' }, { status: 400 });

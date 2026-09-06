@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { requireCapability } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -28,6 +29,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'support.write');
+  if (denied) return denied;
+
   const schoolId = await getTenantSchoolId(request, false);
   const body = await request.json();
   if (!body.subject || !body.body) {

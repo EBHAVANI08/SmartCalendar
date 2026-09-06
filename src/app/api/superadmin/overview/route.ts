@@ -5,7 +5,7 @@ import { ensureDefaultPlans, isSuperAdminRequest, unauthorized } from '@/lib/sup
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   await ensureDefaultPlans();
 
   const now = new Date();

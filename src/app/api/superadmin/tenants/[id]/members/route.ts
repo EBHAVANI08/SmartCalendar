@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function GET(request: Request, ctx: Ctx) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { id } = await ctx.params;
   const members = await db.workspaceMember.findMany({ where: { schoolId: id }, orderBy: { createdAt: 'desc' } });
   const seats = await seatUsage(id);
@@ -16,7 +16,7 @@ export async function GET(request: Request, ctx: Ctx) {
 }
 
 export async function POST(request: Request, ctx: Ctx) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { id } = await ctx.params;
   const body = await request.json();
   const { name, email, password, role, modules, status } = body;
@@ -69,7 +69,7 @@ export async function POST(request: Request, ctx: Ctx) {
 }
 
 export async function PATCH(request: Request, ctx: Ctx) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { id } = await ctx.params;
   const body = await request.json();
   if (!body.memberId) return NextResponse.json({ error: 'memberId required' }, { status: 400 });

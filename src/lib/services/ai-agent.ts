@@ -164,6 +164,8 @@ export async function detectAndCreateSubstitutionRequests(date: string) {
 
       const sub = await db.substitution.create({
         data: {
+          // Tenant taken from the absent teacher, the same source the backfill used.
+          schoolId: (await db.teacher.findUnique({ where: { id: teacherId }, select: { schoolId: true } }))?.schoolId ?? null,
           date,
           period: schedule.period,
           absentTeacherId: teacherId,
@@ -298,16 +300,6 @@ export async function findSubstituteCandidates(params: {
   return candidates.sort((a, b) => b.score - a.score);
 }
 
-export async function findSubjectSwapOption(params: {
-  sectionId: string;
-  absentTimeSlotId: number;
-  absentTeacherId: string;
-  date: string;
-  dayOfWeek: number;
-}): Promise<SubjectSwapOption | null> {
-  return null;
-}
-
 export async function getPreviousDayTopic(
   subjectId: string, sectionId: string, date: string
 ): Promise<PreviousDayContext> {
@@ -320,10 +312,6 @@ export async function generateTopicSuggestion(
   if (scheduleTopic) return scheduleTopic;
   const list = TOPICS[subjectName] || ['General Revision'];
   return list[0];
-}
-
-export function generateAIRecommendation(...args: any[]): string {
-  return 'AI Recommendation: Substitute assigned based on subject match and availability.';
 }
 
 export async function manualAssignSubstitution(

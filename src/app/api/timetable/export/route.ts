@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import * as XLSX from 'xlsx';
 import { NextResponse } from 'next/server';
 
@@ -6,9 +7,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  const schoolId = new URL(request.url).searchParams.get('schoolId');
+  // Scoped to the caller's school. ?schoolId used to be trusted verbatim, so
+  // anyone could download another school's complete timetable, teacher names
+  // included, as a spreadsheet.
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
   const teacherId = new URL(request.url).searchParams.get('teacherId');
-  if (!schoolId) return NextResponse.json({ error: 'schoolId is required' }, { status: 400 });
   const [school, schedules] = await Promise.all([db.school.findUnique({ where: { id: schoolId } }), db.schedule.findMany({ where: { schoolId, ...(teacherId ? { teacherId } : {}) }, include: { teacher: true }, orderBy: [{ grade: 'asc' }, { section: 'asc' }, { day: 'asc' }, { period: 'asc' }] })]);
   if (!school) return NextResponse.json({ error: 'School not found' }, { status: 404 });
   const workbook = XLSX.utils.book_new();

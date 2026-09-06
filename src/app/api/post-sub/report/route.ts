@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireCapability } from '@/lib/authz';
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,6 +44,9 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = requireCapability(req, 'substitution.assign');
+  if (denied) return denied;
+
   try {
     const body = await req.json();
     const { assignmentId, classBehaviorNotes } = body;

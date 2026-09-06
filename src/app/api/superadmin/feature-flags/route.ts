@@ -5,7 +5,7 @@ import { isSuperAdminRequest, unauthorized, writeAudit } from '@/lib/superadmin'
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
 
   const { searchParams } = new URL(request.url);
   const schoolId = searchParams.get('schoolId');
@@ -19,7 +19,7 @@ export async function GET(request: Request) {
 }
 
 export async function PUT(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
 
   const { searchParams } = new URL(request.url);
   const schoolId = searchParams.get('schoolId');

@@ -3,8 +3,9 @@ import Groq from 'groq-sdk';
 const MODEL = 'llama-3.3-70b-versatile';
 
 export const callZAIModel = async (prompt: string, systemPrompt?: string) => {
-  const zaiApiKey = process.env.ZAI_API_KEY || 'ad316b40259049a1a1c570693fa9bc27.2kIgKkpgAcHIFt3S';
-  const zaiApiKeyId = process.env.ZAI_API_KEY_ID || 'ad316b40259049a1a1c570693fa9bc27';
+  // Credentials come from the environment only — no key literals in source.
+  const zaiApiKey = process.env.ZAI_API_KEY;
+  const zaiApiKeyId = process.env.ZAI_API_KEY_ID;
 
   // 1. Try Primary Groq LLM if key exists
   if (process.env.GROQ_API_KEY) {
@@ -24,8 +25,11 @@ export const callZAIModel = async (prompt: string, systemPrompt?: string) => {
     }
   }
 
-  // 2. Fallback to Z-AI Engine
+  // 2. Fallback to Z-AI Engine (only when its credentials are configured)
   try {
+    if (!zaiApiKey || !zaiApiKeyId) {
+      throw new Error('Z-AI credentials are not configured');
+    }
     const res = await fetch('https://api.z-ai.io/v1/chat/completions', {
       method: 'POST',
       headers: {

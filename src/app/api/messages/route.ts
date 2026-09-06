@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { requireCapability } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,6 +17,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'support.write');
+  if (denied) return denied;
+
   const schoolId = await getTenantSchoolId(request, false);
   if (!schoolId) return NextResponse.json({ error: 'No school context' }, { status: 400 });
   const body = await request.json();

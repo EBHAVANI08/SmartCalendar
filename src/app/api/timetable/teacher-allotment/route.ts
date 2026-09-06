@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { PDFParse } from 'pdf-parse';
+import { requireCapability } from '@/lib/authz';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -83,6 +84,9 @@ async function extract(file: File) {
 }
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
+
   try {
     const form = await request.formData(); const file = form.get('file'); const schoolId = String(form.get('schoolId') || ''); const commit = form.get('commit') === 'true';
     if (!(file instanceof File) || !schoolId) return NextResponse.json({ error: 'File and schoolId are required.' }, { status: 400 });
@@ -115,7 +119,10 @@ export async function POST(request: Request) {
     if (!commit || issues.length) return NextResponse.json({ success: true, layout: matrixLayout ? 'grade-section-matrix' : 'teacher-roster', rows, issues, blocking: issues.length > 0, classesDetected: new Set(matrixAllotments.map((x) => `${x.grade}|${x.section}`)).size, allotmentsDetected: matrixAllotments.length, summary: { detected: rows.length, valid: rows.length - new Set(issues.map((x) => x.row)).size, errors: issues.length } });
     const result = await db.$transaction(async (tx) => {
       const teachers: { id: string; name: string; subject: string; grades: string }[] = [];
-      for (const row of rows) teachers.push(await tx.teacher.upsert({ where: { email: row.email.toLowerCase() }, update: { name: row.name, subject: row.subject, grades: JSON.stringify(row.grades), schoolId }, create: { name: row.name, email: row.email.toLowerCase(), subject: row.subject, grades: JSON.stringify(row.grades), schoolId, availability: '[]' } }));
+      // Keyed on (schoolId, email). Keying on email alone could match a teacher
+      // in a DIFFERENT school and rewrite their schoolId, silently moving them
+      // between tenants.
+      for (const row of rows) teachers.push(await tx.teacher.upsert({ where: { schoolId_email: { schoolId, email: row.email.toLowerCase() } }, update: { name: row.name, subject: row.subject, grades: JSON.stringify(row.grades) }, create: { name: row.name, email: row.email.toLowerCase(), subject: row.subject, grades: JSON.stringify(row.grades), schoolId, availability: '[]' } }));
       if (matrixLayout && matrixAllotments.length) {
         const classes = [...new Set(matrixAllotments.map((item) => `${item.grade}|${item.section}`))];
         await tx.schedule.deleteMany({ where: { schoolId, OR: classes.map((item) => { const [grade, section] = item.split('|'); return { grade, section }; }) } });

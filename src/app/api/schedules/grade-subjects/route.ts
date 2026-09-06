@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -12,7 +13,17 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const grade = searchParams.get('grade') || searchParams.get('gradeId');
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
-    const schoolId = searchParams.get('schoolId');
+
+    // Scoped to the caller's school. schoolId was an optional query parameter
+    // and the filter was dropped when it was missing, so a bare request for a
+    // grade returned that grade's timetable across every school on the platform.
+    const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json(
+        { success: false, error: 'No school in session' },
+        { status: 401 },
+      );
+    }
 
     if (!grade) {
       return NextResponse.json(
@@ -28,7 +39,7 @@ export async function GET(request: NextRequest) {
       where: {
         grade,
         day: dayName,
-        ...(schoolId ? { schoolId } : {}),
+        schoolId,
       },
       include: {
         teacher: true,

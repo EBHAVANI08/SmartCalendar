@@ -8,7 +8,7 @@ export const dynamic = 'force-dynamic';
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, ctx: Ctx) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { id } = await ctx.params;
 
   const school = await db.school.findUnique({ where: { id } });
@@ -27,7 +27,7 @@ export async function POST(request: Request, ctx: Ctx) {
     schoolName: school.name,
   };
 
-  const token = signJwt({
+  const token = await signJwt({
     userId: user.id,
     email: user.email,
     role: user.role,

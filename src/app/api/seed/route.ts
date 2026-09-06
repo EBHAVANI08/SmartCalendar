@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 // ─── CLASS TEACHERS MATRIX (User Image 2) ───
 const CLASS_TEACHERS: Record<string, string> = {
@@ -393,7 +394,12 @@ const ALLOTMENTS = [
   },
 ];
 
-export async function POST() {
+export async function POST(request: Request) {
+  // Wipes every collection. Platform owner only - this was previously reachable
+  // by any signed-in user, including a teacher.
+  const denied = requireCapability(request, 'owner.console');
+  if (denied) return denied;
+
   try {
     // Clear existing data
     await db.teacherNotification.deleteMany();
@@ -405,7 +411,6 @@ export async function POST() {
     await db.timetableSlot.deleteMany();
     await db.timetableVersion.deleteMany();
     await db.auditLog.deleteMany();
-    await db.student.deleteMany();
     await db.curriculumTopic.deleteMany();
     await db.curriculumDocument.deleteMany();
     await db.curriculum.deleteMany();

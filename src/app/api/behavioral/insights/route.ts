@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { resolveSchoolId } from '@/lib/school-helper';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const rawSchoolId = searchParams.get('schoolId');
-    const schoolId = await resolveSchoolId(rawSchoolId);
+    // Pinned to the caller's school. schoolId used to be resolved from client
+    // input, so any signed-in user could read another school's insights; and an
+    // unresolved tenant fell through to an empty filter spanning every school.
+    const schoolId = await getTenantSchoolId(req);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school in session' }, { status: 401 });
+    }
 
-    const schoolWhere = schoolId ? { schoolId } : {};
-    const subWhere = schoolId ? { absentTeacher: { schoolId } } : {};
+    const schoolWhere = { schoolId };
+    const subWhere = { schoolId, absentTeacher: { schoolId } };
 
     const [schedules, substitutions, teachers] = await Promise.all([
       db.schedule.findMany({

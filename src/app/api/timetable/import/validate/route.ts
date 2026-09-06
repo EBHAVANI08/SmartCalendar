@@ -2,10 +2,14 @@ import { validateTimetableWorkbook } from '@/lib/timetable-import';
 import { NextResponse } from 'next/server';
 import { createHash } from 'crypto';
 import { db } from '@/lib/db';
+import { requireCapability } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
+
   try {
     const form = await request.formData();
     const file = form.get('file');

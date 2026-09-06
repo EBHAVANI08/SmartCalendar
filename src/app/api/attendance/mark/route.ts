@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(req: NextRequest) {
+  const denied = requireCapability(req, 'attendance.write');
+  if (denied) return denied;
+
   try {
     const { teacherId, date, status, reason } = await req.json();
     if (!teacherId || !date || !status) {

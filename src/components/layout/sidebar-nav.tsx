@@ -7,31 +7,48 @@ import {
   LayoutDashboard, CalendarDays, Users, RefreshCw, BarChart3,
   BookOpen, Building2, GraduationCap, FileText, Settings,
   Fingerprint, ClipboardList, Brain, ChevronLeft, ChevronRight,
-  LogOut, Sparkles, Zap, X, User
-} from 'lucide-react';
+  LogOut, Sparkles, Zap, X, User, History, SlidersHorizontal } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { hasModule, parseModules } from '@/lib/access';
+import { hasModule, resolveModules } from '@/lib/access';
 
 const navSections = [
   {
-    title: 'Core Engine',
+    title: 'Overview',
     items: [
       { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, badge: null, module: 'dashboard' },
-      { href: '/timetable', label: 'Timetable Studio', icon: CalendarDays, badge: 'AI', module: 'timetable' },
-      { href: '/substitutions', label: 'Substitutions', icon: RefreshCw, badge: null, module: 'substitutions' },
-      { href: '/leaves', label: 'AI Leave Management', icon: ClipboardList, badge: 'AI', module: 'leaves' },
     ]
   },
   {
-    title: 'Directory & Ops',
+    title: 'Academic Operations',
+    items: [
+      { href: '/timetable', label: 'Timetable Studio', icon: CalendarDays, badge: 'AI', module: 'timetable' },
+      { href: '/timetable-versions', label: 'Version History', icon: History, badge: null, module: 'timetable' },
+    ]
+  },
+  {
+    title: 'Faculty Operations',
     items: [
       { href: '/teachers', label: 'Faculty Directory', icon: Users, badge: null, module: 'teachers' },
+      { href: '/leaves', label: 'Leave Management', icon: ClipboardList, badge: null, module: 'leaves' },
+      { href: '/substitutions', label: 'Substitutions', icon: RefreshCw, badge: null, module: 'substitutions' },
       { href: '/attendance', label: 'Biometric Attendance', icon: Fingerprint, badge: null, module: 'attendance' },
-      { href: '/rooms', label: 'Rooms & Facilities', icon: Building2, badge: null, module: 'rooms' },
+    ]
+  },
+  {
+    title: 'School Operations',
+    items: [
+      // Subject Management, Day & Period Setup, Rooms and School Settings are
+      // tabs inside School Setup now. Their routes still resolve, so existing
+      // deep links keep working - only the sidebar got simpler.
+      { href: '/school-setup', label: 'School Setup', icon: SlidersHorizontal, badge: null, module: 'settings' },
       { href: '/calendar', label: 'Academic Calendar', icon: CalendarDays, badge: null, module: 'calendar' },
+    ]
+  },
+  {
+    title: 'Support',
+    items: [
       { href: '/support', label: 'Support & Tickets', icon: FileText, badge: null, module: 'support' },
-      { href: '/settings', label: 'School Settings', icon: Settings, badge: null, module: 'settings' },
     ]
   }
 ];
@@ -59,7 +76,8 @@ export function SidebarNav({
 }: SidebarNavProps) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
-  const allowed = parseModules(modules);
+  // Role decides the baseline; an explicit grant can only narrow it.
+  const allowed = resolveModules(userRole, modules);
 
   return (
     <>

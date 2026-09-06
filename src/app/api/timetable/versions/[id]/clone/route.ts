@@ -1,7 +1,11 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
+
   const { id } = await context.params; const { schoolId, actorId, name, effectiveFrom } = await request.json();
   const source = await db.timetableVersion.findFirst({ where: { id, schoolId } }); if (!source) return NextResponse.json({ error: 'Source version not found' }, { status: 404 });
   const slots = await db.timetableSlot.findMany({ where: { schoolId, timetableVersionId: id } }); const latest = await db.timetableVersion.findFirst({ where: { schoolId, academicYearId: source.academicYearId, name: name || source.name }, orderBy: { version: 'desc' } });

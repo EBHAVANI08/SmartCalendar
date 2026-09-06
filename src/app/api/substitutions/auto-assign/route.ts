@@ -1,9 +1,13 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 const MAX_PERIODS_PER_DAY = 8;
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'substitution.assign');
+  if (denied) return denied;
+
   try {
     const { substitutionId } = await request.json();
 

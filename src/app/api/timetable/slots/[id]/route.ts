@@ -1,7 +1,11 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
+
   const { id } = await context.params; const { schoolId, actorId, reason, ...changes } = await request.json();
   const current = await db.timetableSlot.findFirst({ where: { id, schoolId } });
   if (!current) return NextResponse.json({ error: 'Slot not found' }, { status: 404 });
@@ -12,6 +16,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
 }
 
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
+
   const { id } = await context.params; const { schoolId, actorId, reason } = await request.json(); const current = await db.timetableSlot.findFirst({ where: { id, schoolId } });
   if (!current) return NextResponse.json({ error: 'Slot not found' }, { status: 404 });
   const version = await db.timetableVersion.findUnique({ where: { id: current.timetableVersionId } }); if (!version || version.status !== 'draft') return NextResponse.json({ error: 'Only draft slots can be removed.' }, { status: 409 });

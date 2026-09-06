@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
+import { requireCapability } from '@/lib/authz';
 
 // CurriculumArchitect AI — Hybrid Generation Strategy
 // 1. Instantly generate a comprehensive board-specific fallback curriculum
@@ -449,6 +450,9 @@ function generateComprehensiveCurriculum(
 }
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'lessonplan.write');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
     const {

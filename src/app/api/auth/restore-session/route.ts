@@ -9,12 +9,12 @@ export async function POST(request: Request) {
   const token = body.token as string | undefined;
   if (!token) return NextResponse.json({ error: 'token required' }, { status: 400 });
 
-  const session = verifyJwt(token);
+  const session = await verifyJwt(token);
   if (!session || session.role !== 'superadmin') {
     return NextResponse.json({ error: 'Invalid owner session' }, { status: 401 });
   }
 
-  const fresh = signJwt({
+  const fresh = await signJwt({
     userId: session.userId,
     email: session.email,
     role: 'superadmin',

@@ -1,13 +1,13 @@
 import { db } from '@/lib/db';
-import { resolveSchoolId } from '@/lib/school-helper';
+import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 
 // GET /api/school/feature-flags?schoolId=xxx
 export async function GET(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const rawSchoolId = searchParams.get('schoolId');
-    const schoolId = await resolveSchoolId(rawSchoolId);
+  // Pinned to the caller's school. schoolId used to be resolved from client
+  // input, so any signed-in user could act on another school's data.
+    const schoolId = await getTenantSchoolId(request);
     
     if (!schoolId) {
       return NextResponse.json({

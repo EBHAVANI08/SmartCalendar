@@ -12,11 +12,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
+import { SetupChecklist } from '@/components/dashboard/setup-checklist';
 
 /* ── Types ── */
 interface DashboardStats {
   totalTeachers: number;
-  totalStudents: number;
   absentToday: number;
   pendingSubstitutions: number;
   resolvedToday: number;
@@ -308,31 +308,6 @@ export default function DashboardPage() {
 
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
-  const [seeding, setSeeding] = useState(false);
-
-  const handleLoadSampleData = async () => {
-    setSeeding(true);
-    try {
-      const r = await fetch('/api/schools/seed-school', { method: 'POST' });
-      const d = await r.json();
-      if (r.ok && d.success) {
-        toast({
-          title: 'Sample School Data Loaded!',
-          description: d.message,
-        });
-        fetchData();
-      } else {
-        toast({
-          title: 'Notice',
-          description: d.error || 'Sample data loaded.',
-        });
-      }
-    } catch {
-      toast({ title: 'Notice', description: 'Sample data provisioned.' });
-    } finally {
-      setSeeding(false);
-    }
-  };
 
   return (
     <div className="space-y-6">
@@ -348,26 +323,16 @@ export default function DashboardPage() {
                 Academic Command Centre
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Delhi Public School (DPS)
+                {stats?.schoolName || 'Takshila School'}
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
-              Real-time daily operations, live biometric sync, timetable clash detection & AI briefings &middot; {today}
+              Daily operations, absence detection, timetable clash detection and briefings &middot; {today}
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <Button
-            size="sm"
-            onClick={handleLoadSampleData}
-            disabled={seeding}
-            className="gap-2 text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-9 shadow-md px-3.5 border-none"
-          >
-            <Zap className={`w-3.5 h-3.5 text-amber-300 ${seeding ? 'animate-spin' : ''}`} />
-            {seeding ? 'Loading Sample Data…' : 'Load Sample School Data'}
-          </Button>
-
           <Button size="sm" variant="outline" onClick={fetchData} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
             <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -375,10 +340,12 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* Setup progress, from real data. Disappears once the school is set up. */}
+      <SetupChecklist />
+
+      {/* KPI Row - every card below is a live tenant-scoped database count. */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         <KpiCard label="Total Faculty" value={stats?.totalTeachers || 0} icon={Users} color="blue" href="/teachers" />
-        <KpiCard label="Students" value={stats?.totalStudents || 0} icon={Shield} color="violet" />
         <KpiCard label="On Leave Today" value={stats?.absentToday || 0} icon={AlertTriangle} color="amber" trend={stats?.absentToday ? 'down' : null} />
         <KpiCard label="Pending Subs" value={stats?.pendingSubstitutions || 0} icon={RefreshCw} color="rose" href="/substitutions" />
         <KpiCard label="Resolved Today" value={stats?.resolvedToday || 0} icon={CheckCircle2} color="emerald" trend={stats?.resolvedToday ? 'up' : null} />

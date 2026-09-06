@@ -1,11 +1,15 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
 
 type Ctx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, ctx: Ctx) {
+  const denied = requireCapability(request, 'support.write');
+  if (denied) return denied;
+
   const { id } = await ctx.params;
   const body = await request.json();
   if (!body.body) return NextResponse.json({ error: 'Reply required' }, { status: 400 });

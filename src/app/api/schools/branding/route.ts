@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { resolveSchoolId } from '@/lib/school-helper';
+import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 
 /**
  * GET /api/schools/branding
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
     let school: any = null;
 
     if (rawSchoolId) {
-      const resolved = await resolveSchoolId(rawSchoolId);
+      const resolved = await getTenantSchoolId(request);
       if (resolved) school = await db.school.findUnique({ where: { id: resolved } });
     }
 

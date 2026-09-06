@@ -34,7 +34,7 @@ export function LandingClient() {
   const faqs = [
     {
       q: 'How fast can AI Smart Calendar generate a complete school timetable?',
-      a: 'Using our multi-constraint CSP (Constraint Satisfaction Problem) algorithm, a complete 1,200–2,400 period master timetable across Grades 1 to 12 is generated in under 60 seconds with zero double-booked rooms or teacher clashes.',
+      a: 'Using a multi-constraint CSP (Constraint Satisfaction Problem) solver, a full master timetable across Grades 1 to 12 is generated with every placement validated, so no teacher, class or room is double-booked. Requirements that cannot be staffed are reported to you rather than filled with an unqualified teacher clashes.',
     },
     {
       q: 'Does it integrate with our existing Biometric Attendance machines?',
@@ -42,7 +42,7 @@ export function LandingClient() {
     },
     {
       q: 'How do substitute teachers receive their period assignments?',
-      a: 'As soon as an administrator approves a substitution (or AI auto-assigns it), the substitute teacher receives a formatted WhatsApp message and in-app push notification with grade, section, period, and curriculum topics.',
+      a: 'As soon as an administrator approves a substitution (or the assistant proposes one), the substitute teacher receives an in-app notification with grade, section, period, and curriculum topics.',
     },
     {
       q: 'Is each school’s data private and isolated?',
@@ -131,13 +131,13 @@ export function LandingClient() {
         </h1>
 
         <p className="text-lg sm:text-xl text-slate-400 max-w-3xl mx-auto font-normal leading-relaxed mb-10">
-          {site?.heroSubtitle || 'Automate clash-free master timetables in 60 seconds, detect teacher absences via Biometric IoT punches, and alert substitutes on WhatsApp in real time.'}
+          {site?.heroSubtitle || 'Build validated, clash-checked master timetables, capture teacher absences from biometric attendance, and resolve substitutions with qualified, available staff.'}
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">
           <Link href="/login" className="w-full sm:w-auto">
             <Button size="lg" className="w-full sm:w-auto h-13 px-8 text-base font-bold bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:to-slate-950 text-white rounded-2xl shadow-xl shadow-blue-500/25 border border-blue-400/20 transition-all hover:scale-[1.02]">
-              {site?.ctaPrimary || 'Start Free School Pilot'} <ArrowRight className="w-5 h-5 ml-2" />
+              {site?.ctaPrimary || 'Request a Demo'} <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
           </Link>
           <a href="#how-it-works" className="w-full sm:w-auto">
@@ -155,14 +155,14 @@ export function LandingClient() {
                 <div className="w-3 h-3 rounded-full bg-red-500/80" />
                 <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
                 <div className="w-3 h-3 rounded-full bg-blue-500/80" />
-                <span className="text-xs font-medium text-slate-400 ml-2">Delhi Public School (DPS2025) &middot; Live Timetable Studio</span>
+                <span className="text-xs font-medium text-slate-400 ml-2">Smart Calendar Demo School &middot; Live Timetable Studio</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
                   <CheckCircle2 className="w-3 h-3 mr-1" /> 0 Hard Clashes
                 </span>
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                  182 Active Faculty
+                  Demo Data
                 </span>
               </div>
             </div>
@@ -187,7 +187,7 @@ export function LandingClient() {
               <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-500/30">
                 <p className="text-[10px] text-blue-400 font-semibold mb-1">AI AUTO-SUBSTITUTE</p>
                 <p className="font-bold text-slate-100">Chemistry</p>
-                <p className="text-blue-300 text-[11px]">📲 WhatsApp Alert Sent</p>
+                <p className="text-blue-300 text-[11px]">Substitute assigned &middot; notified in-app</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
                 <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 5 (01:30 - 02:15)</p>
@@ -199,27 +199,32 @@ export function LandingClient() {
         </div>
       </section>
 
-      {/* ── Impact Metrics Strip ── */}
+      {/* ── Capability Strip ── */}
+      {/* Capability-based, not customer metrics: this is a starter-stage product
+          and we do not publish adoption or accuracy figures we cannot evidence. */}
       <section className="relative z-10 border-y border-slate-800/80 bg-slate-900/40 backdrop-blur-md py-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 text-center">
             <div>
-              <p className="text-3xl sm:text-4xl font-extrabold bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent">180+</p>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">Educational Institutions</p>
+              <p className="text-xl sm:text-2xl font-extrabold bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent">AI-Assisted</p>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">Timetable Generation</p>
             </div>
             <div>
-              <p className="text-3xl sm:text-4xl font-extrabold bg-gradient-to-r from-indigo-400 to-sky-300 bg-clip-text text-transparent">99.8%</p>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">Clash-Free Timetable Accuracy</p>
+              <p className="text-xl sm:text-2xl font-extrabold bg-gradient-to-r from-indigo-400 to-sky-300 bg-clip-text text-transparent">Real-Time</p>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">Conflict Detection</p>
             </div>
             <div>
-              <p className="text-3xl sm:text-4xl font-extrabold bg-gradient-to-r from-sky-400 to-blue-300 bg-clip-text text-transparent">30 Sec</p>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">Instant Substitution Resolution</p>
+              <p className="text-xl sm:text-2xl font-extrabold bg-gradient-to-r from-sky-400 to-blue-300 bg-clip-text text-transparent">Automated</p>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">Substitution Workflow</p>
             </div>
             <div>
-              <p className="text-3xl sm:text-4xl font-extrabold bg-gradient-to-r from-blue-300 to-indigo-400 bg-clip-text text-transparent">25,000+</p>
-              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">Empowered Students & Faculty</p>
+              <p className="text-xl sm:text-2xl font-extrabold bg-gradient-to-r from-blue-300 to-indigo-400 bg-clip-text text-transparent">Multi-Tenant</p>
+              <p className="text-xs sm:text-sm text-slate-400 mt-1 font-medium">School Management</p>
             </div>
           </div>
+          <p className="text-center text-[11px] text-slate-500 mt-8">
+            Core capabilities available today. Generation runs with clash validation enabled.
+          </p>
         </div>
       </section>
 
@@ -268,9 +273,9 @@ export function LandingClient() {
               <div className="w-12 h-12 rounded-2xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400 mb-5 group-hover:scale-110 transition-transform">
                 <MessageSquare className="w-6 h-6" />
               </div>
-              <h3 className="text-lg font-bold text-slate-100 mb-2">WhatsApp & SMS Instant Dispatch</h3>
+              <h3 className="text-lg font-bold text-slate-100 mb-2">In-App Substitution Notifications</h3>
               <p className="text-sm text-slate-400 leading-relaxed">
-                Substitute teachers receive immediate WhatsApp alerts with period numbers, class sections, and today’s curriculum topic directly on their phones.
+                Substitute teachers get an in-app notification carrying the period, class section and the day’s topic. Messaging-provider delivery (WhatsApp/SMS) is on the roadmap, not yet enabled.
               </p>
             </CardContent>
           </Card>
@@ -401,9 +406,9 @@ export function LandingClient() {
             <div className="w-14 h-14 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 font-extrabold text-xl mb-6">
               2
             </div>
-            <h3 className="text-lg font-bold text-slate-100 mb-2">AI Generates 100% Clash-Free Grid</h3>
+            <h3 className="text-lg font-bold text-slate-100 mb-2">Constraint-Checked Timetable Generation</h3>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Our constraint solver places all 2,400 periods perfectly with balanced workloads and verified lab slots.
+              The constraint solver places periods with balanced workloads and room requirements, rejecting any assignment that would double-book a teacher, class or room.
             </p>
           </div>
 
@@ -413,7 +418,7 @@ export function LandingClient() {
             </div>
             <h3 className="text-lg font-bold text-slate-100 mb-2">Automate Daily Substitutions & Print</h3>
             <p className="text-sm text-slate-400 leading-relaxed">
-              Biometric morning absences trigger instant WhatsApp alerts to substitutes and 1-click A4 classroom PDF prints.
+              Biometric morning absences surface the affected periods for substitution, with 1-click A4 classroom PDF prints.
             </p>
           </div>
         </div>
@@ -457,20 +462,20 @@ export function LandingClient() {
         <div className="relative rounded-3xl overflow-hidden bg-gradient-to-r from-blue-950 via-slate-900 to-indigo-950 border border-blue-500/30 p-8 sm:p-14 text-center shadow-2xl">
           <div className="max-w-3xl mx-auto">
             <h2 className="text-3xl sm:text-5xl font-extrabold text-white tracking-tight mb-4">
-              Ready to Upgrade Your School’s Academic Operations?
+              Ready to Modernize Your School’s Timetable Workflow?
             </h2>
             <p className="text-slate-300 text-sm sm:text-lg mb-8 font-normal">
-              Join leading educational institutions managing timetables, substitutions, and faculty wellbeing with AI Smart Calendar.
+              Modernize your school’s timetable and substitution workflow with AI Smart Calendar.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link href="/login" className="w-full sm:w-auto">
                 <Button size="lg" className="w-full sm:w-auto h-13 px-8 text-base font-bold bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:to-slate-950 text-white rounded-2xl shadow-xl shadow-blue-500/30">
-                  Launch School Workspace <ArrowRight className="w-5 h-5 ml-2" />
+                  Launch Demo Workspace <ArrowRight className="w-5 h-5 ml-2" />
                 </Button>
               </Link>
               <Link href="/login" className="w-full sm:w-auto">
                 <Button size="lg" variant="outline" className="w-full sm:w-auto h-13 px-7 text-base font-semibold border-blue-500/40 bg-blue-950/40 hover:bg-blue-900/60 text-blue-300 rounded-2xl">
-                  Try Demo School (DPS2025)
+                  Explore Demo Workspace
                 </Button>
               </Link>
             </div>

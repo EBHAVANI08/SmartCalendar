@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   CalendarDays, Plus, ChevronLeft, ChevronRight, Filter,
   Clock, MapPin, Tag, CheckCircle2, AlertCircle, Sparkles,
@@ -19,22 +19,14 @@ interface CalendarEvent {
   id: string;
   title: string;
   date: string; // YYYY-MM-DD
-  category: 'holiday' | 'exam' | 'event' | 'ptm' | 'workshop';
+  category: string;
+  /** Where the entry came from. Derived entries are not editable here. */
+  source?: 'school' | 'leave' | 'cover';
   description?: string;
   time?: string;
   location?: string;
+  readOnly?: boolean;
 }
-
-const INITIAL_EVENTS: CalendarEvent[] = [
-  { id: '1', title: 'Independence Day Holiday', date: '2026-08-15', category: 'holiday', description: 'National Holiday - School closed', time: 'All Day' },
-  { id: '2', title: 'Periodic Assessment I (Grades 6-12)', date: '2026-08-20', category: 'exam', description: 'Mathematics & Science written exams', time: '08:30 - 11:30', location: 'Examination Hall' },
-  { id: '3', title: 'NEP 2020 Pedagogical Workshop', date: '2026-08-25', category: 'workshop', description: 'Faculty training on Bloom taxonomy integration', time: '14:00 - 16:30', location: 'AV Auditorium' },
-  { id: '4', title: 'Annual Inter-House Science Fair', date: '2026-08-28', category: 'event', description: 'Robotics & Environmental innovation showcases', time: '09:00 - 14:00', location: 'Main Grounds' },
-  { id: '5', title: 'Term-1 Parent-Teacher Meeting (PTM)', date: '2026-09-05', category: 'ptm', description: 'Progress card discussion & attendance reviews', time: '08:30 - 13:00', location: 'Classrooms' },
-  { id: '6', title: 'Teachers Day Celebrations', date: '2026-09-05', category: 'event', description: 'Special morning assembly organized by Student Council', time: '08:00 - 10:00', location: 'Assembly Hall' },
-  { id: '7', title: 'Mid-Term Examinations Begin', date: '2026-09-18', category: 'exam', description: 'Comprehensive assessments for Grades 1 to 12', time: '08:30 - 12:00', location: 'Assigned Blocks' },
-  { id: '8', title: 'Gandhi Jayanti Holiday', date: '2026-10-02', category: 'holiday', description: 'National Holiday', time: 'All Day' },
-];
 
 const CATEGORY_STYLES = {
   holiday: { label: 'Public Holiday', bg: 'bg-rose-50 border-rose-200 text-rose-700', badge: 'bg-rose-100 text-rose-800 border-rose-300' },
@@ -42,19 +34,28 @@ const CATEGORY_STYLES = {
   event: { label: 'School Event', bg: 'bg-indigo-50 border-indigo-200 text-indigo-700', badge: 'bg-indigo-100 text-indigo-800 border-indigo-300' },
   ptm: { label: 'PTM', bg: 'bg-sky-50 border-sky-200 text-sky-700', badge: 'bg-sky-100 text-sky-800 border-sky-300' },
   workshop: { label: 'Faculty Workshop', bg: 'bg-amber-50 border-amber-200 text-amber-700', badge: 'bg-amber-100 text-amber-800 border-amber-300' },
-};
+  leave: { label: 'Approved Leave', bg: 'bg-violet-50 border-violet-200 text-violet-700', badge: 'bg-violet-100 text-violet-800 border-violet-300' },
+  substitution: { label: 'Substitution', bg: 'bg-teal-50 border-teal-200 text-teal-700', badge: 'bg-teal-100 text-teal-800 border-teal-300' },
+} as Record<string, { label: string; bg: string; badge: string }>;
+
+const styleFor = (category: string) =>
+  CATEGORY_STYLES[category] ?? { label: category, bg: 'bg-slate-50 border-slate-200 text-slate-700', badge: 'bg-slate-100 text-slate-800 border-slate-300' };
 
 export default function AcademicCalendarPage() {
   const { toast } = useToast();
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 7, 1)); // August 2026
-  const [events, setEvents] = useState<CalendarEvent[]>(INITIAL_EVENTS);
+  const [currentDate, setCurrentDate] = useState(new Date());
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [counts, setCounts] = useState({ school: 0, leave: 0, cover: 0 });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [addModalOpen, setAddModalOpen] = useState(false);
 
   // Form states for new event
   const [newEventTitle, setNewEventTitle] = useState('');
-  const [newEventDate, setNewEventDate] = useState('2026-08-26');
-  const [newEventCategory, setNewEventCategory] = useState<CalendarEvent['category']>('event');
+  const [newEventDate, setNewEventDate] = useState(new Date().toISOString().slice(0, 10));
+  const [newEventCategory, setNewEventCategory] = useState<string>('event');
   const [newEventTime, setNewEventTime] = useState('09:00 - 12:00');
   const [newEventLocation, setNewEventLocation] = useState('School Campus');
   const [newEventDesc, setNewEventDesc] = useState('');
@@ -76,32 +77,84 @@ export default function AcademicCalendarPage() {
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date(2026, 7, 1));
+    setCurrentDate(new Date());
   };
 
-  const handleAddEvent = (e: React.FormEvent) => {
+  // The month currently on screen, as the API expects it.
+  const rangeFrom = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+  const rangeTo = `${year}-${String(month + 1).padStart(2, '0')}-${String(new Date(year, month + 1, 0).getDate()).padStart(2, '0')}`;
+
+  const loadEvents = useCallback(async () => {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`/api/calendar/feed?from=${rangeFrom}&to=${rangeTo}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || `Could not load the calendar (HTTP ${res.status}).`);
+      setEvents(Array.isArray(data.entries) ? data.entries : []);
+      setCounts(data.counts ?? { school: 0, leave: 0, cover: 0 });
+    } catch (err) {
+      setEvents([]);
+      setCounts({ school: 0, leave: 0, cover: 0 });
+      setLoadError(err instanceof Error ? err.message : 'Could not load the calendar.');
+    } finally {
+      setLoading(false);
+    }
+  }, [rangeFrom, rangeTo]);
+
+  useEffect(() => { loadEvents(); }, [loadEvents]);
+
+  const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newEventTitle.trim() || !newEventDate) return;
 
-    const newEv: CalendarEvent = {
-      id: String(Date.now()),
-      title: newEventTitle,
-      date: newEventDate,
-      category: newEventCategory,
-      time: newEventTime,
-      location: newEventLocation,
-      description: newEventDesc,
-    };
+    // Times are optional; when both are given the event is not all-day.
+    const [startRaw, endRaw] = (newEventTime || '').split('-').map((x) => x.trim());
+    const allDay = !startRaw || !endRaw;
+    const startAt = new Date(`${newEventDate}T${allDay ? '00:00' : startRaw}:00`);
+    const endAt = new Date(`${newEventDate}T${allDay ? '23:59' : endRaw}:00`);
 
-    setEvents([newEv, ...events]);
-    toast({
-      title: 'Academic Event Added',
-      description: `"${newEventTitle}" scheduled for ${newEventDate}.`,
-    });
+    setSaving(true);
+    try {
+      const res = await fetch('/api/calendar/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: newEventTitle.trim(),
+          description: [newEventDesc, newEventLocation ? `Location: ${newEventLocation}` : '']
+            .filter(Boolean).join(' — ') || undefined,
+          category: newEventCategory,
+          status: 'published',
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          allDay,
+          createdBy: 'school-admin',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({
+          title: 'Event not saved',
+          description: data?.error || `The server rejected the event (HTTP ${res.status}).`,
+          variant: 'destructive',
+        });
+        return;
+      }
 
-    setAddModalOpen(false);
-    setNewEventTitle('');
-    setNewEventDesc('');
+      toast({ title: 'Event added', description: `"${newEventTitle}" saved for ${newEventDate}.` });
+      setAddModalOpen(false);
+      setNewEventTitle('');
+      setNewEventDesc('');
+      await loadEvents();
+    } catch (err) {
+      toast({
+        title: 'Event not saved',
+        description: err instanceof Error ? err.message : 'Network error.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Calendar Grid Calculation
@@ -259,7 +312,7 @@ export default function AcademicCalendarPage() {
 
                     <div className="space-y-1 mt-1">
                       {dayEvents.slice(0, 2).map((ev) => {
-                        const style = CATEGORY_STYLES[ev.category];
+                        const style = styleFor(ev.category);
                         return (
                           <div
                             key={ev.id}
@@ -293,8 +346,35 @@ export default function AcademicCalendarPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4 space-y-3">
+              {loading && (
+                <p className="text-xs text-slate-400 py-6 text-center">Loading calendar…</p>
+              )}
+
+              {loadError && !loading && (
+                <div className="p-3 rounded-xl border border-red-200 bg-red-50">
+                  <p className="text-[11px] font-bold text-red-900">Could not load the calendar</p>
+                  <p className="text-[11px] text-red-800 mt-0.5">{loadError}</p>
+                  <Button size="sm" variant="outline" className="mt-2 h-7 text-[11px]" onClick={loadEvents}>
+                    Try again
+                  </Button>
+                </div>
+              )}
+
+              {!loading && !loadError && filteredEvents.length === 0 && (
+                <div className="py-6 text-center" data-testid="calendar-empty">
+                  <p className="text-xs font-semibold text-slate-600">No calendar events yet</p>
+                  <p className="text-[11px] text-slate-400 mt-1 max-w-[220px] mx-auto">
+                    Approved leave and substitution cover appear here automatically. Add holidays,
+                    exams and school events yourself.
+                  </p>
+                  <Button size="sm" className="mt-3 h-7 text-[11px] gap-1.5" onClick={() => setAddModalOpen(true)}>
+                    <Plus className="w-3 h-3" /> Add Event
+                  </Button>
+                </div>
+              )}
+
               {filteredEvents.slice(0, 6).map((ev) => {
-                const style = CATEGORY_STYLES[ev.category];
+                const style = styleFor(ev.category);
                 return (
                   <div key={ev.id} className="p-3 rounded-xl border border-slate-100 bg-slate-50 hover:bg-white hover:border-emerald-200 transition-all">
                     <div className="flex items-center justify-between gap-2 mb-1">
@@ -304,6 +384,11 @@ export default function AcademicCalendarPage() {
                       <span className="text-[10px] font-mono text-slate-500">{ev.date}</span>
                     </div>
                     <p className="text-xs font-bold text-slate-900 leading-snug">{ev.title}</p>
+                    {ev.readOnly && (
+                      <p className="text-[10px] text-slate-400 mt-0.5">
+                        From {ev.source === 'leave' ? 'Leave Management' : 'Substitutions'} — not editable here
+                      </p>
+                    )}
                     {ev.location && (
                       <p className="text-[10px] text-slate-500 flex items-center gap-1 mt-1">
                         <MapPin className="w-3 h-3 text-slate-400" />
@@ -316,17 +401,34 @@ export default function AcademicCalendarPage() {
             </CardContent>
           </Card>
 
-          {/* Quick Stats Card */}
-          <Card className="border-emerald-100 bg-emerald-50/50 p-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0">
+          {/* What this month actually contains, by source */}
+          <Card className="border-slate-200 p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-slate-800 text-white flex items-center justify-center shrink-0">
                 <Flag className="w-5 h-5" />
               </div>
               <div>
-                <p className="text-xs font-bold text-emerald-900">CBSE Term-1 Active</p>
-                <p className="text-[11px] text-emerald-700 mt-0.5">218 Teaching Days scheduled in 2026-27</p>
+                <p className="text-xs font-bold text-slate-900">{monthNames[month]} {year}</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {events.length} entr{events.length === 1 ? 'y' : 'ies'} this month
+                </p>
               </div>
             </div>
+            <div className="space-y-1">
+              {([
+                ['School events', counts.school],
+                ['Approved leave', counts.leave],
+                ['Substitution cover', counts.cover],
+              ] as [string, number][]).map(([label, n]) => (
+                <div key={label} className="flex items-center justify-between py-1 border-b border-slate-100 last:border-0">
+                  <span className="text-[11px] text-slate-600">{label}</span>
+                  <span className="text-[11px] font-bold text-slate-900">{n}</span>
+                </div>
+              ))}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+              Regular teaching periods are not shown here — see the Timetable.
+            </p>
           </Card>
         </div>
       </div>

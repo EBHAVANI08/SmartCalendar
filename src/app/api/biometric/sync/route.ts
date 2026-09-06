@@ -1,10 +1,14 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 // Simulate biometric device sync — pulls attendance data from "biometric system"
 // Also simulates teachers who applied for leave through the school portal
 // In production, this would connect to actual biometric API/device and leave management system
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'attendance.write');
+  if (denied) return denied;
+
   try {
     const { date, forceResync } = await request.json();
     const syncDate = date || new Date().toISOString().split('T')[0];

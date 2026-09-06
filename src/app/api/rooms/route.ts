@@ -1,29 +1,70 @@
+export const dynamic = 'force-dynamic';
+
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { requireCapability } from '@/lib/authz';
+import { isKnownRoomType, parseSupportedSubjects, parseUnavailable, suggestRoomType } from '@/lib/room-types';
+
+/**
+ * Rooms & facilities.
+ *
+ * Stage 1: a room can now declare a normalised type, the subjects it serves and
+ * the periods it is unavailable. None of that is enforced in scheduling yet -
+ * Stage 2 wires it into the shared validator and has not been started.
+ *
+ * Existing room data is never rewritten. Where a stored type is free text, the
+ * response carries a suggestion for an Admin to confirm.
+ */
 
 export async function GET(req: NextRequest) {
+  const denied = requireCapability(req, 'rooms.read');
+  if (denied) return denied;
+
   try {
+    // Fails closed. This previously fell through to `{}` when no tenant
+    // resolved, returning every school's rooms.
     const schoolId = await getTenantSchoolId(req);
-    const where = schoolId ? { schoolId } : {};
+    if (!schoolId) {
+      return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+    }
 
-    const [rooms, totalRooms] = await Promise.all([
-      db.room.findMany({
-        where: { ...where, active: true },
-        orderBy: [{ type: 'asc' }, { name: 'asc' }],
-      }),
-      db.room.count({ where }),
-    ]);
+    const rooms = await db.room.findMany({
+      where: { schoolId },
+      orderBy: [{ type: 'asc' }, { name: 'asc' }],
+    });
 
-    const typeBreakdown = rooms.reduce((acc: Record<string, number>, r) => {
+    const shaped = rooms.map((r) => {
+      const normalised = isKnownRoomType(r.type);
+      return {
+        id: r.id,
+        code: r.code,
+        name: r.name,
+        type: r.type,
+        typeIsNormalised: normalised,
+        // A suggestion only, for an Admin to confirm. Nothing is auto-applied.
+        suggestedType: normalised ? null : suggestRoomType(r.name, r.code),
+        capacity: r.capacity,
+        supportedSubjects: parseSupportedSubjects(r.supportedSubjects),
+        unavailablePeriods: parseUnavailable(r.unavailablePeriods),
+        active: r.active,
+      };
+    });
+
+    const typeBreakdown = shaped.reduce((acc: Record<string, number>, r) => {
       acc[r.type] = (acc[r.type] || 0) + 1;
       return acc;
     }, {});
 
     return NextResponse.json({
       success: true,
-      rooms,
-      stats: { totalRooms, typeBreakdown },
+      rooms: shaped,
+      stats: {
+        totalRooms: shaped.length,
+        activeRooms: shaped.filter((r) => r.active).length,
+        needsTypeReview: shaped.filter((r) => !r.typeIsNormalised).length,
+        typeBreakdown,
+      },
     });
   } catch (error) {
     console.error('[ROOMS LIST ERROR]', error);
@@ -32,45 +73,92 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const denied = requireCapability(req, 'rooms.write');
+  if (denied) return denied;
+
   try {
-    // Resolve the real schoolId from DB (same pattern as teachers, schedules APIs)
-    let schoolId = await getTenantSchoolId(req);
+    // No "first school in the database" fallback: that wrote rooms into
+    // whichever tenant happened to come first.
+    const schoolId = await getTenantSchoolId(req);
     if (!schoolId) {
-      try {
-        const firstSchool = await db.school.findFirst({ select: { id: true } });
-        schoolId = firstSchool?.id || null;
-      } catch (dbErr: any) {
-        return NextResponse.json({ success: false, error: `Database connection failed: ${dbErr?.message || 'Check DATABASE_URL env variable on Render.'}` }, { status: 503 });
-      }
-    }
-    if (!schoolId) {
-      return NextResponse.json({ success: false, error: 'No school found. Please seed school data first via POST /api/seed.' }, { status: 400 });
+      return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
     }
 
     const body = await req.json();
-    const { code, name, type, capacity } = body;
+    const { code, name, type, capacity, supportedSubjects, unavailablePeriods } = body;
 
     if (!code || !name || !type) {
       return NextResponse.json({ success: false, error: 'code, name, and type are required' }, { status: 400 });
+    }
+    if (!isKnownRoomType(type)) {
+      return NextResponse.json(
+        { success: false, error: `"${type}" is not a recognised room type.` },
+        { status: 400 }
+      );
     }
 
     const room = await db.room.create({
       data: {
         schoolId,
-        code: code.trim().toUpperCase(),
-        name: name.trim(),
+        code: String(code).trim().toUpperCase(),
+        name: String(name).trim(),
         type,
         capacity: Number(capacity) || 30,
+        supportedSubjects: Array.isArray(supportedSubjects) && supportedSubjects.length
+          ? supportedSubjects.map(String)
+          : undefined,
+        unavailablePeriods: unavailablePeriods && Object.keys(unavailablePeriods).length
+          ? unavailablePeriods
+          : undefined,
         active: true,
       },
     });
 
     return NextResponse.json({ success: true, room }, { status: 201 });
-  } catch (error: any) {
-    if (error?.code === 'P2002') {
-      return NextResponse.json({ success: false, error: 'A room with this code already exists in your school. Use a different room code.' }, { status: 409 });
+  } catch (error) {
+    const err = error as { code?: string; message?: string };
+    if (err?.code === 'P2002') {
+      return NextResponse.json(
+        { success: false, error: 'A room with this code already exists in your school.' },
+        { status: 409 }
+      );
     }
-    console.error('[ROOMS CREATE ERROR]', error?.message || error);
-    return NextResponse.json({ success: false, error: `Failed to create room: ${error?.message || 'Unknown error'}` }, { status: 500 });
+    console.error('[ROOMS CREATE ERROR]', err?.message || error);
+    return NextResponse.json({ success: false, error: 'Failed to create room.' }, { status: 500 });
   }
+}
+
+/** Update one room's Stage 1 attributes. Never touches other schools' rows. */
+export async function PATCH(req: NextRequest) {
+  const denied = requireCapability(req, 'rooms.write');
+  if (denied) return denied;
+
+  const schoolId = await getTenantSchoolId(req);
+  if (!schoolId) {
+    return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const { id, type, capacity, supportedSubjects, unavailablePeriods, active } = body;
+  if (!id) return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
+
+  const existing = await db.room.findFirst({ where: { id, schoolId }, select: { id: true } });
+  if (!existing) return NextResponse.json({ success: false, error: 'Room not found' }, { status: 404 });
+
+  if (type !== undefined && !isKnownRoomType(type)) {
+    return NextResponse.json({ success: false, error: `"${type}" is not a recognised room type.` }, { status: 400 });
+  }
+
+  const room = await db.room.update({
+    where: { id },
+    data: {
+      ...(type !== undefined ? { type } : {}),
+      ...(capacity !== undefined ? { capacity: Number(capacity) || 0 } : {}),
+      ...(supportedSubjects !== undefined ? { supportedSubjects: Array.isArray(supportedSubjects) ? supportedSubjects.map(String) : [] } : {}),
+      ...(unavailablePeriods !== undefined ? { unavailablePeriods } : {}),
+      ...(active !== undefined ? { active: Boolean(active) } : {}),
+    },
+  });
+
+  return NextResponse.json({ success: true, room });
 }

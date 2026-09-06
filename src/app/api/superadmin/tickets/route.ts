@@ -5,7 +5,7 @@ import { isSuperAdminRequest, unauthorized, writeAudit, actorFrom } from '@/lib/
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { searchParams } = new URL(request.url);
   const status = searchParams.get('status');
   const schoolId = searchParams.get('schoolId');
@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   const actor = actorFrom(request);
   if (!body.subject) return NextResponse.json({ error: 'subject required' }, { status: 400 });
@@ -52,7 +52,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   if (!body.id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   const ticket = await db.supportTicket.update({

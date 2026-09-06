@@ -1,13 +1,19 @@
 import { db } from '@/lib/db';
-import { resolveSchoolId } from '@/lib/school-helper';
+import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'faculty.write');
+  if (denied) return denied;
+
   try {
     const body = await request.json();
-    const { name, email, phone, subject, grades, password, role, schoolId: rawSchoolId } = body;
-    const schoolId = await resolveSchoolId(rawSchoolId);
+    const { name, email, phone, subject, grades, password, role } = body;
+  // Pinned to the caller's school. schoolId used to be resolved from client
+  // input, so any signed-in user could act on another school's data.
+    const schoolId = await getTenantSchoolId(request);
 
     // Validate required fields
     if (!name || typeof name !== 'string' || name.trim() === '') {
@@ -39,9 +45,11 @@ export async function POST(request: Request) {
       }
     }
 
-    // Check for duplicate email
-    const existingTeacher = await db.teacher.findUnique({
-      where: { email: email.trim().toLowerCase() },
+    // Duplicate check scoped to THIS school. A global check both blocked two
+    // schools from employing the same address and disclosed that another
+    // school already had it.
+    const existingTeacher = await db.teacher.findFirst({
+      where: { email: email.trim().toLowerCase(), schoolId },
     });
 
     if (existingTeacher) {

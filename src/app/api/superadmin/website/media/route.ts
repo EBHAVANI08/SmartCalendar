@@ -7,7 +7,7 @@ import { isSuperAdminRequest, unauthorized, writeAudit } from '@/lib/superadmin'
 export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const form = await request.formData();
   const file = form.get('file');
   if (!(file instanceof File)) {
@@ -41,7 +41,7 @@ export async function POST(request: Request) {
 }
 
 export async function DELETE(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { searchParams } = new URL(request.url);
   const id = searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });

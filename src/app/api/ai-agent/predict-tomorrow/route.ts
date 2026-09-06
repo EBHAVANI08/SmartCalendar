@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runPredictionEngine, getPredictionsForDate } from '@/lib/services/prediction-engine';
+import { requireCapability } from '@/lib/authz';
 
 /**
  * POST /api/ai-agent/predict-tomorrow
@@ -7,6 +8,9 @@ import { runPredictionEngine, getPredictionsForDate } from '@/lib/services/predi
  * Body: { date?: string } — base date (defaults to today)
  */
 export async function POST(request: NextRequest) {
+  const denied = requireCapability(request, 'substitution.assign');
+  if (denied) return denied;
+
   try {
     const body = await request.json().catch(() => ({}));
     const baseDate = body.date || new Date().toISOString().split('T')[0];

@@ -5,7 +5,7 @@ import { isSuperAdminRequest, nextInvoiceNumber, unauthorized, writeAudit } from
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { searchParams } = new URL(request.url);
   const schoolId = searchParams.get('schoolId');
   const status = searchParams.get('status');
@@ -23,7 +23,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   if (!body.schoolId || body.amount == null) {
     return NextResponse.json({ error: 'schoolId and amount are required' }, { status: 400 });
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 }
 
 export async function PATCH(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   if (!body.id) return NextResponse.json({ error: 'id required' }, { status: 400 });
   const invoice = await db.invoice.update({

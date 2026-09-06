@@ -1,14 +1,30 @@
 import { db } from '@/lib/db';
 import { resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 
 /**
  * POST /api/schools/update-credentials
- * Update login email/password for a school (used when client provides final credentials).
+ * Set a school's login email / password / name during provisioning.
  * Body: { schoolId | code, email?, password?, name? }
+ *
+ * Platform Owner only. This previously took `schoolId` or `code` from the body
+ * with no session and no role check, so any signed-in user could change any
+ * other school's login email and password - a complete tenant takeover. It also
+ * wrote the password in plain text; it is now hashed like every other login path.
+ *
+ * The former GET handler was removed: it returned a hardcoded school id and
+ * disclosed a default teacher password.
  */
 export async function POST(request: Request) {
   try {
+    if (request.headers.get('x-user-role') !== 'superadmin') {
+      return NextResponse.json(
+        { error: 'Updating school credentials is restricted to the platform owner.' },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const { schoolId, code, email, password, name } = body as {
       schoolId?: string;
@@ -23,6 +39,9 @@ export async function POST(request: Request) {
     }
     if (!email && !password && !name) {
       return NextResponse.json({ error: 'Provide email, password, and/or name to update' }, { status: 400 });
+    }
+    if (password && password.length < 8) {
+      return NextResponse.json({ error: 'Password must be at least 8 characters' }, { status: 400 });
     }
 
     const targetId = schoolId ? await resolveSchoolId(schoolId) : null;
@@ -40,11 +59,23 @@ export async function POST(request: Request) {
       where: { id: school.id },
       data: {
         ...(email ? { email } : {}),
-        ...(password ? { password } : {}),
+        ...(password ? { password: await bcrypt.hash(password, 10) } : {}),
         ...(name ? { name } : {}),
       },
       select: { id: true, name: true, code: true, email: true },
     });
+
+    await db.auditLog.create({
+      data: {
+        schoolId: school.id,
+        actorId: request.headers.get('x-user-id') || 'unknown',
+        actorRole: 'superadmin',
+        action: 'school.credentials.update',
+        entityType: 'School',
+        entityId: school.id,
+        after: { ...updated, passwordUpdated: Boolean(password) },
+      },
+    }).catch(() => null);
 
     return NextResponse.json({
       success: true,
@@ -54,42 +85,10 @@ export async function POST(request: Request) {
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Update failed';
-    // Unique email conflict
     if (message.includes('Unique constraint')) {
       return NextResponse.json({ error: 'Email already in use by another school' }, { status: 409 });
     }
     console.error('[update-credentials]', error);
     return NextResponse.json({ error: 'Failed to update credentials' }, { status: 500 });
   }
-}
-
-export async function GET() {
-  const school = await db.school.findUnique({
-    where: { id: 'sch_client_pilot_001' },
-    select: {
-      id: true,
-      name: true,
-      code: true,
-      email: true,
-      _count: { select: { teachers: true, schedules: true } },
-    },
-  });
-  if (!school) {
-    return NextResponse.json({ error: 'Client pilot school not provisioned yet' }, { status: 404 });
-  }
-  return NextResponse.json({
-    school,
-    access: {
-      role: 'School Admin — full access to this school only',
-      includes: [
-        '24 teachers (17 class teachers + 7 specialists)',
-        '17 classes (Grades 3–8)',
-        'Full weekly timetable (Mon–Fri, 8 periods)',
-        'Lesson plans ready for teaching & substitutes',
-        'Sample substitution workflow',
-        'School-scoped dashboard, calendar, teachers, substitutions',
-      ],
-      teacherDefaultPassword: 'teacher123',
-    },
-  });
 }

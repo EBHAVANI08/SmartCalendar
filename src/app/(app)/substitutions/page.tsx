@@ -16,6 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import { AssignSubstituteDialog } from '@/components/timetable/assign-substitute';
+import { LessonContextDialog } from '@/components/substitutions/lesson-context';
 
 interface Substitution {
   id: string;
@@ -62,6 +64,10 @@ export default function SubstitutionsPage() {
 
   // Candidate Selection Modal
   const [assigningSub, setAssigningSub] = useState<Substitution | null>(null);
+  // Validated assignment: blocks an occupied teacher outright and requires an
+  // audited override for anyone not mapped to the subject.
+  const [lessonContextId, setLessonContextId] = useState<string | null>(null);
+  const [assignId, setAssignId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<AvailableCandidate[]>([]);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
   const [assigningLoading, setAssigningLoading] = useState(false);
@@ -144,30 +150,8 @@ export default function SubstitutionsPage() {
   };
 
   // Open Candidate Selection for single slot
-  const handleOpenAssignModal = async (sub: Substitution) => {
-    setAssigningSub(sub);
-    setLoadingCandidates(true);
-    try {
-      const r = await fetch('/api/biometric/available-teachers', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          substitutionId: sub.id,
-          date: sub.date,
-          period: sub.period,
-          subject: sub.subject,
-          grade: sub.grade,
-          absentTeacherId: sub.absentTeacher.id,
-        }),
-      });
-      if (r.ok) {
-        const d = await r.json();
-        setCandidates(d.teachers || []);
-      }
-    } finally {
-      setLoadingCandidates(false);
-    }
-  };
+  // The old assign modal (POST /api/biometric/available-teachers) was replaced by
+  // AssignSubstituteDialog, which validates conflicts and audits overrides.
 
   // Assign individual substitute
   const handleAssignSubstitute = async (substituteId: string) => {
@@ -493,7 +477,7 @@ export default function SubstitutionsPage() {
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    onClick={() => handleOpenAssignModal(slot)}
+                                    onClick={() => setAssignId(slot.id)}
                                     className="h-6 px-2 text-[10px] text-blue-600 hover:text-blue-800 hover:bg-blue-50"
                                   >
                                     Change
@@ -502,12 +486,22 @@ export default function SubstitutionsPage() {
                               ) : (
                                 <Button
                                   size="sm"
-                                  onClick={() => handleOpenAssignModal(slot)}
+                                  onClick={() => setAssignId(slot.id)}
                                   className="w-full h-8 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white gap-1 shadow-xs"
                                 >
                                   <UserCheck className="w-3.5 h-3.5" /> Assign Substitute
                                 </Button>
                               )}
+
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                data-testid="view-lesson-context"
+                                onClick={() => setLessonContextId(slot.id)}
+                                className="w-full h-7 mt-2 text-[11px] font-semibold gap-1.5"
+                              >
+                                <BookOpen className="w-3.5 h-3.5" /> View Lesson Context
+                              </Button>
                             </div>
                           );
                         })}
@@ -571,7 +565,7 @@ export default function SubstitutionsPage() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleOpenAssignModal(s)}
+                            onClick={() => setAssignId(s.id)}
                             className="h-7 text-xs border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 font-bold"
                           >
                             Assign
@@ -715,6 +709,19 @@ export default function SubstitutionsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <AssignSubstituteDialog
+        substitutionId={assignId}
+        open={!!assignId}
+        onOpenChange={(o) => { if (!o) setAssignId(null); }}
+        onAssigned={fetchSubs}
+      />
+
+      <LessonContextDialog
+        substitutionId={lessonContextId}
+        open={!!lessonContextId}
+        onOpenChange={(o) => { if (!o) setLessonContextId(null); }}
+      />
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { isSuperAdminRequest, unauthorized, writeAudit } from '@/lib/superadmin'
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const coupons = await db.coupon.findMany({
     include: { _count: { select: { redemptions: true } } },
     orderBy: { createdAt: 'desc' },
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  if (!isSuperAdminRequest(request)) return unauthorized();
+  if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   const code = String(body.code || '').trim().toUpperCase();
   if (!code || body.discountValue == null) {

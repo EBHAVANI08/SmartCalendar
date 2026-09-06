@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import ZAI from 'z-ai-web-dev-sdk';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(req: NextRequest) {
+  const denied = requireCapability(req, 'lessonplan.write');
+  if (denied) return denied;
+
   try {
     const body = await req.json();
     const { assignmentId } = body as { assignmentId: string };

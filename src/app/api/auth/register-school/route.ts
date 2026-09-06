@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import bcrypt from 'bcryptjs';
+import { requireCapability } from '@/lib/authz';
 
 const schema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -10,7 +11,21 @@ const schema = z.object({
   password: z.string().min(6).max(72),
 });
 
+/**
+ * Create a school tenant.
+ *
+ * Platform owner only. Schools are onboarded by KAM Global, not by public
+ * self-service: the login page previously offered a "register" mode that this
+ * endpoint could not actually serve (middleware requires a session), so signup
+ * was advertised and then refused.
+ *
+ * Public self-registration stays closed until rate limiting, email verification,
+ * anti-abuse, tenant approval, billing and safe default entitlements exist.
+ */
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'owner.tenant.manage');
+  if (denied) return denied;
+
   try {
     const rawBody = await request.json();
     const parsed = schema.safeParse(rawBody);
