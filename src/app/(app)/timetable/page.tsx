@@ -772,31 +772,19 @@ const isDemoSchool = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => window.print()}
-            className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
-          >
-            <Printer className="w-4 h-4 text-[#2563EB]" /> Print Timetable — {selectedGrade} ({selectedSection})
-          </Button>
-
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setBellTimingsOpen(true)}
-            className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
-          >
-            <Clock className="w-4 h-4 text-[#2563EB]" /> Edit Bell Timings
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={() => { setStudioStep(1); setStudioOpen(true); }}
-            className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 text-xs h-9 shadow-md border-none px-3.5"
-          >
-            <Sparkles className="w-4 h-4 text-amber-300" /> Create Master Timetable
-          </Button>
+          <div className="hidden sm:flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700">
+            <Layers className="w-3.5 h-3.5 text-blue-600" />
+            <span>Active Master Timetable</span>
+          </div>
+          <Link href="/timetable-versions">
+            <Button
+              size="sm"
+              variant="outline"
+              className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
+            >
+              <HistoryIcon className="w-3.5 h-3.5 text-slate-600" /> Version History
+            </Button>
+          </Link>
         </div>
       </div>
 
@@ -873,7 +861,7 @@ const isDemoSchool = () => {
                   description: 'This master timetable is now active across all teacher dashboards, attendance sync, and substitution engines.',
                 });
               }}
-              className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-sm gap-1.5 border-none"
+              className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-sm gap-1.5 border-none cursor-pointer"
             >
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-100" /> Finalize &amp; Publish
             </Button>
@@ -888,50 +876,42 @@ const isDemoSchool = () => {
                   description: 'All current period slots and assignments are saved in your working draft version.',
                 });
               }}
-              className="h-8 px-3 text-xs font-bold border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100/90 shadow-2xs gap-1.5"
+              className="h-8 px-3 text-xs font-bold border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100/90 shadow-2xs gap-1.5 cursor-pointer"
             >
               <FileText className="w-3.5 h-3.5 text-amber-700" /> Save as Draft
             </Button>
 
-            {/* Create New Timetable / AI Studio */}
+            {/* Dynamic Create / Create Another New TT Button */}
             <Button
               size="sm"
               onClick={() => {
                 setStudioMode('ai');
                 setStudioOpen(true);
               }}
-              className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:via-indigo-800 hover:to-slate-950 text-white shadow-sm gap-1.5 border-none"
+              className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:via-indigo-800 hover:to-slate-950 text-white shadow-sm gap-1.5 border-none cursor-pointer"
             >
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Create New TT
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              {schedules.filter((s) => s.grade === selectedGrade && s.section === selectedSection).length > 0
+                ? 'Create Another New TT'
+                : 'Create Master Timetable'}
             </Button>
 
-            {/* Edit Timetable & Timings */}
+            {/* Edit Bell Timings */}
             <Button
               size="sm"
               variant="outline"
               onClick={() => setBellTimingsOpen(true)}
-              className="h-8 px-3 text-xs font-extrabold border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shadow-2xs gap-1.5"
+              className="h-8 px-3 text-xs font-extrabold border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shadow-2xs gap-1.5 cursor-pointer"
             >
-              <Clock className="w-3.5 h-3.5 text-slate-600" /> Edit Timings
+              <Clock className="w-3.5 h-3.5 text-slate-600" /> Edit Bell Timings
             </Button>
-
-            {/* Version History Quick Link */}
-            <Link href="/timetable-versions">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 px-3 text-xs font-extrabold border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shadow-2xs gap-1.5"
-              >
-                <HistoryIcon className="w-3.5 h-3.5 text-slate-600" /> Versions
-              </Button>
-            </Link>
 
             {/* Print Timetable */}
             <Button
               size="sm"
               variant="outline"
               onClick={() => window.print()}
-              className="h-8 px-3 text-xs font-extrabold border-blue-200 bg-blue-50 text-[#2563EB] hover:bg-blue-100 shadow-2xs gap-1.5"
+              className="h-8 px-3 text-xs font-extrabold border-blue-200 bg-blue-50 text-[#2563EB] hover:bg-blue-100 shadow-2xs gap-1.5 cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5 text-[#2563EB]" /> Print ({selectedGrade}-{selectedSection})
             </Button>
