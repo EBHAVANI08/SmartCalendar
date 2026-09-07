@@ -345,7 +345,7 @@ export default function LoginPage() {
                       variant="outline"
                       size="sm"
                       onClick={() => {
-                        setEmail('demo@takshila.school');
+                        setEmail('admin@takshilaschool.edu');
                         setPassword('school123');
                         setError('');
                       }}
