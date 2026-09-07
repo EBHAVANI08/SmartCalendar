@@ -315,6 +315,7 @@ export default function TimetablePage() {
 
   // Drag-and-Drop state
   const [draggedSlot, setDraggedSlot] = useState<{ id?: string; day: string; period: number } | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<string | null>(null);
 
   // Fetch Schedules & Teachers
   // Occupancy across the WHOLE school for the active version, keyed by
@@ -577,9 +578,79 @@ export default function TimetablePage() {
     }
   };
 
-  // Cell Edit Save Action (Updates DB, State, and Teacher Directory)
-
   // Period Swapping Execution (Modal or Drag & Drop)
+  const handleDragStart = (e: React.DragEvent, slotInfo: { id?: string; day: string; period: number }) => {
+    if (!slotInfo.id || String(slotInfo.id).startsWith('custom-')) {
+      e.preventDefault();
+      return;
+    }
+    setDraggedSlot(slotInfo);
+    try {
+      e.dataTransfer.setData('text/plain', JSON.stringify(slotInfo));
+      e.dataTransfer.effectAllowed = 'move';
+    } catch {}
+  };
+
+  const handleDragOver = (e: React.DragEvent, cellKey: string) => {
+    e.preventDefault();
+    try {
+      e.dataTransfer.dropEffect = 'move';
+    } catch {}
+    if (dragOverCell !== cellKey) setDragOverCell(cellKey);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverCell(null);
+  };
+
+  const handleDrop = async (e: React.DragEvent, target: { id?: string; day: string; period: number }) => {
+    e.preventDefault();
+    setDragOverCell(null);
+    let source = draggedSlot;
+    if (!source) {
+      try {
+        const raw = e.dataTransfer.getData('text/plain');
+        if (raw) source = JSON.parse(raw);
+      } catch {}
+    }
+    setDraggedSlot(null);
+
+    if (!source || !source.id || String(source.id).startsWith('custom-')) return;
+    if (source.day === target.day && source.period === target.period) return;
+
+    try {
+      const res = await fetch(`/api/schedules/${source.id}/slot`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          day: target.day,
+          period: target.period,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({
+          title: 'Period Moved / Swapped',
+          description: data.message || `Successfully moved period to ${target.day} Period ${target.period}.`,
+        });
+        fetchSchedules();
+        fetchOccupancy();
+      } else {
+        toast({
+          title: 'Cannot Move Period',
+          description: data.error || 'Conflict detected in destination slot.',
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Move Failed',
+        description: 'Network error while attempting to move period.',
+        variant: 'destructive',
+      });
+    }
+  };
 
   // Download Excel Format Template for School Setup
   const handleDownloadTemplate = () => {
@@ -649,44 +720,7 @@ export default function TimetablePage() {
     }
   };
 
-  // Drag and Drop Handlers
-  const handleDragStart = (e: React.DragEvent, slot: { id?: string; day: string; period: number }) => {
-    setDraggedSlot(slot);
-    e.dataTransfer.setData('text/plain', JSON.stringify(slot));
-  };
 
-  // Drag and drop is a MOVE through the validated slot API, not a raw swap:
-  // the destination is checked for teacher clash, class clash and the day's
-  // configured period count, and the backend refuses anything invalid.
-  const handleDrop = async (e: React.DragEvent, targetSlot: { id?: string; day: string; period: number }) => {
-    e.preventDefault();
-    const dragged = draggedSlot;
-    setDraggedSlot(null);
-    if (!dragged?.id || String(dragged.id).startsWith('custom-')) return;
-    if (dragged.day === targetSlot.day && dragged.period === targetSlot.period) return;
-
-    try {
-      const res = await fetch(`/api/schedules/${dragged.id}/slot`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ day: targetSlot.day, period: targetSlot.period }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast({
-          title: 'Move blocked',
-          description: data.error || 'The destination is not available.',
-          variant: 'destructive',
-        });
-        return;
-      }
-      toast({ title: 'Period moved', description: data.message });
-      fetchSchedules();
-      fetchOccupancy();
-    } catch {
-      toast({ title: 'Move failed', description: 'The request could not be completed.', variant: 'destructive' });
-    }
-  };
 
 const isDemoSchool = () => {
   try {
@@ -1009,13 +1043,16 @@ const isDemoSchool = () => {
                     const accent = getSubjectAccent(slot.subject);
                     const IconComp = accent.icon;
 
+                    const isCellDragOver = dragOverCell === `${day}-${periodNum}`;
+
                     return (
                       <td
                         key={pIdx}
                         data-testid={`slot-cell-${day}-${periodNum}`}
-                        draggable={true}
+                        draggable={Boolean(slot.id && !String(slot.id).startsWith('custom-'))}
                         onDragStart={(e) => handleDragStart(e, { id: slot.id, day, period: periodNum })}
-                        onDragOver={(e) => e.preventDefault()}
+                        onDragOver={(e) => handleDragOver(e, `${day}-${periodNum}`)}
+                        onDragLeave={handleDragLeave}
                         onDrop={(e) => handleDrop(e, { id: slot.id, day, period: periodNum })}
                         onClick={() => {
                           setEditingCell({
@@ -1029,7 +1066,9 @@ const isDemoSchool = () => {
                           });
                           setCellEditOpen(true);
                         }}
-                        className="p-1.5 border-b border-r border-[#E2E8F0] cursor-pointer transition-all duration-150 relative group bg-white hover:bg-slate-50/80"
+                        className={`p-1.5 border-b border-r border-[#E2E8F0] cursor-pointer transition-all duration-150 relative group bg-white hover:bg-slate-50/80 ${
+                          isCellDragOver ? 'ring-2 ring-blue-500 ring-offset-1 bg-blue-50/70 z-10 scale-[1.02]' : ''
+                        }`}
                       >
                         <div className={`p-2 rounded-lg border border-[#E2E8F0] bg-white shadow-xs hover:shadow-md hover:border-blue-300 transition-all ${accent.border} space-y-1 h-full`}>
                           {cellClashes.length > 0 && (

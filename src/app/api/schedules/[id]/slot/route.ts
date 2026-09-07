@@ -72,6 +72,115 @@ export async function PATCH(request: Request, ctx: Ctx) {
   // Moving the slot revalidates the class, the teacher and the day's period
   // bounds at the destination.
   if (moving) {
+    const versionScope = slot.timetableVersionId
+      ? { timetableVersionId: slot.timetableVersionId }
+      : { OR: [{ timetableVersionId: null }, { timetableVersionId: { isSet: false } }] };
+
+    const targetSlot = await db.schedule.findFirst({
+      where: {
+        schoolId,
+        grade: slot.grade,
+        section: slot.section,
+        day: nextDay,
+        period: nextPeriod,
+        ...versionScope,
+        NOT: { id },
+      },
+    });
+
+    if (targetSlot) {
+      // SWAP scenario: Destination slot is already occupied by another subject in the same class
+      // Validate teacher availability for moving slot into (nextDay, nextPeriod)
+      if (slot.teacherId) {
+        const t1Clash = await db.schedule.findFirst({
+          where: {
+            schoolId,
+            day: nextDay,
+            period: nextPeriod,
+            teacherId: slot.teacherId,
+            ...versionScope,
+            NOT: { id: { in: [id, targetSlot.id] } },
+          },
+          select: { grade: true, section: true, subject: true },
+        });
+        if (t1Clash) {
+          return NextResponse.json(
+            {
+              error: `Teacher is already assigned to ${t1Clash.grade} ${t1Clash.section} (${t1Clash.subject}) at ${nextDay} Period ${nextPeriod}.`,
+              code: 'TEACHER_DOUBLE_BOOKED',
+            },
+            { status: 409 }
+          );
+        }
+      }
+
+      // Validate teacher availability for moving targetSlot into (slot.day, slot.period)
+      if (targetSlot.teacherId) {
+        const t2Clash = await db.schedule.findFirst({
+          where: {
+            schoolId,
+            day: slot.day,
+            period: slot.period,
+            teacherId: targetSlot.teacherId,
+            ...versionScope,
+            NOT: { id: { in: [id, targetSlot.id] } },
+          },
+          select: { grade: true, section: true, subject: true },
+        });
+        if (t2Clash) {
+          return NextResponse.json(
+            {
+              error: `Teacher is already assigned to ${t2Clash.grade} ${t2Clash.section} (${t2Clash.subject}) at ${slot.day} Period ${slot.period}.`,
+              code: 'TEACHER_DOUBLE_BOOKED',
+            },
+            { status: 409 }
+          );
+        }
+      }
+
+      // Perform atomic swap with temporary period to avoid compound unique index conflict
+      await db.schedule.update({
+        where: { id: slot.id },
+        data: { period: 9999 },
+      });
+      await db.schedule.update({
+        where: { id: targetSlot.id },
+        data: { day: slot.day, period: slot.period },
+      });
+      const updated = await db.schedule.update({
+        where: { id: slot.id },
+        data: {
+          subject: nextSubject,
+          day: nextDay,
+          period: nextPeriod,
+          ...(body.roomId !== undefined ? { roomId: String(body.roomId) || null } : {}),
+        },
+      });
+
+      await db.auditLog
+        .create({
+          data: {
+            schoolId,
+            actorId: request.headers.get('x-user-id') || 'unknown',
+            actorRole: request.headers.get('x-user-role') || 'unknown',
+            action: 'timetable.swap_slots',
+            entityType: 'Schedule',
+            entityId: id,
+            before: { slot, targetSlot },
+            after: { slot: updated, targetSlot: { ...targetSlot, day: slot.day, period: slot.period } },
+            reason: body.reason ? String(body.reason) : null,
+          },
+        })
+        .catch(() => null);
+
+      return NextResponse.json({
+        success: true,
+        message: `Swapped ${slot.subject} (${slot.day} P${slot.period}) with ${targetSlot.subject} (${nextDay} P${nextPeriod}).`,
+        slot: updated,
+      });
+    }
+
+    // Standard move into an empty cell
     const check = await checkSlotConflicts({
       schoolId,
       grade: slot.grade,

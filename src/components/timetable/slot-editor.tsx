@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Loader2, Lock, Trash2, ArrowRightLeft, BookOpen, UserCog, AlertTriangle,
-  GitBranch, CheckCircle2, Ban, Info,
+  GitBranch, CheckCircle2, Ban, Info, ChevronLeft
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -120,12 +120,22 @@ export function SlotEditor({
         setDayPeriods(Object.fromEntries((cfg.days ?? []).map((d: any) => [d.day, d.periods])));
       }
 
-      // Only the grade's configured subjects may be chosen.
+      // Fetch grade configured subjects or school-wide subject catalogue
       const subRes = await fetch(`/api/subjects?grade=${encodeURIComponent(grade)}`);
       const sub = await subRes.json().catch(() => null);
+      let availableSubjects: string[] = [];
       if (sub?.success) {
-        setSubjects(sub.subjects.filter((s: any) => s.active).map((s: any) => s.subjectName));
+        if (Array.isArray(sub.subjects) && sub.subjects.length > 0) {
+          availableSubjects = sub.subjects.filter((s: any) => s.active !== false).map((s: any) => s.subjectName);
+        }
+        if (availableSubjects.length === 0 && Array.isArray(sub.catalogue) && sub.catalogue.length > 0) {
+          availableSubjects = sub.catalogue.filter((s: any) => s.active !== false).map((s: any) => s.name);
+        }
       }
+      if (ctx.slot?.subject && !availableSubjects.includes(ctx.slot.subject)) {
+        availableSubjects.unshift(ctx.slot.subject);
+      }
+      setSubjects(Array.from(new Set(availableSubjects)));
     } finally {
       setLoading(false);
     }
@@ -141,7 +151,9 @@ export function SlotEditor({
       const res = await fetch(url, init);
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || `Request failed (${res.status}).`);
+        const errMsg = data.error || `Request failed (${res.status}).`;
+        setError(errMsg);
+        toast({ title: 'Cannot Complete Action', description: errMsg, variant: 'destructive' });
         return false;
       }
       toast({ title: successTitle, description: data.message });
@@ -149,7 +161,9 @@ export function SlotEditor({
       onOpenChange(false);
       return true;
     } catch {
-      setError('The request could not be completed. Check your connection and try again.');
+      const errMsg = 'The request could not be completed. Check your connection and try again.';
+      setError(errMsg);
+      toast({ title: 'Network Error', description: errMsg, variant: 'destructive' });
       return false;
     } finally {
       setSaving(false);
@@ -247,16 +261,16 @@ export function SlotEditor({
 
             {editable && mode === 'menu' && (
               <div className="grid grid-cols-2 gap-2">
-                <Button variant="outline" data-testid="slot-change-subject" onClick={() => { setMode('subject'); setError(null); }}>
+                <Button type="button" variant="outline" data-testid="slot-change-subject" onClick={() => { setMode('subject'); setError(null); }}>
                   <BookOpen className="w-4 h-4 mr-2" /> Change Subject
                 </Button>
-                <Button variant="outline" data-testid="slot-change-teacher" onClick={() => { setMode('teacher'); setError(null); }}>
+                <Button type="button" variant="outline" data-testid="slot-change-teacher" onClick={() => { setMode('teacher'); setError(null); }}>
                   <UserCog className="w-4 h-4 mr-2" /> Change Teacher
                 </Button>
-                <Button variant="outline" data-testid="slot-move-period" onClick={() => { setMode('move'); setError(null); }}>
-                  <ArrowRightLeft className="w-4 h-4 mr-2" /> Move Period
+                <Button type="button" variant="outline" data-testid="slot-move-period" onClick={() => { setMode('move'); setError(null); }}>
+                  <ArrowRightLeft className="w-4 h-4 mr-2" /> Move / Swap Period
                 </Button>
-                <Button variant="outline" className="border-rose-300 text-rose-700 hover:bg-rose-50"
+                <Button type="button" variant="outline" className="border-rose-300 text-rose-700 hover:bg-rose-50"
                   data-testid="slot-delete" onClick={() => { setMode('delete'); setError(null); }}>
                   <Trash2 className="w-4 h-4 mr-2" /> Delete Slot
                 </Button>
@@ -266,37 +280,21 @@ export function SlotEditor({
             {/* ── Change subject ── */}
             {editable && mode === 'subject' && (
               <div className="space-y-3">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setMode('menu'); setError(null); }} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
+                    <ChevronLeft className="w-4 h-4" /> Back to Actions
+                  </Button>
+                  <span className="text-xs font-semibold text-slate-500">Change Subject</span>
+                </div>
+
                 <div>
-                  <Label className="text-xs">Subject (configured for {grade})</Label>
+                  <Label className="text-xs">Subject for {grade}</Label>
                   <Select value={newSubject} onValueChange={setNewSubject}>
                     <SelectTrigger className="mt-1" data-testid="slot-subject-select"><SelectValue placeholder="Choose a subject…" /></SelectTrigger>
                     <SelectContent>
                       {subjects.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                   </Select>
-                  {subjects.length === 0 && (
-                    <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 p-3" data-testid="no-subjects-configured">
-                      <p className="text-xs font-semibold text-amber-900">
-                        No subjects configured for {grade}.
-                      </p>
-                      <p className="text-[11px] text-amber-800 mt-1">
-                        Subjects are per-school, so there is no default list to fall back on. Configure
-                        them once and generation, change-subject and substitution all use them.
-                      </p>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        <Link href="/subjects">
-                          <Button size="sm" variant="outline" data-testid="goto-subject-management">
-                            <BookOpen className="w-3.5 h-3.5 mr-1.5" /> Go to Subject Management
-                          </Button>
-                        </Link>
-                        <Link href={`/subjects?grade=${encodeURIComponent(grade)}&add=1`}>
-                          <Button size="sm" data-testid="add-subject-shortcut">
-                            Add Subject for {grade}
-                          </Button>
-                        </Link>
-                      </div>
-                    </div>
-                  )}
                 </div>
 
                 {subjectChanged && !teacherStillQualified && (
@@ -328,17 +326,16 @@ export function SlotEditor({
                   </div>
                 )}
 
-                <div className="flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setMode('menu')}>Back</Button>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="ghost" onClick={() => { setMode('menu'); setError(null); }}>Back</Button>
                   <Button
+                    type="button"
                     disabled={
                       saving ||
                       !newSubject ||
                       (subjectChanged && !teacherStillQualified && !qualifiedForNewSubject.some((c) => c.id === newTeacher))
                     }
                     onClick={async () => {
-                      // Reassign first when the current teacher loses qualification,
-                      // so the slot is never left with an unqualified teacher.
                       if (subjectChanged && !teacherStillQualified) {
                         const ok = await fetch(`/api/schedules/${slotId}/change-teacher`, {
                           method: 'POST',
@@ -371,6 +368,13 @@ export function SlotEditor({
             {/* ── Change teacher ── */}
             {editable && mode === 'teacher' && (
               <div className="space-y-2">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setMode('menu'); setError(null); }} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
+                    <ChevronLeft className="w-4 h-4" /> Back to Actions
+                  </Button>
+                  <span className="text-xs font-semibold text-slate-500">Change Teacher</span>
+                </div>
+
                 <p className="text-xs text-slate-500">
                   Busy teachers are disabled. Anyone not mapped to {slot.subject} needs an explicit override.
                 </p>
@@ -398,6 +402,7 @@ export function SlotEditor({
                           ? <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">qualified</Badge>
                           : <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">not mapped</Badge>}
                         <Button
+                          type="button"
                           size="sm" variant={c.qualifiedSubject ? 'default' : 'outline'}
                           disabled={!c.available || c.isCurrent || saving}
                           className="h-7 text-[11px]"
@@ -425,8 +430,8 @@ export function SlotEditor({
                     </div>
                   ))}
                 </div>
-                <div className="flex justify-end">
-                  <Button variant="ghost" onClick={() => setMode('menu')}>Back</Button>
+                <div className="flex justify-end pt-2">
+                  <Button type="button" variant="ghost" onClick={() => { setMode('menu'); setError(null); }}>Back</Button>
                 </div>
               </div>
             )}
@@ -434,9 +439,16 @@ export function SlotEditor({
             {/* ── Move ── */}
             {editable && mode === 'move' && (
               <div className="space-y-3">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setMode('menu'); setError(null); }} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
+                    <ChevronLeft className="w-4 h-4" /> Back to Actions
+                  </Button>
+                  <span className="text-xs font-semibold text-slate-500">Move or Swap Period</span>
+                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label className="text-xs">Day</Label>
+                    <Label className="text-xs">Destination Day</Label>
                     <Select value={moveDay} onValueChange={(v) => { setMoveDay(v); setMovePeriod(''); }}>
                       <SelectTrigger className="mt-1" data-testid="slot-move-day"><SelectValue /></SelectTrigger>
                       <SelectContent>
@@ -447,10 +459,10 @@ export function SlotEditor({
                   </div>
                   <div>
                     <Label className="text-xs">
-                      Period {moveDay && dayPeriods[moveDay] ? `(1–${dayPeriods[moveDay]})` : ''}
+                      Destination Period {moveDay && dayPeriods[moveDay] ? `(1–${dayPeriods[moveDay]})` : ''}
                     </Label>
                     <Select value={movePeriod} onValueChange={setMovePeriod}>
-                      <SelectTrigger className="mt-1" data-testid="slot-move-period-select"><SelectValue placeholder="Period…" /></SelectTrigger>
+                      <SelectTrigger className="mt-1" data-testid="slot-move-period-select"><SelectValue placeholder="Select Period…" /></SelectTrigger>
                       <SelectContent>
                         {Array.from({ length: periodsForMoveDay }, (_, i) => i + 1).map((n) => (
                           <SelectItem key={n} value={String(n)}>Period {n}</SelectItem>
@@ -459,14 +471,14 @@ export function SlotEditor({
                     </Select>
                   </div>
                 </div>
-                <p className="text-[11px] text-slate-500 flex items-start gap-1.5">
-                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
-                  The destination is validated for teacher clash, class clash and the day&rsquo;s configured
-                  period count. The move either succeeds completely or nothing changes.
+                <p className="text-[11px] text-slate-500 flex items-start gap-1.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
+                  <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-blue-600" />
+                  If destination is empty, the period is moved. If occupied by another subject in this class, both periods swap positions seamlessly.
                 </p>
-                <div className="flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setMode('menu')}>Back</Button>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="ghost" onClick={() => { setMode('menu'); setError(null); }}>Back</Button>
                   <Button
+                    type="button"
                     disabled={saving || !moveDay || !movePeriod ||
                       (moveDay === slot.day && Number(movePeriod) === slot.period)}
                     onClick={() =>
@@ -481,7 +493,7 @@ export function SlotEditor({
                       )
                     }
                   >
-                    {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Move period
+                    {saving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <ArrowRightLeft className="w-4 h-4 mr-2" />} Move / Swap period
                   </Button>
                 </div>
               </div>
@@ -490,6 +502,13 @@ export function SlotEditor({
             {/* ── Delete ── */}
             {editable && mode === 'delete' && (
               <div className="space-y-3">
+                <div className="flex items-center justify-between pb-1 border-b border-slate-100">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => { setMode('menu'); setError(null); }} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
+                    <ChevronLeft className="w-4 h-4" /> Back to Actions
+                  </Button>
+                  <span className="text-xs font-semibold text-slate-500">Delete Slot</span>
+                </div>
+
                 <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-900">
                   <p className="font-semibold">Remove this period?</p>
                   <p className="text-xs mt-1">
@@ -497,9 +516,10 @@ export function SlotEditor({
                     empty. If any substitution depends on it, the delete is refused.
                   </p>
                 </div>
-                <div className="flex justify-end gap-2">
-                  <Button variant="ghost" onClick={() => setMode('menu')}>Back</Button>
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button type="button" variant="ghost" onClick={() => { setMode('menu'); setError(null); }}>Back</Button>
                   <Button
+                    type="button"
                     className="bg-rose-600 hover:bg-rose-700 text-white"
                     disabled={saving}
                     onClick={() => send(`/api/schedules/${slotId}/slot`, { method: 'DELETE' }, 'Period removed')}

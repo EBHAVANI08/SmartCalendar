@@ -23,18 +23,35 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
   }
 
-  const grade = new URL(request.url).searchParams.get('grade');
+  const gradeParam = new URL(request.url).searchParams.get('grade');
+  const gradeVariants = gradeParam
+    ? Array.from(new Set([
+        gradeParam.trim(),
+        gradeParam.replace(/^Grade\s*/i, '').trim(),
+        `Grade ${gradeParam.replace(/^Grade\s*/i, '').trim()}`,
+      ])).filter(Boolean)
+    : [];
 
-  const [catalogue, configs, teachers] = await Promise.all([
+  const [catalogue, configs, teachers, scheduleSubjects] = await Promise.all([
     db.subjectMaster.findMany({ where: { schoolId }, orderBy: { name: 'asc' } }),
     db.gradeSubjectConfig.findMany({
-      where: { schoolId, ...(grade ? { grade } : {}) },
+      where: {
+        schoolId,
+        ...(gradeVariants.length > 0 ? { grade: { in: gradeVariants } } : {}),
+      },
       orderBy: [{ grade: 'asc' }, { subjectName: 'asc' }],
     }),
     db.teacher.findMany({
       where: { schoolId, role: { not: 'inactive' } },
       select: { id: true, name: true, subject: true, subjects: true, grades: true },
     }),
+    gradeVariants.length > 0
+      ? db.schedule.findMany({
+          where: { schoolId, grade: { in: gradeVariants } },
+          select: { subject: true },
+          distinct: ['subject'],
+        })
+      : Promise.resolve([]),
   ]);
 
   // Active teachers actually mapped to each subject, and to that grade.
@@ -45,13 +62,65 @@ export async function GET(request: Request) {
       )
       .filter((t) => {
         const grades = readList(t.grades);
-        return !forGrade || grades.length === 0 || grades.includes(forGrade);
+        return !forGrade || grades.length === 0 || grades.some((g) => {
+          const normG = g.replace(/^Grade\s*/i, '').trim();
+          const normFor = forGrade.replace(/^Grade\s*/i, '').trim();
+          return normG === normFor;
+        });
       })
       .map((t) => ({ id: t.id, name: t.name }));
 
+  let finalSubjects = configs.map((c) => ({
+    id: c.id,
+    grade: c.grade,
+    subjectName: c.subjectName,
+    weeklyPeriods: c.weeklyPeriods,
+    maxPeriodsPerDay: c.maxPeriodsPerDay,
+    allowConsecutive: c.allowConsecutive,
+    priority: c.priority,
+    requiredRoomType: c.requiredRoomType,
+    active: c.active,
+    teachers: mappedTeachers(c.subjectName, c.grade),
+  }));
+
+  // If no grade-specific config exists yet for this grade, synthesize subjects from:
+  // 1. Existing timetable schedule subjects for this grade
+  // 2. School subject catalogue
+  // 3. Teacher subjects
+  if (finalSubjects.length === 0 && gradeParam) {
+    const discoveredNames = new Set<string>();
+
+    (scheduleSubjects || []).forEach((s) => {
+      if (s.subject && s.subject.trim()) discoveredNames.add(s.subject.trim());
+    });
+
+    catalogue.forEach((c) => {
+      if (c.name && c.active !== false) discoveredNames.add(c.name.trim());
+    });
+
+    teachers.forEach((t) => {
+      readList(t.subjects ?? t.subject).forEach((s) => {
+        if (s && s.trim()) discoveredNames.add(s.trim());
+      });
+    });
+
+    finalSubjects = Array.from(discoveredNames).map((name) => ({
+      id: `virtual-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+      grade: gradeParam,
+      subjectName: name,
+      weeklyPeriods: 4,
+      maxPeriodsPerDay: 2,
+      allowConsecutive: false,
+      priority: 'Normal',
+      requiredRoomType: null,
+      active: true,
+      teachers: mappedTeachers(name, gradeParam),
+    }));
+  }
+
   return NextResponse.json({
     success: true,
-    grade: grade || null,
+    grade: gradeParam || null,
     catalogue: catalogue.map((s) => ({
       id: s.id,
       name: s.name,
@@ -59,17 +128,7 @@ export async function GET(request: Request) {
       category: s.category,
       active: s.active,
     })),
-    subjects: configs.map((c) => ({
-      id: c.id,
-      grade: c.grade,
-      subjectName: c.subjectName,
-      weeklyPeriods: c.weeklyPeriods,
-      maxPeriodsPerDay: c.maxPeriodsPerDay,
-      allowConsecutive: c.allowConsecutive,
-      priority: c.priority,
-      active: c.active,
-      teachers: mappedTeachers(c.subjectName, c.grade),
-    })),
+    subjects: finalSubjects,
   });
 }
 
