@@ -5,7 +5,8 @@ import {
   Users, RefreshCw, CalendarDays, AlertTriangle,
   Brain, TrendingUp, TrendingDown, CheckCircle2,
   Sparkles, Zap, Activity, ArrowRight, Clock,
-  BarChart3, BookOpen, Fingerprint, Shield
+  BarChart3, BookOpen, Fingerprint, Shield,
+  GraduationCap, ClipboardList
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
