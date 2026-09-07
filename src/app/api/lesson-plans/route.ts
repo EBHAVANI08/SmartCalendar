@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import { requireCapability, ownTeacherId } from '@/lib/authz';
+import { requireCapability } from '@/lib/authz';
+import { ownTeacherId } from '@/lib/teacher-scope';
 import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(request: Request) {

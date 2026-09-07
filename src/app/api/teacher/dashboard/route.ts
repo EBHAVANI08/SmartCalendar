@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
-import { requireCapability, ownTeacherId } from '@/lib/authz';
+import { requireCapability } from '@/lib/authz';
+import { ownTeacherId } from '@/lib/teacher-scope';
 import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 import { NextResponse } from 'next/server';
 

@@ -4,7 +4,7 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 import { NextResponse } from 'next/server';
-import { ownTeacherId } from '@/lib/authz';
+import { ownTeacherId } from '@/lib/teacher-scope';
 
 /**
  * Timetable rows for one class.

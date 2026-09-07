@@ -4,7 +4,8 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { dispatchMessage } from '@/lib/notifications/messaging-service';
 import { NextResponse } from 'next/server';
-import { requireCapability, ownTeacherId } from '@/lib/authz';
+import { requireCapability } from '@/lib/authz';
+import { ownTeacherId } from '@/lib/teacher-scope';
 
 export async function GET(request: Request) {
   try {

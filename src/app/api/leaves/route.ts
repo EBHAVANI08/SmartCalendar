@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { affectedPeriodsForLeave, syncSubstitutionsForLeave, type AffectedPeriod } from '@/lib/substitution-service';
-import { requireCapability, ownTeacherId } from '@/lib/authz';
+import { requireCapability } from '@/lib/authz';
+import { ownTeacherId } from '@/lib/teacher-scope';
 
 /**
  * Leave applications.
