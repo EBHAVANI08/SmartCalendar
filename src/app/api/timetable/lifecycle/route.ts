@@ -48,14 +48,11 @@ export async function POST(request: Request) {
   const action = String(body.action ?? 'adopt');
 
   if (action === 'adopt') {
-    // Adoption rewrites every timetable row to point at a new version. It is
-    // not exposed to school admins yet: an accidental click migrated a live
-    // tenant into versioned mode. Platform owners only until the flow is
-    // reviewable and reversible from the UI.
-    if (request.headers.get('x-user-role') !== 'superadmin') {
+    const role = request.headers.get('x-user-role') || '';
+    if (!['school', 'admin', 'superadmin'].includes(role)) {
       return NextResponse.json(
         {
-          error: 'Adopting an existing timetable into version control is not available yet. Contact your platform administrator.',
+          error: 'Administrator authority is required to adopt timetables into version control.',
           code: 'ADOPT_NOT_PERMITTED',
         },
         { status: 403 }
