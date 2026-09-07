@@ -10,7 +10,7 @@ import {
   Coffee, Utensils, ChevronRight, Layers, Building2,
   Upload, FileSpreadsheet, FileText, ArrowRight, Check,
   ArrowLeftRight, Calculator, FlaskConical, Zap, Dna,
-  Languages, Globe, Cpu, Trophy, Palette, Music, Library, AlertTriangle } from 'lucide-react';
+  Languages, Globe, Cpu, Trophy, Palette, Music, Library, AlertTriangle, History as HistoryIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -922,7 +922,7 @@ const isDemoSchool = () => {
                 variant="outline"
                 className="h-8 px-3 text-xs font-extrabold border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shadow-2xs gap-1.5"
               >
-                <History className="w-3.5 h-3.5 text-slate-600" /> Versions
+                <HistoryIcon className="w-3.5 h-3.5 text-slate-600" /> Versions
               </Button>
             </Link>
 
