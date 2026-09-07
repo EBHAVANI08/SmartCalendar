@@ -16,6 +16,7 @@ import { SetupChecklist } from '@/components/dashboard/setup-checklist';
 
 /* ── Types ── */
 interface DashboardStats {
+  schoolName?: string;
   totalTeachers: number;
   absentToday: number;
   pendingSubstitutions: number;

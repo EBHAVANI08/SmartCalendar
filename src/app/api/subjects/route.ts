@@ -88,7 +88,7 @@ export async function POST(request: Request) {
   const rawGrades = Array.isArray(body.grades) && body.grades.length > 0 
     ? body.grades 
     : body.grade ? [body.grade] : [];
-  const grades = Array.from(new Set(rawGrades.map((g: any) => String(g).trim()).filter(Boolean)));
+  const grades: string[] = Array.from(new Set(rawGrades.map((g: any) => String(g).trim()).filter(Boolean)));
 
   if (!subjectName || subjectName.length < 2) {
     return NextResponse.json({ error: 'Subject name is required.' }, { status: 400 });
@@ -125,8 +125,8 @@ export async function POST(request: Request) {
     })
     .catch(() => null);
 
-  const createdList = [];
-  const skippedList = [];
+  const createdList: any[] = [];
+  const skippedList: string[] = [];
 
   for (const g of grades) {
     const existing = await db.gradeSubjectConfig.findFirst({ where: { schoolId, grade: g, subjectName } });
