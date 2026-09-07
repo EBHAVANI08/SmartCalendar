@@ -13,8 +13,6 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 
 export function LandingClient() {
-  // ROI Calculator State
-  const [facultyCount, setFacultyCount] = useState<number>(60);
   const [activeFeatureTab, setActiveFeatureTab] = useState<string>('ai-timetable');
   const [openFaq, setOpenFaq] = useState<number | null>(0);
   const [site, setSite] = useState<any>(null);
@@ -25,11 +23,6 @@ export function LandingClient() {
       .then(setSite)
       .catch(() => {});
   }, []);
-
-  // Calculations for ROI Calculator
-  const hoursSavedPerMonth = Math.round(facultyCount * 0.8 + 24);
-  const moneySavedPerYear = (facultyCount * 4500).toLocaleString('en-IN');
-  const subDelayReduced = '45 min → 30 sec';
 
   const faqs = [
     {
@@ -94,7 +87,6 @@ export function LandingClient() {
           <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-slate-300">
             <a href="#features" className="hover:text-blue-400 transition-colors">Features</a>
             <a href="#how-it-works" className="hover:text-blue-400 transition-colors">How It Works</a>
-            <a href="#calculator" className="hover:text-blue-400 transition-colors">ROI Calculator</a>
             <a href="#pricing" className="hover:text-blue-400 transition-colors">Pricing</a>
             <a href="#faq" className="hover:text-blue-400 transition-colors">FAQ</a>
           </nav>
@@ -321,63 +313,7 @@ export function LandingClient() {
         </div>
       </section>
 
-      {/* ── Interactive ROI Calculator ── */}
-      <section id="calculator" className="relative z-10 py-20 bg-slate-900/50 border-y border-slate-800/80">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-2xl mx-auto mb-12">
-            <Badge className="bg-blue-500/10 text-blue-400 border-blue-500/20 mb-3">Interactive Savings Calculator</Badge>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">Calculate Your School’s Time & Cost Savings</h2>
-            <p className="text-slate-400 text-sm sm:text-base">
-              See how much administrative time and substitution chaos your school can eliminate each month.
-            </p>
-          </div>
 
-          <div className="bg-slate-950 rounded-3xl p-6 sm:p-10 border border-slate-800 shadow-2xl">
-            <div className="mb-8">
-              <div className="flex justify-between items-center mb-3">
-                <label className="text-sm font-semibold text-slate-300">Total School Faculty Size:</label>
-                <span className="text-lg font-bold text-blue-400 bg-blue-950/60 px-3 py-1 rounded-lg border border-blue-500/30">
-                  {facultyCount} Teachers
-                </span>
-              </div>
-              <input
-                type="range"
-                min="10"
-                max="300"
-                step="5"
-                value={facultyCount}
-                onChange={(e) => setFacultyCount(Number(e.target.value))}
-                className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-blue-600"
-              />
-              <div className="flex justify-between text-[11px] text-slate-500 mt-2">
-                <span>10 Faculty</span>
-                <span>150 Faculty</span>
-                <span>300 Faculty</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 text-center">
-              <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800">
-                <p className="text-3xl sm:text-4xl font-extrabold text-blue-400 mb-1">{hoursSavedPerMonth} hrs</p>
-                <p className="text-xs font-semibold text-slate-300">Admin Hours Saved / Month</p>
-                <p className="text-[11px] text-slate-500 mt-1">Zero manual clash checking</p>
-              </div>
-
-              <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800">
-                <p className="text-3xl sm:text-4xl font-extrabold text-indigo-400 mb-1">{subDelayReduced}</p>
-                <p className="text-xs font-semibold text-slate-300">Morning Substitution Speed</p>
-                <p className="text-[11px] text-slate-500 mt-1">Automated biometric trigger</p>
-              </div>
-
-              <div className="p-5 rounded-2xl bg-slate-900/90 border border-slate-800">
-                <p className="text-3xl sm:text-4xl font-extrabold text-sky-400 mb-1">₹{moneySavedPerYear}</p>
-                <p className="text-xs font-semibold text-slate-300">Estimated Annual Efficiency Gain</p>
-                <p className="text-[11px] text-slate-500 mt-1">Operational cost reduction</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* ── 3-Step "How It Works" ── */}
       <section id="how-it-works" className="relative z-10 py-24 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
