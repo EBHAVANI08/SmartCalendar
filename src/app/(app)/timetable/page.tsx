@@ -816,8 +816,12 @@ const isDemoSchool = () => {
 
   return (
     <div className="bg-[#F6F8FC] min-h-screen p-4 sm:p-6 lg:p-8 space-y-6 text-[#172033]">
-      <VersionBanner onChanged={fetchSchedules} />
-      <GenerationResult result={genResult} onDismiss={() => setGenResult(null)} />
+      {userRole !== 'teacher' && (
+        <>
+          <VersionBanner onChanged={fetchSchedules} />
+          <GenerationResult result={genResult} onDismiss={() => setGenResult(null)} />
+        </>
+      )}
       {/* ── Enterprise SaaS Workspace Header ── */}
       <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
         <div className="flex items-center gap-4">
@@ -858,22 +862,22 @@ const isDemoSchool = () => {
 
         <div className="flex flex-wrap items-center gap-2.5">
           {userRole === 'teacher' ? (
-            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <div className="flex items-center gap-2">
               <Button
                 size="sm"
-                variant={viewMode === 'my' ? 'default' : 'ghost'}
-                onClick={() => setViewMode('my')}
-                className={`h-8 px-3 text-xs font-bold rounded-lg ${viewMode === 'my' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-200'}`}
+                variant="outline"
+                onClick={() => window.print()}
+                className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5 cursor-pointer"
               >
-                <User className="w-3.5 h-3.5 mr-1" /> My Allotted Schedule
+                <Printer className="w-3.5 h-3.5 text-slate-600" /> Print Schedule
               </Button>
               <Button
                 size="sm"
-                variant={viewMode === 'class' ? 'default' : 'ghost'}
-                onClick={() => setViewMode('class')}
-                className={`h-8 px-3 text-xs font-bold rounded-lg ${viewMode === 'class' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-700 hover:bg-slate-200'}`}
+                variant="outline"
+                onClick={fetchTeacherSchedule}
+                className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
               >
-                <Building2 className="w-3.5 h-3.5 mr-1" /> Class Timetables (Read-Only)
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} /> Refresh
               </Button>
             </div>
           ) : (
@@ -897,7 +901,7 @@ const isDemoSchool = () => {
       </div>
 
       {/* ── TEACHER'S PERSONAL ALLOTTED TIMETABLE VIEW ── */}
-      {userRole === 'teacher' && viewMode === 'my' && (
+      {userRole === 'teacher' && (
         <Card className="border-[#E2E8F0] shadow-xs overflow-hidden bg-white rounded-2xl">
           <div className="p-4 sm:p-5 border-b border-[#E2E8F0] bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div>
@@ -990,15 +994,15 @@ const isDemoSchool = () => {
         </Card>
       )}
 
-      {/* ── CLASS TIMETABLE GRID (ADMIN FULL ACCESS / TEACHER READ-ONLY) ── */}
-      {(userRole !== 'teacher' || viewMode === 'class') && (
+      {/* ── CLASS TIMETABLE GRID (ADMIN ONLY) ── */}
+      {userRole !== 'teacher' && (
         <>
           {/* ── Class-by-Class Switcher Bar (View All Classes One by One) ── */}
           <Card className="border-[#E2E8F0] shadow-xs p-5 bg-white space-y-3 rounded-2xl">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-[#081A33] uppercase tracking-wider flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-[#2563EB]" />
-                {userRole === 'teacher' ? 'Class Timetable Directory (Read-Only)' : 'Academic Class Directory'}
+                Academic Class Directory
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-[#64748B] font-semibold">Section:</span>
