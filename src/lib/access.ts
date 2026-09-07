@@ -67,17 +67,21 @@ export const ROLE_DEFAULT_MODULES: Record<string, string[]> = {
   superadmin: TENANT_MODULES.map((m) => m.id),
   admin: TENANT_MODULES.map((m) => m.id),
   school: TENANT_MODULES.map((m) => m.id),
-  teacher: ['dashboard', 'timetable', 'substitutions', 'leaves', 'calendar', 'lessonplans'],
+  principal: TENANT_MODULES.map((m) => m.id),
+  coordinator: ['dashboard', 'timetable', 'substitutions', 'leaves', 'teachers', 'calendar', 'support'],
+  teacher: ['dashboard', 'timetable', 'substitutions', 'leaves', 'calendar', 'lessonplans', 'support'],
+  staff: ['dashboard', 'attendance', 'rooms', 'calendar', 'support'],
 };
 
 /**
  * Resolve which modules a session may see.
  *
- * An explicit grant narrows the role's defaults - it can never widen them, so a
- * WorkspaceMember record cannot hand a teacher the admin sidebar.
+ * An explicit grant narrows the role's defaults - it can never widen them.
+ * Defaults to full tenant modules if role is not yet hydrated or specified.
  */
 export function resolveModules(role: string | null | undefined, modules?: string | string[] | null): string[] {
-  const roleDefaults = (role && ROLE_DEFAULT_MODULES[role]) || [];
+  const effectiveRole = role ? role.toLowerCase() : 'school';
+  const roleDefaults = ROLE_DEFAULT_MODULES[effectiveRole] || TENANT_MODULES.map((m) => m.id);
   const explicit = parseModules(modules);
   if (explicit.length === 0) return roleDefaults;
   if (explicit.includes('all')) return roleDefaults;
