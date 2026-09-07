@@ -10,6 +10,7 @@ import {
   validateFacultyRow,
 } from '@/lib/faculty';
 import { NextResponse } from 'next/server';
+import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 import { requireCapability } from '@/lib/authz';
 
 export async function GET(request: Request) {
@@ -19,11 +20,23 @@ export async function GET(request: Request) {
   try {
     const schoolId = await getTenantSchoolId(request);
     const whereClause = schoolId ? { schoolId } : {};
+    const operational = schoolId ? await operationalScheduleFilter(schoolId) : null;
+    const scheduleWhere: Record<string, unknown> = {};
+    if (operational) {
+      if (operational.timetableVersionId) {
+        scheduleWhere.timetableVersionId = operational.timetableVersionId;
+      } else if (operational.OR) {
+        scheduleWhere.OR = operational.OR;
+      }
+    }
 
     const teachers = await db.teacher.findMany({
       where: whereClause,
       include: {
-        schedules: true,
+        schedules: {
+          where: Object.keys(scheduleWhere).length > 0 ? scheduleWhere : undefined,
+          orderBy: [{ day: 'asc' }, { period: 'asc' }],
+        },
         school: true,
       },
       orderBy: { name: 'asc' },

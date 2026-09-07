@@ -245,26 +245,92 @@ function ActivityFeed({ substitutions }: { substitutions: any[] }) {
   );
 }
 
+interface TeacherDashboardData {
+  teacher: { id: string; name: string; email: string };
+  today: { date: string; day: string };
+  counts: {
+    classesToday: number;
+    coverPeriodsToday: number;
+    pendingLeaveRequests: number;
+    approvedLeave: number;
+    periodsThisWeek: number;
+    upcomingCover: number;
+  };
+  todaySchedule: Array<{
+    id: string;
+    period: number;
+    grade: string;
+    section: string;
+    subject: string;
+    startTime?: string | null;
+    endTime?: string | null;
+    roomId?: string | null;
+  }>;
+  weekSchedule: Array<{
+    id: string;
+    day: string;
+    period: number;
+    grade: string;
+    section: string;
+    subject: string;
+    startTime?: string | null;
+    endTime?: string | null;
+    roomId?: string | null;
+  }>;
+  nextPeriod?: any;
+  myCover: any[];
+  myLeave: any[];
+}
+
+const DAYS_LIST = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const PERIOD_SLOTS = [1, 2, 3, 4, 5, 6, 7, 8];
+
 /* ── Main Dashboard Page ── */
 export default function DashboardPage() {
   const { toast } = useToast();
+  const [userRole, setUserRole] = useState<string>('admin');
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [teacherData, setTeacherData] = useState<TeacherDashboardData | null>(null);
   const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
   const [substitutions, setSubstitutions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [briefingLoading, setBriefingLoading] = useState(true);
 
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('sc_user');
+      if (raw) {
+        const u = JSON.parse(raw);
+        setUserRole(u.role || 'admin');
+      }
+    } catch {}
+  }, []);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsRes, subsRes] = await Promise.all([
-        fetch('/api/dashboard/stats'),
-        fetch('/api/substitutions?limit=10'),
-      ]);
-      if (statsRes.ok) { const d = await statsRes.json(); setStats(d.data); }
-      if (subsRes.ok) {
-        const d = await subsRes.json();
-        setSubstitutions(d.substitutions || d.data || []);
+      let role = 'admin';
+      try {
+        const raw = sessionStorage.getItem('sc_user');
+        if (raw) role = JSON.parse(raw).role || 'admin';
+      } catch {}
+
+      if (role === 'teacher') {
+        const tRes = await fetch('/api/teacher/dashboard');
+        if (tRes.ok) {
+          const d = await tRes.json();
+          setTeacherData(d);
+        }
+      } else {
+        const [statsRes, subsRes] = await Promise.all([
+          fetch('/api/dashboard/stats'),
+          fetch('/api/substitutions?limit=10'),
+        ]);
+        if (statsRes.ok) { const d = await statsRes.json(); setStats(d.data); }
+        if (subsRes.ok) {
+          const d = await subsRes.json();
+          setSubstitutions(d.substitutions || d.data || []);
+        }
       }
     } finally {
       setLoading(false);
@@ -309,6 +375,242 @@ export default function DashboardPage() {
 
   const today = new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 
+
+  if (userRole === 'teacher') {
+    const todaySlots = teacherData?.todaySchedule || [];
+    const weekSlots = teacherData?.weekSchedule || [];
+    const counts = teacherData?.counts || {
+      classesToday: 0,
+      coverPeriodsToday: 0,
+      pendingLeaveRequests: 0,
+      approvedLeave: 0,
+      periodsThisWeek: 0,
+      upcomingCover: 0,
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* ── Teacher Workstation Header ── */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-2xl border border-[#E2E8F0] shadow-xs">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-blue-700 via-indigo-800 to-slate-900 flex items-center justify-center text-white shadow-md shadow-blue-900/30 shrink-0 border border-blue-500/20">
+              <GraduationCap className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl sm:text-2xl font-black tracking-tight text-[#081A33]">
+                  {teacherData?.teacher?.name ? `Welcome, ${teacherData.teacher.name}` : 'Faculty Timetable Station'}
+                </h1>
+                <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
+                  Faculty Account
+                </Badge>
+              </div>
+              <p className="text-xs text-[#64748B] font-medium mt-1">
+                Your personal allotted timetable, daily teaching slots and substitution notices &middot; {today}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            <Link href="/timetable">
+              <Button size="sm" className="gap-2 text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold h-9 shadow-xs px-3.5 border-none">
+                <CalendarDays className="w-3.5 h-3.5" /> My Allotted Timetable
+              </Button>
+            </Link>
+            <Button size="sm" variant="outline" onClick={fetchData} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Personal KPI Row ── */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+          <KpiCard label="Classes Today" value={counts.classesToday} icon={Clock} color="blue" />
+          <KpiCard label="Weekly Teaching Load" value={counts.periodsThisWeek} icon={CalendarDays} color="teal" sub="Total Allotted Periods" href="/timetable" />
+          <KpiCard label="Cover Duties Today" value={counts.coverPeriodsToday} icon={RefreshCw} color="amber" href="/substitutions" />
+          <KpiCard label="Approved Leaves" value={counts.approvedLeave} icon={CheckCircle2} color="emerald" href="/leaves" />
+        </div>
+
+        {/* ── Today's Schedule & Quick Actions ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Today's Teaching Periods */}
+          <div className="lg:col-span-2">
+            <Card className="border-slate-200 h-full">
+              <CardHeader className="flex flex-row items-center justify-between pb-3">
+                <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-blue-600" />
+                  Today's Teaching Schedule ({teacherData?.today?.day || 'Today'})
+                </CardTitle>
+                <Badge className="bg-blue-50 text-blue-700 border-blue-200 text-xs font-bold">
+                  {todaySlots.length} Period{todaySlots.length !== 1 ? 's' : ''}
+                </Badge>
+              </CardHeader>
+              <CardContent>
+                {todaySlots.length === 0 ? (
+                  <div className="py-8 text-center text-slate-400 text-sm">
+                    <CalendarDays className="w-8 h-8 mx-auto mb-2 opacity-30 text-blue-500" />
+                    <p className="font-semibold text-slate-600">No scheduled teaching classes today</p>
+                    <p className="text-xs text-slate-400 mt-0.5">Use your free periods for lesson planning and preparation.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {todaySlots.map((slot) => (
+                      <div key={slot.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200 hover:bg-blue-50/40 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-xl bg-blue-100 text-blue-700 font-extrabold text-xs flex items-center justify-center shrink-0">
+                            P{slot.period}
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-slate-900">
+                              {slot.grade} {slot.section} &middot; <span className="text-blue-700">{slot.subject}</span>
+                            </p>
+                            <p className="text-xs text-slate-500">
+                              {slot.startTime && slot.endTime ? `${slot.startTime} – ${slot.endTime}` : `Period ${slot.period}`}
+                              {slot.roomId && ` · Room ${slot.roomId}`}
+                            </p>
+                          </div>
+                        </div>
+                        <Badge className="bg-emerald-50 text-emerald-700 border-emerald-200 text-[10px] font-bold">
+                          Allotted
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Quick Actions & Leave Overview */}
+          <div className="space-y-6">
+            <Card className="border-slate-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-bold text-slate-800 flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-500" />
+                  Quick Actions
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Link href="/timetable" className="block">
+                  <div className="p-3 rounded-xl border border-blue-200 bg-blue-50/60 hover:bg-blue-100/70 transition-colors flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <CalendarDays className="w-4 h-4 text-blue-600" />
+                      <span className="text-xs font-bold text-slate-800">My Allotted Timetable</span>
+                    </div>
+                    <ArrowRight className="w-3.5 h-3.5 text-blue-600" />
+                  </div>
+                </Link>
+                <Link href="/leaves" className="block">
+                  <div className="p-3 rounded-xl border border-indigo-200 bg-indigo-50/60 hover:bg-indigo-100/70 transition-colors flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <ClipboardList className="w-4 h-4 text-indigo-600" />
+                      <span className="text-xs font-bold text-slate-800">Apply for Leave</span>
+                    </div>
+                    <ArrowRight className="w-3.5 h-3.5 text-indigo-600" />
+                  </div>
+                </Link>
+                <Link href="/substitutions" className="block">
+                  <div className="p-3 rounded-xl border border-amber-200 bg-amber-50/60 hover:bg-amber-100/70 transition-colors flex items-center justify-between cursor-pointer">
+                    <div className="flex items-center gap-2.5">
+                      <RefreshCw className="w-4 h-4 text-amber-600" />
+                      <span className="text-xs font-bold text-slate-800">My Cover Duties</span>
+                    </div>
+                    <ArrowRight className="w-3.5 h-3.5 text-amber-600" />
+                  </div>
+                </Link>
+              </CardContent>
+            </Card>
+
+            {/* Stand-in & Cover Duties */}
+            <Card className="border-slate-200">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                  <RefreshCw className="w-3.5 h-3.5 text-amber-600" />
+                  Assigned Substitutions
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {(!teacherData?.myCover || teacherData.myCover.length === 0) ? (
+                  <p className="text-xs text-slate-400 py-2 text-center">No cover duties assigned to you.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {teacherData.myCover.slice(0, 3).map((cov: any) => (
+                      <div key={cov.id} className="p-2 rounded-lg bg-amber-50/70 border border-amber-200 text-xs">
+                        <div className="flex justify-between items-center font-bold text-slate-800">
+                          <span>{cov.grade} {cov.section} · P{cov.period}</span>
+                          <span className="text-[10px] text-amber-700">{cov.date}</span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          Standing in for {cov.absentTeacher?.name || 'Faculty Member'} ({cov.subject})
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* ── Weekly Allotted Timetable Grid for Teacher ── */}
+        <Card className="border-slate-200 overflow-hidden bg-white rounded-2xl shadow-xs">
+          <div className="p-4 sm:p-5 border-b border-slate-200 flex justify-between items-center bg-slate-50/50">
+            <div>
+              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                <CalendarDays className="w-4.5 h-4.5 text-blue-600" />
+                <span>My Weekly Allotted Teaching Matrix</span>
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Full weekly timetable of all your assigned periods across all classes.
+              </p>
+            </div>
+            <Link href="/timetable">
+              <Button size="sm" variant="outline" className="text-xs border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 font-bold h-8">
+                Open in Timetable Studio
+              </Button>
+            </Link>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-[#1c2d54] text-white border-b border-slate-300 font-bold text-[11px]">
+                  <th className="p-2.5 w-24 border-r border-slate-700">Day</th>
+                  {PERIOD_SLOTS.map((p) => (
+                    <th key={p} className="p-2.5 text-center border-r border-slate-700">P{p}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {DAYS_LIST.map((day) => (
+                  <tr key={day} className="hover:bg-slate-50/80">
+                    <td className="p-2.5 font-bold text-slate-800 bg-slate-50 border-r border-slate-200">{day}</td>
+                    {PERIOD_SLOTS.map((p) => {
+                      const slot = weekSlots.find((s) => s.day === day && s.period === p);
+                      return (
+                        <td key={p} className="p-2 text-center border-r border-slate-200">
+                          {slot ? (
+                            <div className="bg-blue-50 p-1.5 rounded-lg border border-blue-200 text-[10px] space-y-0.5">
+                              <span className="font-bold text-blue-900 block">{slot.grade} {slot.section}</span>
+                              <span className="text-slate-600 block">{slot.subject}</span>
+                              {slot.roomId && <span className="text-slate-400 block text-[9px]">{slot.roomId}</span>}
+                            </div>
+                          ) : (
+                            <span className="text-slate-300 text-[10px]">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

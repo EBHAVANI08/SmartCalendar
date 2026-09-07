@@ -107,84 +107,14 @@ const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 const PERIOD_NUMS = [1, 2, 3, 4, 5, 6, 7, 8];
 
 const getTeacherScheduleSlot = (teacher: Teacher, day: string, period: number) => {
-  if (teacher.schedules && teacher.schedules.length > 0) {
+  if (teacher?.schedules && Array.isArray(teacher.schedules) && teacher.schedules.length > 0) {
     const found = teacher.schedules.find((s) => s.day === day && s.period === period);
     if (found) return found;
   }
-
-  const tName = teacher.name.toLowerCase();
-
-  if (tName.includes('priya') || tName.includes('sharma')) {
-    if (day === 'Monday' && (period === 1 || period === 4)) return { grade: 'Grade 10', section: 'A', subject: 'Mathematics', roomId: 'R-10A' };
-    if (day === 'Tuesday' && (period === 2 || period === 5)) return { grade: 'Grade 10', section: 'A', subject: 'Mathematics', roomId: 'R-10A' };
-    if (day === 'Wednesday' && (period === 1 || period === 3)) return { grade: 'Grade 10', section: 'A', subject: 'Mathematics', roomId: 'R-10A' };
-    if (day === 'Thursday' && (period === 1 || period === 6)) return { grade: 'Grade 10', section: 'A', subject: 'Mathematics', roomId: 'R-10A' };
-    if (day === 'Friday' && (period === 2 || period === 4)) return { grade: 'Grade 10', section: 'A', subject: 'Mathematics', roomId: 'R-10A' };
-    if (day === 'Saturday' && (period === 1)) return { grade: 'Grade 10', section: 'A', subject: 'Mathematics', roomId: 'R-10A' };
-  } else if (tName.includes('hariprasad') || tName.includes('shetty')) {
-    if (day === 'Monday' && (period === 2 || period === 3)) return { grade: 'Grade 10', section: 'A', subject: 'Science', roomId: 'Lab-1' };
-    if (day === 'Tuesday' && (period === 3)) return { grade: 'Grade 10', section: 'A', subject: 'Science', roomId: 'Lab-1' };
-    if (day === 'Wednesday' && (period === 2)) return { grade: 'Grade 10', section: 'A', subject: 'Science', roomId: 'Lab-1' };
-    if (day === 'Thursday' && (period === 2 || period === 5)) return { grade: 'Grade 10', section: 'A', subject: 'Science', roomId: 'Lab-1' };
-    if (day === 'Friday' && (period === 3)) return { grade: 'Grade 10', section: 'A', subject: 'Science', roomId: 'Lab-1' };
-  } else if (tName.includes('myra') || tName.includes('patel')) {
-    if (day === 'Tuesday' && period === 1) return { grade: 'Grade 11', section: 'E', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Tuesday' && period === 3) return { grade: 'Grade 10', section: 'A', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Tuesday' && period === 5) return { grade: 'Grade 11', section: 'B', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Tuesday' && period === 7) return { grade: 'Grade 10', section: 'C', subject: 'Chemistry', roomId: 'Lab-2' };
-
-    if (day === 'Wednesday' && period === 1) return { grade: 'Grade 11', section: 'E', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Wednesday' && period === 2) return { grade: 'Grade 10', section: 'B', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Wednesday' && period === 4) return { grade: 'Grade 11', section: 'A', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Wednesday' && period === 5) return { grade: 'Grade 10', section: 'A', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Wednesday' && period === 6) return { grade: 'Grade 11', section: 'C', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Wednesday' && period === 7) return { grade: 'Grade 10', section: 'D', subject: 'Chemistry', roomId: 'Lab-2' };
-    if (day === 'Wednesday' && period === 8) return { grade: 'Grade 11', section: 'B', subject: 'Chemistry', roomId: 'Lab-2' };
-  } else if (tName.includes('gauri') || tName.includes('rao')) {
-    if (day === 'Thursday' && period === 3) return { grade: 'Grade 10', section: 'A', subject: 'Biology', roomId: 'Bio-Lab' };
-    if (day === 'Thursday' && period === 5) return { grade: 'Grade 9', section: 'B', subject: 'Biology', roomId: 'Bio-Lab' };
-    if (day === 'Thursday' && period === 7) return { grade: 'Grade 10', section: 'B', subject: 'Biology', roomId: 'Bio-Lab' };
-  } else if (tName.includes('ananya') || tName.includes('iyer')) {
-    if (day === 'Monday' && (period === 5 || period === 6)) return { grade: 'Grade 10', section: 'A', subject: 'English', roomId: 'R-10A' };
-    if (day === 'Tuesday' && (period === 4 || period === 6)) return { grade: 'Grade 10', section: 'A', subject: 'English', roomId: 'R-10A' };
-    if (day === 'Wednesday' && (period === 4)) return { grade: 'Grade 10', section: 'A', subject: 'English', roomId: 'R-10A' };
-    if (day === 'Thursday' && (period === 3)) return { grade: 'Grade 10', section: 'A', subject: 'English', roomId: 'R-10A' };
-    if (day === 'Friday' && (period === 1)) return { grade: 'Grade 10', section: 'A', subject: 'English', roomId: 'R-10A' };
-  } else if (tName.includes('rajesh') || tName.includes('hemalata')) {
-    if (day === 'Monday' && period === 7) return { grade: 'Grade 10', section: 'A', subject: 'Social Science', roomId: 'R-10A' };
-    if (day === 'Tuesday' && period === 7) return { grade: 'Grade 10', section: 'A', subject: 'Social Science', roomId: 'R-10A' };
-    if (day === 'Wednesday' && period === 5) return { grade: 'Grade 10', section: 'A', subject: 'Social Science', roomId: 'R-10A' };
-    if (day === 'Thursday' && period === 4) return { grade: 'Grade 10', section: 'A', subject: 'Social Science', roomId: 'R-10A' };
-    if (day === 'Friday' && period === 5) return { grade: 'Grade 10', section: 'A', subject: 'Social Science', roomId: 'R-10A' };
-  } else if (tName.includes('siddharth') || tName.includes('kapse')) {
-    if (day === 'Monday' && period === 8) return { grade: 'Grade 10', section: 'A', subject: 'Computer Science', roomId: 'CS-Lab' };
-    if (day === 'Wednesday' && period === 6) return { grade: 'Grade 10', section: 'A', subject: 'Computer Science', roomId: 'CS-Lab' };
-    if (day === 'Friday' && period === 6) return { grade: 'Grade 10', section: 'A', subject: 'Computer Science', roomId: 'CS-Lab' };
-  } else {
-    if ((period === 1 || period === 5) && day !== 'Saturday') {
-      return { grade: 'Grade 10', section: 'A', subject: teacher.subject, roomId: 'R-10A' };
-    }
-  }
-
   return null;
 };
 
-const DEFAULT_TIMETABLE_FACULTY: Teacher[] = [
-  { id: 'f-1', name: 'Priya Sharma', email: 'priya.sharma@dps.edu.in', phone: '+91 98765 43210', subject: 'Mathematics', grades: '["Grade 9", "Grade 10", "Grade 11"]', role: 'teacher', _count: { schedules: 24, absentSubstitutions: 0 } },
-  { id: 'f-2', name: 'Dr. Hariprasad Shetty', email: 'h.shetty@dps.edu.in', phone: '+91 98765 43211', subject: 'Science', grades: '["Grade 9", "Grade 10", "Grade 12"]', role: 'teacher', _count: { schedules: 22, absentSubstitutions: 1 } },
-  { id: 'f-3', name: 'Ananya Iyer', email: 'ananya.iyer@dps.edu.in', phone: '+91 98765 43212', subject: 'English Literature', grades: '["Grade 8", "Grade 9", "Grade 10"]', role: 'teacher', _count: { schedules: 20, absentSubstitutions: 0 } },
-  { id: 'f-4', name: 'Kavita Agarwal', email: 'kavita.a@dps.edu.in', phone: '+91 98765 43213', subject: 'Hindi Language', grades: '["Grade 6", "Grade 7", "Grade 8", "Grade 10"]', role: 'teacher', _count: { schedules: 18, absentSubstitutions: 0 } },
-  { id: 'f-5', name: 'Rajesh Kumar', email: 'rajesh.kumar@dps.edu.in', phone: '+91 98765 43214', subject: 'Social Science', grades: '["Grade 9", "Grade 10"]', role: 'teacher', _count: { schedules: 21, absentSubstitutions: 2 } },
-  { id: 'f-6', name: 'Hemalata Sharma', email: 'hemalata.s@dps.edu.in', phone: '+91 98765 43215', subject: 'History & Geography', grades: '["Grade 8", "Grade 9", "Grade 10"]', role: 'teacher', _count: { schedules: 19, absentSubstitutions: 0 } },
-  { id: 'f-7', name: 'Siddharth Kapse', email: 's.kapse@dps.edu.in', phone: '+91 98765 43216', subject: 'Computer Science', grades: '["Grade 9", "Grade 10", "Grade 11", "Grade 12"]', role: 'teacher', _count: { schedules: 28, absentSubstitutions: 0 } },
-  { id: 'f-8', name: 'Dr. Sen', email: 'dr.sen@dps.edu.in', phone: '+91 98765 43217', subject: 'Physics', grades: '["Grade 11", "Grade 12"]', role: 'teacher', _count: { schedules: 20, absentSubstitutions: 1 } },
-  { id: 'f-9', name: 'Satish Gujral', email: 'satish.g@dps.edu.in', phone: '+91 98765 43218', subject: 'Art & Craft', grades: '["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5"]', role: 'teacher', _count: { schedules: 16, absentSubstitutions: 0 } },
-  { id: 'f-10', name: 'Coach Rakesh', email: 'coach.rakesh@dps.edu.in', phone: '+91 98765 43219', subject: 'Physical Education', grades: '["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5", "Grade 6", "Grade 7", "Grade 8", "Grade 9", "Grade 10"]', role: 'teacher', _count: { schedules: 28, absentSubstitutions: 0 } },
-  { id: 'f-11', name: 'Ravi Varma', email: 'ravi.v@dps.edu.in', phone: '+91 98765 43220', subject: 'Music & Performing Arts', grades: '["Grade 1", "Grade 2", "Grade 3", "Grade 4", "Grade 5"]', role: 'teacher', _count: { schedules: 15, absentSubstitutions: 0 } },
-  { id: 'f-12', name: 'Dr. C.V. Raman Jr.', email: 'cv.raman@dps.edu.in', phone: '+91 98765 43221', subject: 'Advanced Physics Lab', grades: '["Grade 11", "Grade 12"]', role: 'teacher', _count: { schedules: 18, absentSubstitutions: 0 } },
-  { id: 'f-13', name: 'Dr. Prafulla Ray Jr.', email: 'prafulla.ray@dps.edu.in', phone: '+91 98765 43222', subject: 'Chemistry Lab', grades: '["Grade 11", "Grade 12"]', role: 'teacher', _count: { schedules: 18, absentSubstitutions: 0 } },
-  { id: 'f-14', name: 'Dr. Birbal Sahni Jr.', email: 'birbal.sahni@dps.edu.in', phone: '+91 98765 43223', subject: 'Biology & Life Sciences', grades: '["Grade 11", "Grade 12"]', role: 'teacher', _count: { schedules: 18, absentSubstitutions: 0 } },
-];
+const DEFAULT_TIMETABLE_FACULTY: Teacher[] = [];
 
 const isDemoSchool = () => {
   try {
