@@ -58,6 +58,7 @@ const eslintConfig = [...nextCoreWebVitals, ...nextTypescript, {
     ".zscripts/**",
     "upload/**",
     "tests/**",
+    "scripts/**",
     "*.py",
     "*.sh",
   ],

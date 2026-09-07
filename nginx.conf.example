@@ -1,0 +1,31 @@
+# Sample Nginx configuration for Smart Calendar on Hostinger VPS
+# Place this file in: /etc/nginx/sites-available/smart-calendar
+# Then symlink: sudo ln -s /etc/nginx/sites-available/smart-calendar /etc/nginx/sites-enabled/
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name yourdomain.com www.yourdomain.com; # Replace with your domain or VPS IP
+
+    client_max_body_size 50M;
+
+    location / {
+        proxy_pass http://127.0.0.1:3005;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Static assets caching
+    location /_next/static {
+        proxy_pass http://127.0.0.1:3005;
+        proxy_cache_bypass $http_upgrade;
+        expires 365d;
+        access_log off;
+    }
+}
