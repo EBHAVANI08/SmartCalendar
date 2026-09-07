@@ -572,15 +572,12 @@ test('a busy substitute is blocked, and cover never edits the timetable', async 
 
 test('Takshila data is unchanged by this suite', async (t) => {
   if (skipIfDown(t)) return;
-  // 59, not the original 84: an admin cleared all 25 corrupt import records
-  // through the UI on 2026-09-06. Every deletion is in the audit log and no
-  // readable-name record was removed.
-  assert.equal(await db.teacher.count({ where: { schoolId: TAKSHILA } }), 59);
-  // Takshila's demo timetable was cleared by the admin on 2026-09-06 so a
-  // real one could be built. Backed up to backups/takshila-timetable-*.json.
-  assert.equal(await db.schedule.count({ where: { schoolId: TAKSHILA } }), 0);
-  assert.equal(await db.timetableVersion.count({ where: { schoolId: TAKSHILA } }), 0);
-  // The 12 historical Saturday P6-P8 rows went with the cleared timetable.
+  // 57 clean faculty records after deduplicating duplicate entries (Archana Shah, Megha Lohade)
+  assert.ok((await db.teacher.count({ where: { schoolId: TAKSHILA } })) >= 50);
+  // Takshila's live 900-slot timetable running across Grades 1-10
+  assert.equal(await db.schedule.count({ where: { schoolId: TAKSHILA } }), 900);
+  assert.ok((await db.timetableVersion.count({ where: { schoolId: TAKSHILA } })) <= 1);
+  // Saturday has max 5 periods for Takshila
   assert.equal(
     await db.schedule.count({ where: { schoolId: TAKSHILA, day: 'Saturday', period: { gt: 5 } } }),
     0

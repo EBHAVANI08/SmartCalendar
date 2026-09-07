@@ -36,7 +36,7 @@ interface DailyBriefing {
 }
 
 /* ── Animated Count Up ── */
-function CountUp({ to, duration = 1500 }: { to: number; duration?: number }) {
+function CountUp({ to, duration = 350 }: { to: number; duration?: number }) {
   const [count, setCount] = useState(0);
   useEffect(() => {
     if (to === 0) return;

@@ -487,7 +487,7 @@ export function SlotEditor({
                         {
                           method: 'PATCH',
                           headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({ day: moveDay, period: Number(movePeriod) }),
+                          body: JSON.stringify({ day: moveDay, period: Number(movePeriod), swap: true }),
                         },
                         'Period moved'
                       )

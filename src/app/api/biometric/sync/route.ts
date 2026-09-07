@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 
@@ -12,9 +13,12 @@ export async function POST(request: Request) {
   try {
     const { date, forceResync } = await request.json();
     const syncDate = date || new Date().toISOString().split('T')[0];
+    const schoolId = await getTenantSchoolId(request);
 
-    // Get all teachers
-    const teachers = await db.teacher.findMany();
+    // Get all teachers for this tenant school
+    const teachers = await db.teacher.findMany({
+      where: schoolId ? { schoolId } : undefined
+    });
 
     // Pre-generate leave applications for some teachers (simulating the school portal)
     // This runs before biometric sync so leave data is available for reason detection
@@ -184,9 +188,13 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get('date') || new Date().toISOString().split('T')[0];
+    const schoolId = await getTenantSchoolId(request);
 
     const records = await db.biometricAttendance.findMany({
-      where: { date },
+      where: {
+        date,
+        ...(schoolId ? { teacher: { schoolId } } : {}),
+      },
       include: { teacher: true },
       orderBy: { status: 'asc' },
     });

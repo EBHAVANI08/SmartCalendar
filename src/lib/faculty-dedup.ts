@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { looksLikeBinary, looksLikeEmail, mergeLists, normalizeEmail, normalizeEmployeeId, normalizeName, readList } from '@/lib/faculty';
+import { EMAIL_PATTERN, looksLikeBinary, looksLikeEmail, mergeLists, normalizeEmail, normalizeEmployeeId, normalizeName, readList } from '@/lib/faculty';
 
 /**
  * Faculty deduplication.
@@ -104,6 +104,15 @@ export function isCorrupt(t: FacultyRow): string[] {
   else if (/^r{3,}$/i.test(name.trim())) problems.push(`placeholder name "${name.trim()}"`);
   if (looksLikeBinary(t.subject)) problems.push('subject is decoded binary');
   else if (looksLikeEmail(t.subject)) problems.push('subject holds an email address');
+  
+  const email = String(t.email ?? '').trim();
+  if (email) {
+    if (looksLikeBinary(email) || /[^\x20-\x7E]/.test(email) || email.includes('❖')) {
+      problems.push('email contains corrupted binary or unreadable characters');
+    } else if (email.split('@').length > 2 || !EMAIL_PATTERN.test(email)) {
+      problems.push(`email "${email}" is malformed (invalid format)`);
+    }
+  }
   return problems;
 }
 
@@ -278,12 +287,13 @@ export async function buildDedupPlan(schoolId: string): Promise<DedupPlan> {
       // different teachers into one record.
       if (bucket.reason === 'phone') {
         const names = new Set(rows.map((r) => normalizeName(r.name)).filter(Boolean));
-        if (names.size === 1) {
-          confidence = 'high';
-          reason += ', and identical names';
-        } else {
-          reason += `, but ${names.size} different names (${[...names].join(' / ')}) - likely a shared or placeholder number`;
+        if (names.size > 1) {
+          // Different names sharing a phone number are placeholder/shared school numbers, not the same person.
+          // Skip grouping on phone so legitimate matches on identical names can still occur.
+          continue;
         }
+        confidence = 'high';
+        reason += ', and identical names';
       }
       if (bucket.reason === 'name+context') {
         const ctx = (t: FacultyRow) => new Set([...readList(t.subjects ?? t.subject), ...readList(t.grades)].map((x) => x.toLowerCase()));

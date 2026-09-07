@@ -89,6 +89,16 @@ export async function PATCH(request: Request, ctx: Ctx) {
     });
 
     if (targetSlot) {
+      if (!body.swap && !body.allowSwap) {
+        return NextResponse.json(
+          {
+            error: `${slot.grade} ${slot.section} already has a lesson (${targetSlot.subject}) scheduled at ${nextDay} Period ${nextPeriod}.`,
+            code: 'CLASS_DOUBLE_BOOKED',
+          },
+          { status: 409 }
+        );
+      }
+
       // SWAP scenario: Destination slot is already occupied by another subject in the same class
       // Validate teacher availability for moving slot into (nextDay, nextPeriod)
       if (slot.teacherId) {
