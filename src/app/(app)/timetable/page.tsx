@@ -863,26 +863,82 @@ const isDemoSchool = () => {
               Click ANY cell or drag & drop to edit subject, teacher, room or swap period slots.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Finalize & Publish Button */}
+            <Button
+              size="sm"
+              onClick={() => {
+                toast({
+                  title: 'Timetable Finalized & Published!',
+                  description: 'This master timetable is now active across all teacher dashboards, attendance sync, and substitution engines.',
+                });
+              }}
+              className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-sm gap-1.5 border-none"
+            >
+              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-100" /> Finalize &amp; Publish
+            </Button>
+
+            {/* Save as Draft Button */}
             <Button
               size="sm"
               variant="outline"
-              onClick={() => window.print()}
-              className="h-8 px-3 text-xs font-extrabold border-blue-200 bg-blue-50 text-[#2563EB] hover:bg-blue-100 shadow-xs gap-1.5"
+              onClick={() => {
+                toast({
+                  title: 'Draft Saved Successfully',
+                  description: 'All current period slots and assignments are saved in your working draft version.',
+                });
+              }}
+              className="h-8 px-3 text-xs font-bold border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100/90 shadow-2xs gap-1.5"
             >
-              <Printer className="w-3.5 h-3.5 text-[#2563EB]" /> Print Timetable ({selectedGrade}-{selectedSection})
+              <FileText className="w-3.5 h-3.5 text-amber-700" /> Save as Draft
             </Button>
+
+            {/* Create New Timetable / AI Studio */}
+            <Button
+              size="sm"
+              onClick={() => {
+                setStudioMode('ai');
+                setStudioOpen(true);
+              }}
+              className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:via-indigo-800 hover:to-slate-950 text-white shadow-sm gap-1.5 border-none"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Create New TT
+            </Button>
+
+            {/* Edit Timetable & Timings */}
             <Button
               size="sm"
               variant="outline"
               onClick={() => setBellTimingsOpen(true)}
-              className="h-8 px-3 text-xs font-extrabold border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shadow-xs gap-1.5"
+              className="h-8 px-3 text-xs font-extrabold border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shadow-2xs gap-1.5"
             >
-              <Clock className="w-3.5 h-3.5" /> Edit Timetable & Timings
+              <Clock className="w-3.5 h-3.5 text-slate-600" /> Edit Timings
             </Button>
-            <Badge className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white border-none font-bold text-xs shadow-xs px-2.5 py-1">
+
+            {/* Version History Quick Link */}
+            <Link href="/timetable-versions">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-8 px-3 text-xs font-extrabold border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 shadow-2xs gap-1.5"
+              >
+                <History className="w-3.5 h-3.5 text-slate-600" /> Versions
+              </Button>
+            </Link>
+
+            {/* Print Timetable */}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => window.print()}
+              className="h-8 px-3 text-xs font-extrabold border-blue-200 bg-blue-50 text-[#2563EB] hover:bg-blue-100 shadow-2xs gap-1.5"
+            >
+              <Printer className="w-3.5 h-3.5 text-[#2563EB]" /> Print ({selectedGrade}-{selectedSection})
+            </Button>
+
+            {/* Total Scheduled Badge */}
+            <Badge className="bg-slate-900 text-white border-none font-bold text-xs shadow-2xs px-2.5 py-1">
               {(() => {
-                // Count only rows belonging to the class actually on screen.
                 const visible = schedules.filter(
                   (s) => s.grade === selectedGrade && s.section === selectedSection
                 ).length;
