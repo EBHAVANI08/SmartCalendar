@@ -265,11 +265,26 @@ test('a teacher reads only cover that involves them', async (t) => {
 
 test('a teacher reads only their own timetable periods', async (t) => {
   if (!serverUp || !realTeacherToken) return t.skip('no teacher session');
-  const mine = await (await call('/api/schedules?grade=Grade%203&section=A', { token: realTeacherToken })).json();
-  const all = await (await call('/api/schedules?grade=Grade%203&section=A', { token: adminToken })).json();
-  assert.equal((Array.isArray(mine) ? mine : []).filter((r) => r.teacherId !== realTeacher.id).length, 0,
-    'a teacher must not read the master timetable');
-  assert.ok((all ?? []).length > (mine ?? []).length, 'an admin still sees the full class');
+  const published = await db.timetableVersion.findFirst({
+    where: { schoolId: TEST_SCHOOL, status: 'published' },
+    orderBy: { version: 'desc' },
+  });
+  const timetableVersionId = published?.id ?? null;
+  const s1 = await db.schedule.create({
+    data: { schoolId: TEST_SCHOOL, timetableVersionId, grade: 'Grade 3', section: 'A', day: 'Monday', period: 1, subject: 'Math', teacherId: realTeacher.id, startTime: '08:00', endTime: '08:40' }
+  });
+  const s2 = await db.schedule.create({
+    data: { schoolId: TEST_SCHOOL, timetableVersionId, grade: 'Grade 3', section: 'A', day: 'Monday', period: 2, subject: 'Science', teacherId: null, startTime: '08:40', endTime: '09:20' }
+  });
+  try {
+    const mine = await (await call('/api/schedules?grade=Grade%203&section=A', { token: realTeacherToken })).json();
+    const all = await (await call('/api/schedules?grade=Grade%203&section=A', { token: adminToken })).json();
+    assert.equal((Array.isArray(mine) ? mine : []).filter((r) => r.teacherId !== realTeacher.id).length, 0,
+      'a teacher must not read the master timetable');
+    assert.ok((all ?? []).length > (mine ?? []).length, 'an admin still sees the full class');
+  } finally {
+    await db.schedule.deleteMany({ where: { id: { in: [s1.id, s2.id] } } });
+  }
 });
 
 test('a teacher cannot read admin dashboard stats or school analytics', async (t) => {
