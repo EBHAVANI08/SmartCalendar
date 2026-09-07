@@ -155,14 +155,14 @@ export function LandingClient() {
                 <div className="w-3 h-3 rounded-full bg-red-500/80" />
                 <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
                 <div className="w-3 h-3 rounded-full bg-blue-500/80" />
-                <span className="text-xs font-medium text-slate-400 ml-2">Smart Calendar Demo School &middot; Live Timetable Studio</span>
+                <span className="text-xs font-medium text-slate-300 ml-2">Live Master Timetable Studio &middot; Schedule Grid</span>
               </div>
               <div className="flex items-center gap-2">
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  <CheckCircle2 className="w-3 h-3 mr-1" /> 0 Hard Clashes
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <CheckCircle2 className="w-3 h-3 mr-1" /> 0 Clashes Verified
                 </span>
-                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                  Demo Data
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                  Active Master Schedule
                 </span>
               </div>
             </div>
@@ -170,29 +170,29 @@ export function LandingClient() {
             {/* Grid Snippet */}
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
               <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 1 (09:30 - 10:15)</p>
+                <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 1 (09:00 - 09:45)</p>
                 <p className="font-bold text-slate-100">Mathematics</p>
-                <p className="text-blue-400 text-[11px]">Priya Sharma &middot; 10-A</p>
+                <p className="text-blue-400 text-[11px]">Faculty Assigned &middot; Grade 10-A</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 2 (10:15 - 11:00)</p>
+                <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 2 (09:45 - 10:30)</p>
                 <p className="font-bold text-slate-100">Physics Lab</p>
-                <p className="text-indigo-400 text-[11px]">Dr. Homi Bhabha &middot; 11-B</p>
+                <p className="text-indigo-400 text-[11px]">Science Dept &middot; Lab 2</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 3 (11:15 - 12:00)</p>
+                <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 3 (10:45 - 11:30)</p>
                 <p className="font-bold text-slate-100">English Literature</p>
-                <p className="text-sky-400 text-[11px]">Arundhati Roy &middot; 9-C</p>
+                <p className="text-sky-400 text-[11px]">Faculty Assigned &middot; Grade 9-B</p>
               </div>
               <div className="p-3 rounded-xl bg-blue-950/40 border border-blue-500/30">
-                <p className="text-[10px] text-blue-400 font-semibold mb-1">AI AUTO-SUBSTITUTE</p>
+                <p className="text-[10px] text-blue-400 font-semibold mb-1">AUTO-SUBSTITUTION</p>
                 <p className="font-bold text-slate-100">Chemistry</p>
-                <p className="text-blue-300 text-[11px]">Substitute assigned &middot; notified in-app</p>
+                <p className="text-blue-300 text-[11px]">Cover Assigned &middot; In-App Alert</p>
               </div>
               <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800">
-                <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 5 (01:30 - 02:15)</p>
+                <p className="text-[10px] text-slate-500 font-semibold mb-1">PERIOD 5 (01:15 - 02:00)</p>
                 <p className="font-bold text-slate-100">Computer Science</p>
-                <p className="text-purple-400 text-[11px]">Nandan Nilekani &middot; 12-A</p>
+                <p className="text-purple-400 text-[11px]">IT Dept &middot; Lab 1</p>
               </div>
             </div>
           </div>
