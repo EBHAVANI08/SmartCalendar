@@ -626,6 +626,8 @@ export default function TimetablePage() {
         body: JSON.stringify({
           day: target.day,
           period: target.period,
+          swap: true,
+          allowSwap: true,
         }),
       });
       const data = await res.json();
