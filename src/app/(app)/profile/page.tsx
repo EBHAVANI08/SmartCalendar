@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { User, Shield, Building2, KeyRound, Save, RefreshCw } from 'lucide-react';
+import { User, Shield, Building2, KeyRound, Save, RefreshCw, Eye, EyeOff } from 'lucide-react';
 import { getClientAuthHeaders, patchStoredUser, readStoredUser } from '@/lib/client-session';
 
 export default function ProfilePage() {
@@ -19,6 +19,9 @@ export default function ProfilePage() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -187,18 +190,71 @@ export default function ProfilePage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold">Current</Label>
-              <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} className="h-9 text-xs" />
+              <div className="relative">
+                <Input
+                  type={showCurrent ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Current password"
+                  className="h-9 text-xs pr-8"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrent(!showCurrent)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-0.5"
+                  tabIndex={-1}
+                  aria-label={showCurrent ? 'Hide password' : 'Show password'}
+                >
+                  {showCurrent ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold">New</Label>
-              <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} className="h-9 text-xs" />
+              <div className="relative">
+                <Input
+                  type={showNew ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="New password"
+                  className="h-9 text-xs pr-8"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNew(!showNew)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-0.5"
+                  tabIndex={-1}
+                  aria-label={showNew ? 'Hide password' : 'Show password'}
+                >
+                  {showNew ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
+
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold">Confirm</Label>
-              <Input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} className="h-9 text-xs" />
+              <div className="relative">
+                <Input
+                  type={showConfirm ? 'text' : 'password'}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  placeholder="Confirm password"
+                  className="h-9 text-xs pr-8"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirm(!showConfirm)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-0.5"
+                  tabIndex={-1}
+                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                >
+                  {showConfirm ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             </div>
           </div>
-          <Button disabled={saving || !currentPassword || !newPassword} variant="outline" onClick={changePassword} className="h-9 text-xs font-bold">
+          <Button type="button" disabled={saving || !currentPassword || !newPassword} variant="outline" onClick={changePassword} className="h-9 text-xs font-bold">
             <Shield className="w-4 h-4 mr-1" /> Update password
           </Button>
         </CardContent>
