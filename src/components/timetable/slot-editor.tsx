@@ -170,6 +170,15 @@ export function SlotEditor({
     }
   };
 
+  const handleBackToMenu = (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setError(null);
+    setMode('menu');
+  };
+
   const currentTeacher = candidates.find((c) => c.isCurrent);
   const chosenTeacher = candidates.find((c) => c.id === newTeacher);
   // Changing the subject can strip the current teacher's qualification.
@@ -251,11 +260,22 @@ export function SlotEditor({
             )}
 
             {error && (
-              <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800">
-                <p className="font-semibold flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4" /> Cannot save
-                </p>
-                <p className="mt-1 text-xs">{error}</p>
+              <div className="rounded-lg border border-rose-300 bg-rose-50 p-3 text-sm text-rose-800 flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4" /> Cannot save
+                  </p>
+                  <p className="mt-1 text-xs">{error}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setError(null)}
+                  className="h-6 px-1.5 text-xs text-rose-700 hover:bg-rose-100 shrink-0"
+                >
+                  Dismiss
+                </Button>
               </div>
             )}
 
@@ -281,7 +301,7 @@ export function SlotEditor({
             {editable && mode === 'subject' && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => { setMode('menu'); setError(null); }} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={handleBackToMenu} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
                     <ChevronLeft className="w-4 h-4" /> Back to Actions
                   </Button>
                   <span className="text-xs font-semibold text-slate-500">Change Subject</span>
@@ -327,7 +347,7 @@ export function SlotEditor({
                 )}
 
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="ghost" onClick={() => { setMode('menu'); setError(null); }}>Back</Button>
+                  <Button type="button" variant="ghost" onClick={handleBackToMenu}>Back</Button>
                   <Button
                     type="button"
                     disabled={
@@ -349,9 +369,9 @@ export function SlotEditor({
                         }
                       }
                       await send(
-                        `/api/schedules/${slotId}/slot`,
+                        `/api/schedules/${slotId}/change-subject`,
                         {
-                          method: 'PATCH',
+                          method: 'POST',
                           headers: { 'Content-Type': 'application/json' },
                           body: JSON.stringify({ subject: newSubject }),
                         },
@@ -369,7 +389,7 @@ export function SlotEditor({
             {editable && mode === 'teacher' && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => { setMode('menu'); setError(null); }} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={handleBackToMenu} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
                     <ChevronLeft className="w-4 h-4" /> Back to Actions
                   </Button>
                   <span className="text-xs font-semibold text-slate-500">Change Teacher</span>
@@ -431,7 +451,7 @@ export function SlotEditor({
                   ))}
                 </div>
                 <div className="flex justify-end pt-2">
-                  <Button type="button" variant="ghost" onClick={() => { setMode('menu'); setError(null); }}>Back</Button>
+                  <Button type="button" variant="ghost" onClick={handleBackToMenu}>Back</Button>
                 </div>
               </div>
             )}
@@ -440,7 +460,7 @@ export function SlotEditor({
             {editable && mode === 'move' && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => { setMode('menu'); setError(null); }} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={handleBackToMenu} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
                     <ChevronLeft className="w-4 h-4" /> Back to Actions
                   </Button>
                   <span className="text-xs font-semibold text-slate-500">Move or Swap Period</span>
@@ -476,7 +496,7 @@ export function SlotEditor({
                   If destination is empty, the period is moved. If occupied by another subject in this class, both periods swap positions seamlessly.
                 </p>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="ghost" onClick={() => { setMode('menu'); setError(null); }}>Back</Button>
+                  <Button type="button" variant="ghost" onClick={handleBackToMenu}>Back</Button>
                   <Button
                     type="button"
                     disabled={saving || !moveDay || !movePeriod ||
@@ -503,7 +523,7 @@ export function SlotEditor({
             {editable && mode === 'delete' && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between pb-1 border-b border-slate-100">
-                  <Button type="button" variant="ghost" size="sm" onClick={() => { setMode('menu'); setError(null); }} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
+                  <Button type="button" variant="ghost" size="sm" onClick={handleBackToMenu} className="gap-1 text-xs text-slate-600 hover:text-slate-900 -ml-2 h-7 px-2">
                     <ChevronLeft className="w-4 h-4" /> Back to Actions
                   </Button>
                   <span className="text-xs font-semibold text-slate-500">Delete Slot</span>
@@ -517,7 +537,7 @@ export function SlotEditor({
                   </p>
                 </div>
                 <div className="flex justify-end gap-2 pt-2">
-                  <Button type="button" variant="ghost" onClick={() => { setMode('menu'); setError(null); }}>Back</Button>
+                  <Button type="button" variant="ghost" onClick={handleBackToMenu}>Back</Button>
                   <Button
                     type="button"
                     className="bg-rose-600 hover:bg-rose-700 text-white"
