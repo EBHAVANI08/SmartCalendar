@@ -328,6 +328,53 @@ export default function LoginPage() {
                     </>
                   )}
                 </Button>
+
+                {/* ── 1-Click Quick Demo Login Shortcuts ── */}
+                <div className="pt-3 border-t border-slate-800/80 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                      <Building2 className="w-3.5 h-3.5 text-blue-400" /> Demo Quick Logins
+                    </span>
+                    <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-300 border-blue-500/30 px-1.5 py-0">
+                      1-Click Auto-Fill
+                    </Badge>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEmail('demo@takshila.school');
+                        setPassword('school123');
+                        setError('');
+                      }}
+                      className="h-auto py-2 px-2.5 bg-slate-950/80 hover:bg-blue-950/40 border-slate-800 hover:border-blue-500/40 text-left flex flex-col items-start gap-0.5 rounded-xl transition-all group"
+                    >
+                      <span className="text-xs font-bold text-white group-hover:text-blue-300 flex items-center gap-1">
+                        <Building2 className="w-3 h-3 text-blue-400" /> Admin
+                      </span>
+                      <span className="text-[10px] text-slate-400 truncate w-full">Takshila School</span>
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setEmail('megha.lohade@takshilaschool.edu');
+                        setPassword('teacher123');
+                        setError('');
+                      }}
+                      className="h-auto py-2 px-2.5 bg-slate-950/80 hover:bg-indigo-950/40 border-slate-800 hover:border-indigo-500/40 text-left flex flex-col items-start gap-0.5 rounded-xl transition-all group"
+                    >
+                      <span className="text-xs font-bold text-white group-hover:text-indigo-300 flex items-center gap-1">
+                        <UserCheck className="w-3 h-3 text-indigo-400" /> Teacher
+                      </span>
+                      <span className="text-[10px] text-slate-400 truncate w-full">Megha Lohade</span>
+                    </Button>
+                  </div>
+                </div>
               </form>
             </CardContent>
           </Card>
