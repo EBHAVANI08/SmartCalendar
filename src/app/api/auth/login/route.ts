@@ -148,99 +148,6 @@ export async function POST(request: Request) {
       });
     }
 
-    // ── Takshila School dummy tenant (1-click Admin / Teacher) ──
-    const takshilaSchool = await db.school.findFirst({
-      where: {
-        OR: [
-          { code: 'TAKSHILA2025' },
-          { email: 'admin@takshilaschool.edu' },
-        ],
-      },
-    }).catch(() => null);
-
-    if (takshilaSchool) {
-      const isTakshilaAdmin =
-        cleanEmail === 'admin@takshilaschool.edu' ||
-        cleanEmail === takshilaSchool.email.toLowerCase() ||
-        email.toUpperCase() === 'TAKSHILA2025';
-
-      if (isTakshilaAdmin) {
-        // This demo tenant previously issued an admin session on an email match
-        // alone. A password is now required — either the school's own password,
-        // or that of the Admin record sharing this email (the demo credential).
-        let verified = await verifyPassword(password, takshilaSchool.password, async (newHash) => {
-          await db.school
-            .update({ where: { id: takshilaSchool.id }, data: { password: newHash } })
-            .catch(() => null);
-        });
-
-        if (!verified) {
-          const demoAdmin = await db.admin
-            .findFirst({ where: { email: takshilaSchool.email } })
-            .catch(() => null);
-          if (demoAdmin) {
-            verified = await verifyPassword(password, demoAdmin.password, async (newHash) => {
-              await db.admin
-                .update({ where: { id: demoAdmin.id }, data: { password: newHash } })
-                .catch(() => null);
-            });
-          }
-        }
-
-        if (!verified) {
-          return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
-        }
-
-        return createLoginResponse({
-          id: takshilaSchool.id,
-          name: takshilaSchool.contactName || 'Takshila School Principal',
-          email: takshilaSchool.email,
-          role: 'admin',
-          schoolId: takshilaSchool.id,
-          schoolCode: takshilaSchool.code,
-          schoolName: takshilaSchool.name,
-        });
-      }
-
-      const DEMO_TEACHER_EMAILS = [
-        'megha.lohade@takshilaschool.edu',
-        'teacher@takshilaschool.edu',
-        'afreen.deshmukh@takshilaschool.edu',
-      ];
-      if (DEMO_TEACHER_EMAILS.includes(cleanEmail)) {
-        const takshilaTeacher = await db.teacher.findFirst({
-          where: {
-            schoolId: takshilaSchool.id,
-            email: { in: [cleanEmail, 'megha.lohade@takshilaschool.edu'] },
-          },
-        }).catch(() => null);
-
-        if (takshilaTeacher) {
-          const verified = await verifyPassword(password, takshilaTeacher.password, async (newHash) => {
-            await db.teacher
-              .update({ where: { id: takshilaTeacher.id }, data: { password: newHash } })
-              .catch(() => null);
-          });
-          if (!verified) {
-            return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
-          }
-
-          return createLoginResponse({
-            id: takshilaTeacher.id,
-            name: takshilaTeacher.name,
-            email: takshilaTeacher.email,
-            role: 'teacher',
-            schoolId: takshilaSchool.id,
-            schoolCode: takshilaSchool.code,
-            schoolName: takshilaSchool.name,
-            subject: takshilaTeacher.subject,
-            grades: takshilaTeacher.grades,
-            phone: takshilaTeacher.phone,
-          });
-        }
-      }
-    }
-
     // ── 1. Check School Tenant Database ──
     try {
       const school = await db.school.findFirst({
@@ -356,11 +263,36 @@ export async function POST(request: Request) {
         });
 
         if (isAdminPassValid) {
+          let schoolId: string | undefined = undefined;
+          let schoolCode: string | undefined = undefined;
+          let schoolName: string | undefined = undefined;
+
+          if (!admin.isSuperAdmin) {
+            const matchedSchool = await db.school.findFirst({
+              where: {
+                OR: [
+                  { email: cleanEmail },
+                  { email: email },
+                  { contactName: admin.name },
+                  { name: admin.name },
+                ],
+              },
+            });
+            if (matchedSchool) {
+              schoolId = matchedSchool.id;
+              schoolCode = matchedSchool.code;
+              schoolName = matchedSchool.name;
+            }
+          }
+
           return createLoginResponse({
             id: admin.id,
             name: admin.name,
             email: admin.email,
             role: admin.isSuperAdmin ? 'superadmin' : 'admin',
+            schoolId,
+            schoolCode,
+            schoolName,
           });
         }
       }

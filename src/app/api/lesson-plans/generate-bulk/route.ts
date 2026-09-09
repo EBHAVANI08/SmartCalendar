@@ -2,12 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import ZAI from '@/lib/ollama';
 import { requireCapability } from '@/lib/authz';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function POST(req: NextRequest) {
   const denied = requireCapability(req, 'lessonplan.write');
   if (denied) return denied;
 
   try {
+    const schoolId = await getTenantSchoolId(req);
+    const isOwner = req.headers.get('x-user-role') === 'superadmin';
+    if (!schoolId && !isOwner) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
+
     const body = await req.json();
     const { teacherId } = body as {
       teacherId: string;
@@ -21,8 +28,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const teacher = await db.teacher.findUnique({
-      where: { id: teacherId },
+    const teacher = await db.teacher.findFirst({
+      where: {
+        id: teacherId,
+        ...(schoolId ? { schoolId } : {}),
+      },
       include: {
         schedules: {
           orderBy: [{ day: 'asc' }, { period: 'asc' }],
@@ -32,7 +42,7 @@ export async function POST(req: NextRequest) {
 
     if (!teacher) {
       return NextResponse.json(
-        { success: false, error: 'Teacher not found' },
+        { success: false, error: 'Teacher not found in your school' },
         { status: 404 },
       );
     }

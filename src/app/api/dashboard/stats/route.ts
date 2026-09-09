@@ -20,15 +20,16 @@ export async function GET(request: Request) {
 
   try {
     const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
-    const teacherWhere = schoolId ? { schoolId } : {};
-    const subWhere = schoolId ? { schoolId, absentTeacher: { schoolId } } : {};
-    const notifWhere = schoolId ? { teacher: { schoolId } } : {};
-    const leaveWhere = schoolId
-      ? { teacher: { schoolId }, status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } }
-      : { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } };
+    const teacherWhere = { schoolId };
+    const subWhere = { schoolId, absentTeacher: { schoolId } };
+    const notifWhere = { teacher: { schoolId } };
+    const leaveWhere = { teacher: { schoolId }, status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } };
 
     const [
       school,
@@ -41,15 +42,15 @@ export async function GET(request: Request) {
       totalSchedules,
       scheduleGrades,
     ] = await Promise.all([
-      schoolId ? db.school.findUnique({ where: { id: schoolId }, select: { name: true, code: true } }).catch(() => null) : null,
+      db.school.findUnique({ where: { id: schoolId }, select: { name: true, code: true } }).catch(() => null),
       db.teacher.count({ where: teacherWhere }),
       db.leaveApplication.count({ where: leaveWhere }),
       db.substitution.count({ where: { ...subWhere, status: 'pending' } }),
       db.substitution.count({ where: { ...subWhere, date: todayStr, status: 'completed' } }),
       db.teacherNotification.count({ where: { ...notifWhere, isRead: false } }),
       db.teacher.findMany({ where: teacherWhere, select: { id: true, name: true, email: true, subject: true, role: true }, orderBy: { name: 'asc' } }),
-      db.schedule.count({ where: schoolId ? { schoolId } : {} }),
-      db.schedule.findMany({ where: schoolId ? { schoolId } : {}, select: { grade: true }, distinct: ['grade'] }),
+      db.schedule.count({ where: { schoolId } }),
+      db.schedule.findMany({ where: { schoolId }, select: { grade: true }, distinct: ['grade'] }),
     ]);
 
     const distinctGrades = scheduleGrades.map((g) => g.grade).filter(Boolean);
@@ -57,8 +58,8 @@ export async function GET(request: Request) {
     return NextResponse.json({
       success: true,
       data: {
-        schoolName: school?.name || 'Takshila School',
-        schoolCode: school?.code || 'TAKSHILA2025',
+        schoolName: school?.name || 'School Workspace',
+        schoolCode: school?.code || '',
         totalTeachers,
         absentToday,
         onLeaveToday: absentToday,

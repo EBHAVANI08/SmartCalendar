@@ -16,27 +16,31 @@ export async function GET(req: NextRequest) {
   try {
     const date = req.nextUrl.searchParams.get('date') || new Date().toISOString().split('T')[0];
     const schoolId = await getTenantSchoolId(req);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
 
     const [todaySubstitutions, allSubstitutions, schoolTeachers, schedules] = await Promise.all([
       db.substitution.findMany({
         where: {
           date,
-          ...(schoolId ? { schoolId, absentTeacher: { schoolId } } : {}),
+          schoolId,
+          absentTeacher: { schoolId },
         },
         include: { absentTeacher: true, substitute: true },
       }),
       db.substitution.findMany({
-        where: schoolId ? { schoolId, absentTeacher: { schoolId } } : {},
+        where: { schoolId, absentTeacher: { schoolId } },
         include: { absentTeacher: true, substitute: true },
         orderBy: { date: 'desc' },
         take: 200,
       }),
       db.teacher.findMany({
-        where: schoolId ? { schoolId } : {},
+        where: { schoolId },
         select: { id: true, name: true, subject: true },
       }),
       db.schedule.findMany({
-        where: schoolId ? { schoolId } : {},
+        where: { schoolId },
         select: { id: true, teacherId: true, subject: true, period: true, day: true },
       }),
     ]);

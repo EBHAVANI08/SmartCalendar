@@ -15,10 +15,29 @@ export async function GET(request: Request) {
       ...(schoolId ? { schoolId } : {}),
       ...(status && status !== 'all' ? { status } : {}),
     },
-    include: { school: { select: { id: true, name: true, code: true } }, payments: true },
+    include: {
+      school: { select: { id: true, name: true, code: true, email: true, phone: true, address: true } },
+      payments: true,
+    },
     orderBy: { createdAt: 'desc' },
     take: 200,
   });
+
+  // Ensure 18% GST is applied to all records
+  for (const inv of invoices) {
+    if ((inv.tax === 0 || inv.tax == null) && inv.amount > 0) {
+      const taxable = Math.max(0, inv.amount - (inv.discount || 0));
+      const calculatedTax = Math.round(taxable * 0.18 * 100) / 100;
+      const calculatedTotal = taxable + calculatedTax;
+      await db.invoice.update({
+        where: { id: inv.id },
+        data: { tax: calculatedTax, total: calculatedTotal },
+      });
+      inv.tax = calculatedTax;
+      inv.total = calculatedTotal;
+    }
+  }
+
   return NextResponse.json({ invoices });
 }
 
@@ -29,8 +48,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'schoolId and amount are required' }, { status: 400 });
   }
   const discount = Number(body.discount || 0);
-  const tax = Number(body.tax || 0);
   const amount = Number(body.amount);
+  const taxable = Math.max(0, amount - discount);
+  const tax = body.tax != null && Number(body.tax) > 0 ? Number(body.tax) : Math.round(taxable * 0.18 * 100) / 100;
+  const total = taxable + tax;
   const invoice = await db.invoice.create({
     data: {
       schoolId: body.schoolId,
@@ -38,7 +59,7 @@ export async function POST(request: Request) {
       amount,
       discount,
       tax,
-      total: Math.max(0, amount - discount + tax),
+      total,
       currency: body.currency || 'INR',
       status: body.status || 'issued',
       dueDate: body.dueDate ? new Date(body.dueDate) : undefined,

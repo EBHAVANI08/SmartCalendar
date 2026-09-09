@@ -23,7 +23,7 @@ async function countReferences(teacherId: string) {
   // Attendance only counts as history worth protecting once a real device is
   // connected. Until then the Attendance page generates rows with Math.random(),
   // and blocking a cleanup on invented data means corrupt faculty can never be
-  // removed - 14 of Takshila's 25 corrupt records were held by nothing else.
+  // removed - corrupt records held by demo attendance should not block deletion.
   const attendanceIsReal = Boolean(process.env.BIOMETRIC_WEBHOOK_SECRET);
 
   const blocking = [

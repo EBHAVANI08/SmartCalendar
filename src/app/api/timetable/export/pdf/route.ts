@@ -16,10 +16,13 @@ export async function GET(request: NextRequest) {
   // Pinned to the caller's school. schoolId used to be resolved from client
   // input, so any signed-in user could act on another school's data.
     const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
 
-    const school = schoolId ? await db.school.findUnique({ where: { id: schoolId } }) : await db.school.findFirst();
-    const schoolName = school?.name || 'Takshila School';
-    const schoolCode = school?.code || 'TAKSHILA2025';
+    const school = await db.school.findUnique({ where: { id: schoolId } });
+    const schoolName = school?.name || 'School Timetable';
+    const schoolCode = school?.code || '';
 
     const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const PERIODS = [1, 2, 3, 4, 5, 6, 7, 8];
@@ -30,20 +33,23 @@ export async function GET(request: NextRequest) {
     let subtitle = '';
 
     if (teacherId) {
-      const teacher = await db.teacher.findUnique({ where: { id: teacherId } });
+      const teacher = await db.teacher.findFirst({ where: { id: teacherId, schoolId } });
+      if (!teacher) {
+        return NextResponse.json({ error: 'Teacher not found in this school' }, { status: 404 });
+      }
       schedules = await db.schedule.findMany({
-        where: { teacherId, ...(schoolId ? { schoolId } : {}) },
+        where: { teacherId, schoolId },
         include: { teacher: true },
         orderBy: [{ day: 'asc' }, { period: 'asc' }],
       });
-      title = `Faculty Master Schedule: ${teacher?.name || 'Teacher'}`;
-      subtitle = `Department: ${teacher?.subject || 'All Subjects'} | Academic Year 2025–2026`;
+      title = `Faculty Master Schedule: ${teacher.name}`;
+      subtitle = `Department: ${teacher.subject || 'All Subjects'} | Academic Year 2025–2026`;
     } else {
       schedules = await db.schedule.findMany({
         where: {
           grade: { in: [grade, grade.replace('Grade ', '')] },
           section: { equals: section, mode: 'insensitive' },
-          ...(schoolId ? { schoolId } : {}),
+          schoolId,
         },
         include: { teacher: true },
         orderBy: [{ day: 'asc' }, { period: 'asc' }],

@@ -85,6 +85,7 @@ function GaugeCard({ label, value, color }: { label: string; value: number; colo
 export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [schoolName, setSchoolName] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
   const fetchAnalytics = useCallback(async () => {
@@ -95,7 +96,16 @@ export default function AnalyticsPage() {
     } finally { setLoading(false); }
   }, [date]);
 
-  useEffect(() => { fetchAnalytics(); }, [fetchAnalytics]);
+  useEffect(() => {
+    fetchAnalytics();
+    try {
+      const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setSchoolName(parsed.schoolName || parsed.user?.schoolName || '');
+      }
+    } catch {}
+  }, [fetchAnalytics]);
 
   const maxSubjectCount = data?.topSubjects ? Math.max(...data.topSubjects.map(s => s.count), 1) : 1;
   const maxPeriodCount = data?.peakHours ? Math.max(...data.peakHours.map(p => p.count), 1) : 1;
@@ -116,7 +126,7 @@ export default function AnalyticsPage() {
                 Analytics & Business Intelligence
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Takshila School
+                {schoolName || 'Analytics & BI'}
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">

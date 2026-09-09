@@ -19,8 +19,11 @@ export async function GET(request: Request) {
 
   try {
     const schoolId = await getTenantSchoolId(request);
-    const whereClause = schoolId ? { schoolId } : {};
-    const operational = schoolId ? await operationalScheduleFilter(schoolId) : null;
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
+    const whereClause = { schoolId };
+    const operational = await operationalScheduleFilter(schoolId);
     const scheduleWhere: Record<string, unknown> = {};
     if (operational) {
       if (operational.timetableVersionId) {
@@ -57,7 +60,9 @@ function incomingSubjects(body: any): unknown {
 }
 
 function incomingList(value: unknown): unknown {
-  return Array.isArray(value) ? value.join(';') : value;
+  if (Array.isArray(value)) return value.join(';');
+  if (value && typeof value === 'object') return JSON.stringify(value);
+  return value;
 }
 
 export async function POST(request: Request) {

@@ -36,6 +36,14 @@ export function SetupChecklist() {
 
   const load = useCallback(async () => {
     try {
+      const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          const role = parsed.role || parsed.user?.role;
+          if (role === 'teacher') return; // Teachers do not manage school configuration
+        } catch {}
+      }
       const res = await fetch('/api/school/setup-status');
       if (!res.ok) return;
       const data = await res.json().catch(() => null);
@@ -121,6 +129,17 @@ export function SetupChecklistFull() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
+      const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
+      if (raw) {
+        try {
+          const parsed = JSON.parse(raw);
+          const role = parsed.role || parsed.user?.role;
+          if (role === 'teacher') {
+            setLoading(false);
+            return;
+          }
+        } catch {}
+      }
       const res = await fetch('/api/school/setup-status');
       if (!res.ok) return;
       const data = await res.json().catch(() => null);

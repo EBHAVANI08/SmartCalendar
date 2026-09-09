@@ -42,7 +42,7 @@ export function roomTypeLabel(value: string | null | undefined): string {
  * Suggest a normalised type from a room's existing free-text name or code.
  *
  * A suggestion only - existing room data is never rewritten automatically.
- * Takshila has a library, a music hall and a science lab all typed "classroom";
+ * A school may have a library, a music hall and a science lab all typed "classroom";
  * an Admin confirms each one rather than a script guessing on their behalf.
  */
 export function suggestRoomType(name: string, code?: string | null): { type: RoomTypeId; confidence: 'high' | 'review' } | null {

@@ -20,6 +20,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { getClientAuthHeaders } from '@/lib/client-session';
 
 interface TicketReply {
   id: string;
@@ -107,9 +108,10 @@ export default function SupportPage() {
   const loadData = async () => {
     setLoading(true);
     try {
+      const authHeaders = getClientAuthHeaders();
       const [tRes, mRes] = await Promise.all([
-        fetch('/api/tickets'),
-        fetch('/api/messages'),
+        fetch('/api/tickets', { headers: { ...authHeaders }, credentials: 'include' }),
+        fetch('/api/messages', { headers: { ...authHeaders }, credentials: 'include' }),
       ]);
       const tData = await tRes.json().catch(() => ({}));
       const mData = await mRes.json().catch(() => ({}));
@@ -138,9 +140,11 @@ export default function SupportPage() {
     }
     setSubmitting(true);
     try {
+      const authHeaders = getClientAuthHeaders();
       const res = await fetch('/api/tickets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
         body: JSON.stringify(form),
       });
       const data = await res.json().catch(() => ({}));
@@ -167,9 +171,11 @@ export default function SupportPage() {
     if (!text) return;
     setReplySubmitting((prev) => ({ ...prev, [ticketId]: true }));
     try {
+      const authHeaders = getClientAuthHeaders();
       const res = await fetch(`/api/tickets/${ticketId}/replies`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
         body: JSON.stringify({ body: text }),
       });
       const data = await res.json().catch(() => ({}));
@@ -192,9 +198,11 @@ export default function SupportPage() {
     if (!msgForm.subject.trim() || !msgForm.body.trim()) return;
     setMsgSubmitting(true);
     try {
+      const authHeaders = getClientAuthHeaders();
       const res = await fetch('/api/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        credentials: 'include',
         body: JSON.stringify(msgForm),
       });
       const data = await res.json().catch(() => ({}));

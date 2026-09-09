@@ -4,7 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   CalendarDays, Plus, ChevronLeft, ChevronRight, Filter,
   Clock, MapPin, Tag, CheckCircle2, AlertCircle, Sparkles,
-  Printer, Bookmark, Users, Award, BookOpen, Flag
+  Printer, Bookmark, Users, Award, BookOpen, Flag,
+  Edit2, Trash2, Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -48,9 +49,21 @@ export default function AcademicCalendarPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [schoolName, setSchoolName] = useState('');
   const [counts, setCounts] = useState({ school: 0, leave: 0, cover: 0 });
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [addModalOpen, setAddModalOpen] = useState(false);
+
+  // Edit Event state
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDate, setEditDate] = useState('');
+  const [editCategory, setEditCategory] = useState<string>('event');
+  const [editTime, setEditTime] = useState('09:00 - 12:00');
+  const [editLocation, setEditLocation] = useState('');
+  const [editDesc, setEditDesc] = useState('');
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Form states for new event
   const [newEventTitle, setNewEventTitle] = useState('');
@@ -59,6 +72,7 @@ export default function AcademicCalendarPage() {
   const [newEventTime, setNewEventTime] = useState('09:00 - 12:00');
   const [newEventLocation, setNewEventLocation] = useState('School Campus');
   const [newEventDesc, setNewEventDesc] = useState('');
+
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -102,7 +116,16 @@ export default function AcademicCalendarPage() {
     }
   }, [rangeFrom, rangeTo]);
 
-  useEffect(() => { loadEvents(); }, [loadEvents]);
+  useEffect(() => {
+    loadEvents();
+    try {
+      const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setSchoolName(parsed.schoolName || parsed.user?.schoolName || '');
+      }
+    } catch {}
+  }, [loadEvents]);
 
   const handleAddEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,6 +180,85 @@ export default function AcademicCalendarPage() {
     }
   };
 
+  const handleOpenEditEvent = (ev: CalendarEvent, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingEvent(ev);
+    setEditTitle(ev.title);
+    setEditDate(ev.date);
+    setEditCategory(ev.category || 'event');
+    setEditTime(ev.time || '09:00 - 12:00');
+    setEditLocation(ev.location || '');
+    setEditDesc(ev.description || '');
+    setEditModalOpen(true);
+  };
+
+  const handleEditSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingEvent || !editTitle.trim() || !editDate) return;
+
+    const [startRaw, endRaw] = (editTime || '').split('-').map((x) => x.trim());
+    const allDay = !startRaw || !endRaw;
+    const startAt = new Date(`${editDate}T${allDay ? '00:00' : startRaw}:00`);
+    const endAt = new Date(`${editDate}T${allDay ? '23:59' : endRaw}:00`);
+
+    setSaving(true);
+    try {
+      const res = await fetch('/api/calendar/events', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingEvent.id,
+          title: editTitle.trim(),
+          description: [editDesc, editLocation ? `Location: ${editLocation}` : '']
+            .filter(Boolean).join(' — ') || undefined,
+          category: editCategory,
+          startAt: startAt.toISOString(),
+          endAt: endAt.toISOString(),
+          allDay,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast({
+          title: 'Event not updated',
+          description: data?.error || `Server error (HTTP ${res.status}).`,
+          variant: 'destructive',
+        });
+        return;
+      }
+      toast({ title: 'Event updated', description: `"${editTitle}" has been updated.` });
+      setEditModalOpen(false);
+      setEditingEvent(null);
+      await loadEvents();
+    } catch {
+      toast({ title: 'Event not updated', description: 'Network error.', variant: 'destructive' });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDeleteEvent = async (ev: CalendarEvent, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm(`Are you sure you want to delete event "${ev.title}"?`)) return;
+    setDeletingId(ev.id);
+    try {
+      const res = await fetch(`/api/calendar/events?id=${encodeURIComponent(ev.id)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        toast({ title: 'Event deleted', description: `"${ev.title}" was removed.` });
+        await loadEvents();
+      } else {
+        toast({ title: 'Could not delete event', description: data?.error || 'Failed to delete event', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Request failed', description: 'Network error deleting event.', variant: 'destructive' });
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   // Calendar Grid Calculation
   const firstDayIndex = new Date(year, month, 1).getDay();
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -190,7 +292,7 @@ export default function AcademicCalendarPage() {
                 Academic Calendar & School Milestones
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Takshila School
+                {schoolName || 'Academic Calendar'}
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
@@ -200,7 +302,7 @@ export default function AcademicCalendarPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <Button variant="outline" size="sm" onClick={() => { document.title = 'Takshila School — Academic Calendar'; window.print(); }} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
+          <Button variant="outline" size="sm" onClick={() => { document.title = `${schoolName || 'School'} — Academic Calendar`; window.print(); }} className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5">
             <Printer className="w-4 h-4 text-[#2563EB]" /> Print Calendar
           </Button>
           <Button
@@ -395,6 +497,33 @@ export default function AcademicCalendarPage() {
                         {ev.location}
                       </p>
                     )}
+
+                    {!ev.readOnly && (
+                      <div className="flex items-center justify-end gap-1.5 mt-2 pt-2 border-t border-slate-100">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-6 px-2 text-[10px] text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+                          onClick={(e) => handleOpenEditEvent(ev, e)}
+                        >
+                          <Edit2 className="w-3 h-3 mr-1 text-blue-600" /> Edit
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={deletingId === ev.id}
+                          className="h-6 px-2 text-[10px] text-slate-600 hover:text-rose-600 hover:bg-rose-50"
+                          onClick={(e) => handleDeleteEvent(ev, e)}
+                        >
+                          {deletingId === ev.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-rose-600" />
+                          ) : (
+                            <Trash2 className="w-3 h-3 mr-1 text-rose-500" />
+                          )}
+                          Delete
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -520,6 +649,99 @@ export default function AcademicCalendarPage() {
               </Button>
               <Button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold">
                 Save Milestone
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Edit Event Modal Dialog ── */}
+      <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit2 className="w-5 h-5 text-blue-600" />
+              Edit Academic Milestone
+            </DialogTitle>
+          </DialogHeader>
+
+          <form onSubmit={handleEditSave} className="space-y-3.5 py-2">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Event / Milestone Title</Label>
+              <Input
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                placeholder="e.g. Annual Sports Day"
+                required
+                className="text-xs h-9"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Date</Label>
+                <Input
+                  type="date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  required
+                  className="text-xs h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Category</Label>
+                <Select value={editCategory} onValueChange={(val: any) => setEditCategory(val)}>
+                  <SelectTrigger className="text-xs h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="holiday">Public Holiday</SelectItem>
+                    <SelectItem value="exam">Examination</SelectItem>
+                    <SelectItem value="event">School Event</SelectItem>
+                    <SelectItem value="ptm">Parent-Teacher Meet</SelectItem>
+                    <SelectItem value="workshop">Faculty Workshop</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Timing</Label>
+                <Input
+                  value={editTime}
+                  onChange={(e) => setEditTime(e.target.value)}
+                  placeholder="e.g. 09:00 - 12:00"
+                  className="text-xs h-9"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">Venue / Location</Label>
+                <Input
+                  value={editLocation}
+                  onChange={(e) => setEditLocation(e.target.value)}
+                  placeholder="e.g. Main Auditorium"
+                  className="text-xs h-9"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold">Description / Notes</Label>
+              <Input
+                value={editDesc}
+                onChange={(e) => setEditDesc(e.target.value)}
+                placeholder="Brief notes"
+                className="text-xs h-9"
+              />
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button type="button" variant="outline" onClick={() => { setEditModalOpen(false); setEditingEvent(null); }}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white font-bold">
+                {saving ? 'Saving…' : 'Update Milestone'}
               </Button>
             </DialogFooter>
           </form>

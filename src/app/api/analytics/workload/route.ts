@@ -5,8 +5,11 @@ import { NextResponse } from 'next/server';
 export async function GET(request: Request) {
   try {
     const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
     const teachers = await db.teacher.findMany({
-      where: schoolId ? { schoolId } : {},
+      where: { schoolId },
       include: { schedules: true },
     });
 

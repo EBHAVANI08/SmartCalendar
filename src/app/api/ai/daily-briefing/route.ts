@@ -6,21 +6,22 @@ import Groq from 'groq-sdk';
 export async function GET(request: Request) {
   try {
     const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
     const todayStr = new Date().toISOString().split('T')[0];
     const dayName = new Date().toLocaleDateString('en-IN', { weekday: 'long' });
 
-    const teacherWhere = schoolId ? { schoolId } : {};
-    const subWhere = schoolId ? { schoolId, absentTeacher: { schoolId } } : {};
-    const leaveWhere = schoolId
-      ? { teacher: { schoolId }, status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } }
-      : { status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } };
+    const teacherWhere = { schoolId };
+    const subWhere = { schoolId, absentTeacher: { schoolId } };
+    const leaveWhere = { teacher: { schoolId }, status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } };
 
     const [totalTeachers, absentToday, pendingSubs, resolvedToday, totalSchedules] = await Promise.all([
       db.teacher.count({ where: teacherWhere }),
       db.leaveApplication.count({ where: leaveWhere }),
       db.substitution.count({ where: { ...subWhere, status: 'pending' } }),
       db.substitution.count({ where: { ...subWhere, date: todayStr, status: 'completed' } }),
-      db.schedule.count({ where: schoolId ? { schoolId } : {} }),
+      db.schedule.count({ where: { schoolId } }),
     ]);
 
     const coverageRate = totalSchedules > 0

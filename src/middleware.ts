@@ -88,9 +88,13 @@ export async function middleware(request: NextRequest) {
   }
 
   const configuredToken = process.env.SUPERADMIN_TOKEN;
-  const providedToken = request.nextUrl.searchParams.get('token');
+  const authHeaderVal = request.headers.get('authorization');
+  const serviceHeaderVal = request.headers.get('x-superadmin-token');
   const validServiceToken = Boolean(
-    configuredToken && configuredToken.length >= 32 && providedToken === configuredToken
+    configuredToken &&
+      configuredToken.length >= 32 &&
+      (serviceHeaderVal === configuredToken ||
+        (authHeaderVal?.startsWith('Bearer ') && authHeaderVal.substring(7).trim() === configuredToken))
   );
 
   // Protect superadmin endpoints (login stays public so owners can authenticate)
@@ -104,7 +108,6 @@ export async function middleware(request: NextRequest) {
   } else if (
     pathname.startsWith('/api/') &&
     !session &&
-    !validServiceToken &&
     !isPublicApiRoute(pathname, request.method)
   ) {
     // Tenant endpoints require a session, so school scoping can never be absent.

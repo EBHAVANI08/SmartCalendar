@@ -1,10 +1,20 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Check, Info, Layers, Loader2, Plus } from 'lucide-react';
+import { AlertTriangle, Check, Info, Layers, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 
 interface DetectedGrade {
@@ -34,6 +44,18 @@ interface Detection {
   };
 }
 
+function getNextSectionLetter(existingSections: { section: string }[]): string {
+  const letters = existingSections.map((s) => s.section.trim().toUpperCase());
+  if (letters.length === 0) return 'A';
+  for (let i = 0; i < 26; i++) {
+    const char = String.fromCharCode(65 + i);
+    if (!letters.includes(char)) {
+      return char;
+    }
+  }
+  return `S${letters.length + 1}`;
+}
+
 /**
  * Academic structure a school already has, whether or not it was ever configured.
  *
@@ -51,6 +73,21 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [adopting, setAdopting] = useState(false);
   const [showAllSubjects, setShowAllSubjects] = useState(false);
+
+  // Section Add / Delete states
+  const [activeAddGrade, setActiveAddGrade] = useState<string | null>(null);
+  const [newSectionName, setNewSectionName] = useState('');
+  const [isAddingSection, setIsAddingSection] = useState(false);
+
+  // Delete Section confirmation dialog
+  const [deleteTarget, setDeleteTarget] = useState<{ grade: string; section: string; periods: number } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Add Grade dialog state
+  const [addGradeOpen, setAddGradeOpen] = useState(false);
+  const [newGradeName, setNewGradeName] = useState('');
+  const [newGradeInitialSection, setNewGradeInitialSection] = useState('A');
+  const [isAddingGrade, setIsAddingGrade] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -77,6 +114,137 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
       return next;
     });
 
+  /** Handle adding a section to an existing grade */
+  const handleStartAddSection = (grade: string, existingSections: { section: string }[]) => {
+    setActiveAddGrade(grade);
+    setNewSectionName(getNextSectionLetter(existingSections));
+  };
+
+  const handleSaveSection = async (grade: string) => {
+    const sec = newSectionName.trim().toUpperCase();
+    if (!sec) {
+      toast({ title: 'Section name required', variant: 'destructive' });
+      return;
+    }
+    setIsAddingSection(true);
+    try {
+      const res = await fetch('/api/school/detected-structure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grade, section: sec }),
+      });
+      const result = await res.json().catch(() => null);
+      if (res.ok && result?.success) {
+        toast({
+          title: 'Section Added',
+          description: `Section ${sec} added to ${grade} successfully.`,
+        });
+        setActiveAddGrade(null);
+        setNewSectionName('');
+        await load();
+        onAdopted?.();
+      } else {
+        toast({
+          title: 'Failed to add section',
+          description: result?.error || 'Something went wrong',
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAddingSection(false);
+    }
+  };
+
+  /** Handle deleting a section from a grade */
+  const handleDeleteSection = async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      const res = await fetch('/api/school/detected-structure', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grade: deleteTarget.grade,
+          section: deleteTarget.section,
+        }),
+      });
+      const result = await res.json().catch(() => null);
+      if (res.ok && result?.success) {
+        toast({
+          title: 'Section Deleted',
+          description: `Section ${deleteTarget.section} removed from ${deleteTarget.grade}.`,
+        });
+        setDeleteTarget(null);
+        await load();
+        onAdopted?.();
+      } else {
+        toast({
+          title: 'Failed to delete section',
+          description: result?.error || 'Something went wrong',
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  /** Handle adding an entirely new grade */
+  const handleSaveGrade = async () => {
+    const g = newGradeName.trim();
+    const s = (newGradeInitialSection.trim() || 'A').toUpperCase();
+    if (!g) {
+      toast({ title: 'Grade name is required', variant: 'destructive' });
+      return;
+    }
+    setIsAddingGrade(true);
+    try {
+      const res = await fetch('/api/school/detected-structure', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grade: g, section: s }),
+      });
+      const result = await res.json().catch(() => null);
+      if (res.ok && result?.success) {
+        toast({
+          title: 'Grade Added',
+          description: `${g} with Section ${s} created successfully.`,
+        });
+        setAddGradeOpen(false);
+        setNewGradeName('');
+        setNewGradeInitialSection('A');
+        await load();
+        onAdopted?.();
+      } else {
+        toast({
+          title: 'Failed to create grade',
+          description: result?.error || 'Something went wrong',
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsAddingGrade(false);
+    }
+  };
+
   /** Create a GradeSubjectConfig for each chosen pair. Nothing implicit. */
   const adopt = async () => {
     if (!picked.size || !data) return;
@@ -86,8 +254,6 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
     try {
       for (const k of picked) {
         const [grade, subject] = k.split('|');
-        // Weekly count seeded from what the timetable already runs, so the
-        // adopted rule matches reality rather than a guess.
         const found = data.detectedSubjects.find((s) => s.grade === grade && s.subject === subject);
         const weekly = Math.min(20, Math.max(1, Math.round((found?.periods ?? 1) / Math.max(1, data.grades.find((g) => g.grade === grade)?.sections.length ?? 1))));
 
@@ -116,15 +282,19 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
   if (loading) {
     return <p className="text-xs text-slate-400 py-6 text-center">Reading your existing timetable…</p>;
   }
-  if (!data?.hasExistingTimetable) {
+  if (!data?.hasExistingTimetable && (!data?.grades || data.grades.length === 0)) {
     return (
       <Card className="border-dashed border-slate-200">
         <CardContent className="p-6 text-center">
           <Layers className="w-6 h-6 text-slate-300 mx-auto mb-2" />
-          <p className="text-xs font-semibold text-slate-600">No timetable yet</p>
-          <p className="text-[11px] text-slate-400 mt-1">
-            Once a timetable exists, the grades, sections and subjects it uses will appear here.
+          <p className="text-xs font-semibold text-slate-600">No timetable structure yet</p>
+          <p className="text-[11px] text-slate-400 mt-1 mb-4">
+            Add your grades and sections below or create a timetable.
           </p>
+          <Button size="sm" onClick={() => setAddGradeOpen(true)} className="text-xs gap-1.5">
+            <Plus className="w-3.5 h-3.5" />
+            Add First Grade
+          </Button>
         </CardContent>
       </Card>
     );
@@ -136,48 +306,260 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
     <div className="space-y-4" data-testid="detected-structure">
       <div className="flex items-start gap-2.5 p-3 rounded-xl border border-blue-200 bg-blue-50">
         <Info className="w-4 h-4 text-blue-700 shrink-0 mt-0.5" />
-        <div>
-          <p className="text-xs font-bold text-blue-950">Existing academic structure detected</p>
+        <div className="flex-1">
+          <p className="text-xs font-bold text-blue-950">Academic Structure &amp; Sections</p>
           <p className="text-[11px] text-blue-800 mt-0.5">
-            Read from your {data.totalPeriods} scheduled periods. {data.summary.gradesDetected} grade(s),{' '}
-            {data.summary.sectionsDetected} section(s). Nothing here has been saved — confirm what you want to adopt.
+            {data.totalPeriods > 0 ? (
+              <>
+                Active across {data.totalPeriods} scheduled periods. {data.summary.gradesDetected} grade(s),{' '}
+                {data.summary.sectionsDetected} section(s).
+              </>
+            ) : (
+              <>
+                Configured with {data.summary.gradesDetected} grade(s) and {data.summary.sectionsDetected} section(s).
+              </>
+            )}
+            {' '}You can add or remove sections for each grade directly below.
           </p>
         </div>
       </div>
 
       {/* Grades and sections */}
-      <Card className="border-slate-200">
-        <CardHeader className="p-4 pb-2">
-          <CardTitle className="text-sm font-bold text-slate-900">Grades &amp; Sections</CardTitle>
-          <CardDescription className="text-[11px]">
-            Taken from the classes your timetable actually schedules.
-          </CardDescription>
+      <Card className="border-slate-200 shadow-sm">
+        <CardHeader className="p-4 pb-3 flex flex-row items-center justify-between">
+          <div>
+            <CardTitle className="text-sm font-bold text-slate-900">Grades &amp; Sections</CardTitle>
+            <CardDescription className="text-[11px]">
+              Manage sections for each grade. Sections reflect immediately across all timetable views.
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setAddGradeOpen(true)}
+            className="h-8 text-xs gap-1.5 border-blue-200 hover:border-blue-400 hover:bg-blue-50 text-blue-700 font-medium"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Add Grade
+          </Button>
         </CardHeader>
         <CardContent className="p-4 pt-0">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            {data.grades.map((g) => (
-              <div key={g.grade} className="rounded-xl border border-slate-200 p-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-bold text-slate-900">{g.grade}</span>
-                  <Badge
-                    variant="outline"
-                    className={`text-[9px] ${g.configured ? 'border-emerald-300 text-emerald-800' : 'border-amber-300 text-amber-800'}`}
-                  >
-                    {g.configured ? 'configured' : 'detected only'}
-                  </Badge>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {data.grades.map((g) => {
+              const isAddingHere = activeAddGrade === g.grade;
+              return (
+                <div
+                  key={g.grade}
+                  className="rounded-xl border border-slate-200 p-3 bg-white hover:border-slate-300 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-100">
+                    <span className="text-xs font-bold text-slate-900">{g.grade}</span>
+                    <div className="flex items-center gap-1.5">
+                      <Badge
+                        variant="outline"
+                        className={`text-[9px] px-1.5 py-0 ${
+                          g.configured
+                            ? 'border-emerald-300 text-emerald-800 bg-emerald-50/50'
+                            : 'border-amber-300 text-amber-800 bg-amber-50/50'
+                        }`}
+                      >
+                        {g.configured ? 'configured' : 'detected only'}
+                      </Badge>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleStartAddSection(g.grade, g.sections)}
+                        className="h-6 px-1.5 text-[11px] text-blue-600 hover:text-blue-800 hover:bg-blue-50"
+                        title={`Add section to ${g.grade}`}
+                      >
+                        <Plus className="w-3 h-3 mr-0.5" />
+                        Section
+                      </Button>
+                    </div>
+                  </div>
+
+                  {/* Section pills */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {g.sections.map((s) => (
+                      <div
+                        key={s.section}
+                        className="group inline-flex items-center gap-1 px-2 py-1 rounded-md bg-slate-100 hover:bg-slate-200 border border-slate-200/80 text-[11px] text-slate-700 transition-colors"
+                      >
+                        <span className="font-semibold">{s.section}</span>
+                        {s.periods > 0 && (
+                          <span className="text-[10px] text-slate-400">({s.periods})</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setDeleteTarget({ grade: g.grade, section: s.section, periods: s.periods })}
+                          className="ml-0.5 text-slate-400 hover:text-red-600 hover:bg-red-50 p-0.5 rounded transition-colors"
+                          title={`Delete section ${s.section}`}
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {g.sections.length === 0 && (
+                      <span className="text-[10px] text-slate-400 italic">No sections configured</span>
+                    )}
+                  </div>
+
+                  {/* Inline Add Section Form */}
+                  {isAddingHere && (
+                    <div className="mt-2.5 pt-2 border-t border-blue-100 bg-blue-50/50 p-2 rounded-lg flex items-center gap-1.5">
+                      <span className="text-[11px] font-semibold text-blue-900 shrink-0">Section:</span>
+                      <Input
+                        value={newSectionName}
+                        onChange={(e) => setNewSectionName(e.target.value.toUpperCase())}
+                        placeholder="e.g. C"
+                        className="h-7 text-xs bg-white uppercase font-bold w-20 px-2"
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleSaveSection(g.grade);
+                          } else if (e.key === 'Escape') {
+                            setActiveAddGrade(null);
+                          }
+                        }}
+                      />
+                      <Button
+                        size="sm"
+                        className="h-7 px-2.5 text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                        disabled={isAddingSection || !newSectionName.trim()}
+                        onClick={() => handleSaveSection(g.grade)}
+                      >
+                        {isAddingSection ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 px-1.5 text-slate-500 hover:text-slate-700"
+                        onClick={() => setActiveAddGrade(null)}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  )}
                 </div>
-                <div className="flex flex-wrap gap-1 mt-1.5">
-                  {g.sections.map((s) => (
-                    <span key={s.section} className="px-1.5 py-0.5 rounded bg-slate-100 text-[10px] text-slate-700">
-                      {s.section} <span className="text-slate-400">({s.periods})</span>
-                    </span>
-                  ))}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </CardContent>
       </Card>
+
+      {/* Confirmation Dialog for Deleting a Section */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              Delete Section {deleteTarget?.section}?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600 pt-1">
+              Are you sure you want to delete <strong>Section {deleteTarget?.section}</strong> from{' '}
+              <strong>{deleteTarget?.grade}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+
+          {deleteTarget && deleteTarget.periods > 0 && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-900 space-y-1">
+              <p className="font-bold flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                Warning: {deleteTarget.periods} Scheduled Period(s) will be removed
+              </p>
+              <p className="text-[11px] text-red-800">
+                This section currently has scheduled periods in the timetable. Deleting it will permanently remove all timetable slots associated with {deleteTarget.grade} Section {deleteTarget.section}.
+              </p>
+            </div>
+          )}
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => setDeleteTarget(null)}
+              disabled={isDeleting}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="text-xs gap-1.5 bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleDeleteSection}
+              disabled={isDeleting}
+            >
+              {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              {isDeleting ? 'Deleting…' : 'Delete Section'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Grade Dialog */}
+      <Dialog open={addGradeOpen} onOpenChange={setAddGradeOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Plus className="w-5 h-5 text-blue-600" />
+              Add New Grade
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Enter the grade name and initial section to include it in the academic structure.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs font-semibold text-slate-700">Grade Name</Label>
+              <Input
+                placeholder="e.g. Grade 11, UKG, Nursery"
+                value={newGradeName}
+                onChange={(e) => setNewGradeName(e.target.value)}
+                className="text-xs mt-1"
+                autoFocus
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-semibold text-slate-700">Initial Section</Label>
+              <Input
+                placeholder="e.g. A"
+                value={newGradeInitialSection}
+                onChange={(e) => setNewGradeInitialSection(e.target.value.toUpperCase())}
+                className="text-xs mt-1 uppercase"
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => setAddGradeOpen(false)}
+              disabled={isAddingGrade}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={handleSaveGrade}
+              disabled={isAddingGrade || !newGradeName.trim()}
+            >
+              {isAddingGrade ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              {isAddingGrade ? 'Creating…' : 'Create Grade'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Subjects present in the timetable but never configured */}
       {data.detectedSubjects.length > 0 && (
@@ -255,3 +637,4 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
     </div>
   );
 }
+

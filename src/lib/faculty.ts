@@ -300,8 +300,196 @@ export function readList(value: unknown): string[] {
   try {
     const parsed = JSON.parse(text);
     if (Array.isArray(parsed)) return parsed.map((v) => String(v)).filter(Boolean);
+    if (parsed && typeof parsed === 'object') {
+      const res: string[] = [];
+      for (const [grade, secs] of Object.entries(parsed)) {
+        const secList = Array.isArray(secs) ? secs : [secs];
+        for (const s of secList) {
+          const cleanSec = String(s).trim().toUpperCase().replace(/^SECTION\s*/i, '');
+          if (cleanSec) res.push(`${grade.trim()}:${cleanSec}`);
+        }
+      }
+      return res;
+    }
   } catch {
     // Fall through to delimiter parsing for legacy plain-text values.
   }
   return parseList(text);
 }
+
+/**
+ * Check if a teacher's assigned sections include a specific (grade, section).
+ *
+ * Supports:
+ * 1. Grade-specific section entries: "Grade 1:A", "Grade 2:B"
+ * 2. Unscoped generic section entries: "A", "B" (applies to all of teacher's grades)
+ * 3. JSON grade-map object: { "Grade 1": ["A", "B"], "Grade 2": ["A"] }
+ * 4. Empty/null sections: teacher is not restricted by section, can teach all sections.
+ */
+export function teacherTeachesSection(
+  rawSections: unknown,
+  grade: string,
+  section: string
+): boolean {
+  if (!rawSections) return true;
+
+  const targetGrade = grade.trim().toLowerCase();
+  const targetGradeNum = targetGrade.replace(/[^0-9]/g, '');
+  const targetSec = section.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+
+  // 1. If it's a JSON object format directly
+  if (typeof rawSections === 'object' && !Array.isArray(rawSections)) {
+    const map = rawSections as Record<string, unknown>;
+    for (const [gKey, val] of Object.entries(map)) {
+      const cleanG = gKey.trim().toLowerCase();
+      const gNum = cleanG.replace(/[^0-9]/g, '');
+      if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum)) {
+        const secList = Array.isArray(val) ? val : [val];
+        return secList.some((s) => String(s).trim().toUpperCase().replace(/^SECTION\s*/i, '') === targetSec);
+      }
+    }
+    return Object.keys(map).length === 0;
+  }
+
+  // 2. Parse into list
+  const list = readList(rawSections);
+  if (list.length === 0) return true;
+
+  let hasGradeSpecificEntriesForThisGrade = false;
+  let hasAnyGradeSpecificEntries = false;
+
+  for (const item of list) {
+    const trimmed = String(item).trim();
+    if (trimmed.includes(':')) {
+      hasAnyGradeSpecificEntries = true;
+      const [gPart, sPart] = trimmed.split(':');
+      const cleanG = gPart.trim().toLowerCase();
+      const gNum = cleanG.replace(/[^0-9]/g, '');
+      if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum)) {
+        hasGradeSpecificEntriesForThisGrade = true;
+        const cleanS = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+        if (cleanS === targetSec) return true;
+      }
+    } else {
+      // Unscoped section (e.g. "A", "B")
+      const cleanS = trimmed.toUpperCase().replace(/^SECTION\s*/i, '');
+      if (cleanS === targetSec) return true;
+    }
+  }
+
+  // If there were grade-specific restrictions for this grade and none matched:
+  if (hasGradeSpecificEntriesForThisGrade) {
+    return false;
+  }
+
+  // If there were grade-specific entries for other grades, but none configured for this grade:
+  if (hasAnyGradeSpecificEntries) {
+    return false;
+  }
+
+  return false;
+}
+
+/**
+ * Parse raw teacher sections into a per-grade map { [grade]: string[] }.
+ */
+export function parseGradeSectionsMap(
+  rawSections: unknown,
+  grades: string[],
+  defaultSectionsMap?: Record<string, string[]>
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const g of grades) {
+    result[g] = [];
+  }
+
+  if (!rawSections) {
+    for (const g of grades) {
+      result[g] = defaultSectionsMap?.[g] ? [...defaultSectionsMap[g]] : ['A'];
+    }
+    return result;
+  }
+
+  // 1. If it's a JSON object or stringified JSON object
+  let parsedObj: Record<string, unknown> | null = null;
+  if (typeof rawSections === 'object' && !Array.isArray(rawSections)) {
+    parsedObj = rawSections as Record<string, unknown>;
+  } else if (typeof rawSections === 'string' && rawSections.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawSections);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        parsedObj = parsed;
+      }
+    } catch {}
+  }
+
+  if (parsedObj) {
+    for (const g of grades) {
+      const targetG = g.trim().toLowerCase();
+      let matchedList: string[] = [];
+      for (const [key, val] of Object.entries(parsedObj)) {
+        if (key.trim().toLowerCase() === targetG || key.replace(/\D/g, '') === targetG.replace(/\D/g, '')) {
+          matchedList = Array.isArray(val) ? val.map(String) : [String(val)];
+          break;
+        }
+      }
+      result[g] = matchedList.map((s) => s.trim().toUpperCase().replace(/^SECTION\s*/i, '')).filter(Boolean);
+    }
+    return result;
+  }
+
+  // 2. If it's an array or string list
+  const list = readList(rawSections);
+  let hasAnyScoped = false;
+  for (const item of list) {
+    if (item.includes(':')) {
+      hasAnyScoped = true;
+      const [gPart, sPart] = item.split(':');
+      const cleanG = gPart.trim();
+      const cleanGNum = cleanG.replace(/\D/g, '');
+      const sec = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+      for (const g of grades) {
+        if (g.toLowerCase() === cleanG.toLowerCase() || (cleanGNum && g.replace(/\D/g, '') === cleanGNum)) {
+          if (!result[g].includes(sec)) {
+            result[g].push(sec);
+          }
+        }
+      }
+    }
+  }
+
+  if (!hasAnyScoped && list.length > 0) {
+    // Legacy unscoped sections (e.g. ['A', 'B']) applies to all grades
+    const cleanSecs = list.map((s) => s.trim().toUpperCase().replace(/^SECTION\s*/i, '')).filter(Boolean);
+    for (const g of grades) {
+      result[g] = [...cleanSecs];
+    }
+  }
+
+  // If a grade had no sections populated, default to available sections
+  for (const g of grades) {
+    if (result[g].length === 0) {
+      result[g] = defaultSectionsMap?.[g] ? [...defaultSectionsMap[g]] : ['A'];
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Serialize a per-grade sections map { [grade]: string[] } into an array of "Grade:Section" strings.
+ */
+export function serializeGradeSectionsMap(map: Record<string, string[]>): string[] {
+  const result: string[] = [];
+  for (const [grade, secs] of Object.entries(map)) {
+    if (!Array.isArray(secs)) continue;
+    for (const s of secs) {
+      const cleanSec = String(s).trim().toUpperCase().replace(/^SECTION\s*/i, '');
+      if (cleanSec) {
+        result.push(`${grade.trim()}:${cleanSec}`);
+      }
+    }
+  }
+  return result;
+}
+

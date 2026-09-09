@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { readList, teacherTeachesSection } from '@/lib/faculty';
 
 const MAX_PERIODS_PER_DAY = 8;
 
@@ -26,6 +27,36 @@ export async function POST(request: Request) {
     const schedule = await db.schedule.findUnique({ where: { id: scheduleId } });
     if (!schedule) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
+    }
+
+    // Faculty Directory strict validation
+    const subjects = readList(teacher.subjects ?? teacher.subject);
+    const grades = readList(teacher.grades);
+    const sections = readList(teacher.sections);
+
+    const teachesSubject = subjects.some((s) => {
+      const clean = s.trim().toLowerCase();
+      const target = schedule.subject.trim().toLowerCase();
+      return clean === target || clean.replace(/\s+/g, '') === target.replace(/\s+/g, '');
+    });
+    const teachesGrade = grades.length > 0 && grades.some((g) => {
+      const clean = g.trim().toLowerCase();
+      const target = schedule.grade.trim().toLowerCase();
+      if (clean === target) return true;
+      const gNum = clean.replace(/[^0-9]/g, '');
+      const tNum = target.replace(/[^0-9]/g, '');
+      return gNum && tNum && gNum === tNum;
+    });
+    const teachesSection = teacherTeachesSection(teacher.sections, schedule.grade, schedule.section);
+
+    if (!teachesSubject || !teachesGrade || !teachesSection) {
+      const issues: string[] = [];
+      if (!teachesSubject) issues.push(`subject '${schedule.subject}'`);
+      if (!teachesGrade) issues.push(`grade '${schedule.grade}'`);
+      if (!teachesSection) issues.push(`section '${schedule.section}'`);
+      return NextResponse.json({
+        error: `FACULTY MISMATCH: ${teacher.name} is not mapped in Faculty Directory for ${issues.join(', ')}.`,
+      }, { status: 409 });
     }
 
     // CRITICAL: Check if teacher is already assigned to another grade/section at the same day+period

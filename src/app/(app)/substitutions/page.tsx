@@ -6,7 +6,7 @@ import {
   AlertTriangle, Zap, Users, Calendar, BookOpen,
   UserCheck, Brain, ArrowRight, Play, MoreVertical,
   XCircle, Eye, Fingerprint, Sparkles, UserX, AlertCircle,
-  Check, ArrowUpRight, GraduationCap, ShieldCheck
+  Check, ArrowUpRight, GraduationCap, ShieldCheck, Trash2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -147,6 +147,24 @@ export default function SubstitutionsPage() {
         toast({ title: d.assigned === 0 ? 'All Slots Covered' : 'Auto-Assign Complete', description: d.message || 'No pending slots to assign.' });
       }
     } finally { setAutoAssigning(false); }
+  };
+
+  const handleDeleteSub = async (subId: string) => {
+    if (!confirm('Are you sure you want to remove this substitution entry?')) return;
+    try {
+      const res = await fetch(`/api/substitutions?id=${encodeURIComponent(subId)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({ title: 'Substitution Removed', description: 'The entry was successfully deleted.' });
+        fetchSubs();
+      } else {
+        toast({ title: 'Error', description: data.error || 'Failed to delete substitution', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Network error deleting substitution', variant: 'destructive' });
+    }
   };
 
   // Open Candidate Selection for single slot
@@ -587,12 +605,22 @@ export default function SubstitutionsPage() {
                         </Badge>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button
-                          onClick={() => setViewSub(s)}
-                          className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
-                        >
-                          <Eye className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            onClick={() => setViewSub(s)}
+                            className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+                            title="View Details"
+                          >
+                            <Eye className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteSub(s.id)}
+                            className="p-1.5 rounded-lg hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors"
+                            title="Remove Substitution"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

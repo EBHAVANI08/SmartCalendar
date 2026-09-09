@@ -265,7 +265,7 @@ export function BrochureClient() {
           </p>
           <p className="font-mono text-sm text-[#12261f]">ClientPilot2026</p>
           <p className="mt-2 text-[11px] text-[#3d524c]">
-            Role: School Admin · Teacher demo: megha.lohade@client.school / teacher123
+            Role: School Admin · Teacher demo: teacher@client.school / teacher123
           </p>
         </div>
 

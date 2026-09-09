@@ -62,7 +62,9 @@ export async function POST(request: Request) {
     }
   }
 
-  const net = Math.max(0, Number(amount) - discount);
+  const taxable = Math.max(0, Number(amount) - discount);
+  const tax = Math.round(taxable * 0.18 * 100) / 100; // 18% GST
+  const net = taxable + tax;
   let invoiceId: string | undefined;
 
   if (createInvoice !== false) {
@@ -72,6 +74,7 @@ export async function POST(request: Request) {
         number: await nextInvoiceNumber(),
         amount: Number(amount),
         discount,
+        tax,
         total: net,
         currency: body.currency || 'INR',
         status: 'paid',

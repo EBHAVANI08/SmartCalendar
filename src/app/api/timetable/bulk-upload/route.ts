@@ -12,6 +12,7 @@ import {
 import { operationalScheduleFilter, EDITABLE_STATUSES, isEditable } from '@/lib/timetable-lifecycle';
 import { parseAnyExcel, parseAnyPdf, normalizeGrade, isBlank, type ExtractedSchedule } from '@/lib/timetable-sheet-parser';
 import { requireCapability } from '@/lib/authz';
+import { readList, teacherTeachesSection } from '@/lib/faculty';
 
 export const dynamic = 'force-dynamic';
 
@@ -136,7 +137,7 @@ export async function POST(request: Request) {
       getDayConfig(schoolId),
       db.teacher.findMany({
         where: { schoolId },
-        select: { id: true, name: true, role: true, subjects: true, subject: true, grades: true },
+        select: { id: true, name: true, role: true, subjects: true, subject: true, grades: true, sections: true },
       }),
       db.gradeSubjectConfig.findMany({ where: { schoolId }, select: { grade: true, subjectName: true, active: true } }).catch(() => []),
     ]);
@@ -292,9 +293,26 @@ export async function POST(request: Request) {
           add('warning', 'TEACHER_INACTIVE', `${teacher.name} is deactivated. Slot imported as unassigned.`);
         } else {
           const subs = teacherSubjects(teacher);
-          if (subs.length && !subs.includes(item.subject.toLowerCase())) {
-            add('warning', 'NOT_SUBJECT_QUALIFIED',
-              `${teacher.name} is not mapped to ${item.subject}. The assignment will be recorded as an override.`);
+          const grades = readList(teacher.grades);
+          const sections = readList(teacher.sections);
+          const teachesSub = subs.length === 0 || subs.includes(item.subject.toLowerCase());
+          const teachesGrd = grades.length === 0 || grades.some((g) => {
+            const clean = g.trim().toLowerCase();
+            const target = item.grade.trim().toLowerCase();
+            if (clean === target) return true;
+            const gNum = clean.replace(/[^0-9]/g, '');
+            const tNum = target.replace(/[^0-9]/g, '');
+            return gNum && tNum && gNum === tNum;
+          });
+          const teachesSec = teacherTeachesSection(teacher.sections, item.grade, item.section);
+
+          if (!teachesSub || !teachesGrd || !teachesSec) {
+            const mismatches: string[] = [];
+            if (!teachesSub) mismatches.push(`subject ${item.subject}`);
+            if (!teachesGrd) mismatches.push(`grade ${item.grade}`);
+            if (!teachesSec) mismatches.push(`section ${item.section}`);
+            add('warning', 'NOT_FACULTY_QUALIFIED',
+              `${teacher.name} is not mapped in Faculty Directory for ${mismatches.join(', ')}. Recorded as an override.`);
           }
           if (tracker.isTeacherBusy(teacher.id, item.day, item.period)) {
             add('warning', 'TEACHER_DOUBLE_BOOKED',

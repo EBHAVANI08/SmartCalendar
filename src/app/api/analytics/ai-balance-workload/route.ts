@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
 import { requireCapability } from '@/lib/authz';
+import { readList } from '@/lib/faculty';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 const MAX_PERIODS_PER_DAY = 8;
@@ -152,45 +153,44 @@ export async function POST(request: Request) {
               if (!tWorkload) return false;
               // Only consider teachers who won't become overloaded
               if (tWorkload.dailyPeriods[day] >= targetMaxPeriods) return false;
-              return true;
+              // Strictly verify qualification for subject, grade, and section from Faculty Directory
+              const subjects = readList(t.subjects ?? t.subject);
+              const grades = readList(t.grades);
+              const sections = readList(t.sections);
+
+              const teachesSubject = subjects.some((s) => {
+                const sClean = s.trim().toLowerCase();
+                const target = sched.subject.trim().toLowerCase();
+                return sClean === target || sClean.replace(/\s+/g, '') === target.replace(/\s+/g, '');
+              });
+              const teachesGrade = grades.length > 0 && grades.some((g) => {
+                const clean = g.trim().toLowerCase();
+                const target = sched.grade.trim().toLowerCase();
+                if (clean === target) return true;
+                const gNum = clean.replace(/[^0-9]/g, '');
+                const tNum = target.replace(/[^0-9]/g, '');
+                return gNum && tNum && gNum === tNum;
+              });
+              const teachesSection = sections.length === 0 || sections.some((s) => {
+                const clean = s.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+                const target = sched.section.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+                return clean === target;
+              });
+
+              return teachesSubject && teachesGrade && teachesSection;
             })
             .map((t) => {
               const tWorkload = updatedWorkloadMap[t.id];
-              const teacherGrades = JSON.parse(t.grades || '[]') as string[];
-
-              const teachesSubject = t.subject === sched.subject;
-              const teachesRelatedSubject = relatedTo.includes(t.subject);
-              const teachesGrade = teacherGrades.includes(sched.grade);
-              const teachesSimilarGrade = teacherGrades.some((g: string) => {
-                const gNum = parseInt(g.replace(/\D/g, ''));
-                const targetNum = parseInt(sched.grade.replace(/\D/g, ''));
-                return !isNaN(gNum) && !isNaN(targetNum) && Math.abs(gNum - targetNum) <= 1;
-              });
-
-              let score = 0;
-              if (teachesSubject) score += 50;
-              if (teachesGrade) score += 30;
-              else if (teachesSimilarGrade) score += 15;
-              if (teachesRelatedSubject) score += 20;
-              // Strongly prefer teachers with fewer periods (balance seeking)
-              score += Math.max(0, (targetMaxPeriods - tWorkload.dailyPeriods[day])) * 6;
-
-              let matchReason = '';
-              if (teachesSubject && teachesGrade) matchReason = 'Same subject & grade specialist';
-              else if (teachesSubject) matchReason = 'Subject specialist';
-              else if (teachesRelatedSubject && teachesGrade) matchReason = 'Related subject + same grade';
-              else if (teachesRelatedSubject) matchReason = 'Related subject teacher';
-              else if (teachesGrade) matchReason = 'Same grade teacher';
-              else if (teachesSimilarGrade) matchReason = 'Similar grade teacher';
-              else matchReason = 'Available teacher with capacity';
+              const score = 100 + Math.max(0, (targetMaxPeriods - tWorkload.dailyPeriods[day])) * 6;
+              const matchReason = 'Faculty Directory qualified specialist';
 
               return {
                 teacher: t,
                 score,
                 matchReason,
-                teachesSubject,
-                teachesGrade,
-                teachesRelatedSubject,
+                teachesSubject: true,
+                teachesGrade: true,
+                teachesRelatedSubject: false,
                 currentDayLoad: tWorkload.dailyPeriods[day],
               };
             })

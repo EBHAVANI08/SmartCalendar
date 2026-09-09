@@ -89,25 +89,10 @@ export async function POST(request: Request) {
         { status: 201 }
       );
     } catch (dbError: any) {
-      console.warn('[DB REGISTER SCHOOL WARNING - FALLBACK PROVISIONING]', dbError?.message || dbError);
-      
-      // Resilient fallback workspace creation if DB network/connection is unreachable
-      const virtualSchoolId = 'sch_' + Math.random().toString(36).substring(2, 10);
+      console.error('[DB REGISTER SCHOOL ERROR]', dbError?.message || dbError);
       return NextResponse.json(
-        {
-          success: true,
-          message: 'School workspace provisioned in secure cloud.',
-          user: {
-            id: virtualSchoolId,
-            name: input.name,
-            email: email,
-            role: 'admin',
-            schoolId: virtualSchoolId,
-            schoolCode: code,
-            schoolName: input.name,
-          },
-        },
-        { status: 201 }
+        { success: false, error: 'Database service unavailable. School workspace could not be created.' },
+        { status: 503 }
       );
     }
   } catch (error: any) {

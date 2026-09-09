@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { readList } from '@/lib/faculty';
+import { readList, teacherTeachesSection } from '@/lib/faculty';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { getDayConfig } from '@/lib/timetable-config';
 import { getPublishedVersion } from '@/lib/timetable-lifecycle';
@@ -51,13 +51,50 @@ interface TeacherInfo {
   /** Every subject this teacher is qualified for (one record, many subjects). */
   subjects: string[];
   grades: string[];
+  sections: string[];
   existingScheduleCount: number;
 }
 
-/** Is this teacher actually qualified for the subject, not merely free? */
+/** Is this teacher qualified for the subject? (Case-insensitive) */
 function teachesSubject(teacher: TeacherInfo, subject: string): boolean {
+  if (!subject) return false;
   const target = subject.trim().toLowerCase();
-  return teacher.subjects.some((s) => s.trim().toLowerCase() === target);
+  return teacher.subjects.some((s) => {
+    const clean = s.trim().toLowerCase();
+    return clean === target || clean.replace(/\s+/g, '') === target.replace(/\s+/g, '');
+  });
+}
+
+/** Does this teacher teach this grade? (Matches Grade 10 vs 10 vs Grade 10th) */
+function teachesGrade(teacher: TeacherInfo, grade: string): boolean {
+  if (!teacher.grades || teacher.grades.length === 0) return false;
+  const target = grade.trim().toLowerCase();
+  const targetNum = target.replace(/[^0-9]/g, '');
+  return teacher.grades.some((g) => {
+    const clean = g.trim().toLowerCase();
+    if (clean === target) return true;
+    const gNum = clean.replace(/[^0-9]/g, '');
+    if (targetNum && gNum && gNum === targetNum) return true;
+    if (clean === target.replace('grade ', '') || `grade ${clean}` === target) return true;
+    return false;
+  });
+}
+
+/** Does this teacher teach this section?
+ * If teacher has specific sections assigned in Faculty Directory (including grade-specific sections),
+ * they can ONLY teach those sections.
+ * If sections field is empty/unset, they teach all sections of their assigned grades.
+ */
+function teachesSection(teacher: TeacherInfo, section: string, grade?: string): boolean {
+  if (grade) {
+    return teacherTeachesSection(teacher.sections, grade, section);
+  }
+  return teacherTeachesSection(teacher.sections, '', section);
+}
+
+/** Strictly eligible for this (subject, grade, section) triplet from Faculty Directory */
+function isTeacherEligibleForSlot(teacher: TeacherInfo, subject: string, grade: string, section: string): boolean {
+  return teachesSubject(teacher, subject) && teachesGrade(teacher, grade) && teachesSection(teacher, section, grade);
 }
 
 interface GeneratedSchedule {
@@ -122,21 +159,73 @@ export async function POST(request: Request) {
     // Generation writes into the editable draft when the school uses
     // versioning. A published timetable is never regenerated in place - the
     // Admin must create a revision first.
-    const draftVersion = await db.timetableVersion.findFirst({
+    let draftVersion = await db.timetableVersion.findFirst({
       where: { schoolId, status: { in: ['draft', 'review'] } },
       orderBy: { version: 'desc' },
       select: { id: true, version: true },
     });
     const publishedVersion = await getPublishedVersion(schoolId);
     if (!draftVersion && publishedVersion) {
-      return NextResponse.json(
-        {
-          error: `Timetable v${publishedVersion.version} is published and cannot be regenerated in place. Create a revision first, then generate into it.`,
-          code: 'VERSION_LOCKED',
-          versionId: publishedVersion.id,
+      // Auto-create a new draft revision so the current published roster is preserved in history
+      const highest = await db.timetableVersion.findFirst({
+        where: { schoolId },
+        orderBy: { version: 'desc' },
+        select: { version: true },
+      });
+      const nextVersionNum = (highest?.version ?? publishedVersion.version) + 1;
+      const createdDraft = await db.timetableVersion.create({
+        data: {
+          schoolId,
+          academicYearId: publishedVersion.academicYearId,
+          name: `Master Timetable v${nextVersionNum}`,
+          version: nextVersionNum,
+          status: 'draft',
+          basedOnId: publishedVersion.id,
+          createdBy: request.headers.get('x-user-email') || 'School Admin',
+          changeNotes: `Working draft for new timetable generation (v${nextVersionNum})`,
         },
-        { status: 409 }
-      );
+      });
+      draftVersion = { id: createdDraft.id, version: createdDraft.version };
+
+      // Ensure newly created draft revision inherits existing schedules from the base version
+      let sourceVersionId = publishedVersion.id;
+      let existingRows = await db.schedule.findMany({
+        where: { schoolId, timetableVersionId: sourceVersionId },
+      });
+      if (existingRows.length === 0) {
+        const latestWithRows = await db.schedule.findFirst({
+          where: { schoolId, timetableVersionId: { not: null } },
+          orderBy: { createdAt: 'desc' },
+          select: { timetableVersionId: true },
+        });
+        if (latestWithRows?.timetableVersionId) {
+          sourceVersionId = latestWithRows.timetableVersionId;
+          existingRows = await db.schedule.findMany({
+            where: { schoolId, timetableVersionId: sourceVersionId },
+          });
+        }
+      }
+      if (existingRows.length > 0) {
+        for (let i = 0; i < existingRows.length; i += 100) {
+          const chunk = existingRows.slice(i, i + 100);
+          await db.schedule.createMany({
+            data: chunk.map((r) => ({
+              schoolId,
+              timetableVersionId: createdDraft.id,
+              grade: r.grade,
+              section: r.section,
+              day: r.day,
+              period: r.period,
+              subject: r.subject,
+              teacherId: r.teacherId,
+              topic: r.topic,
+              roomId: r.roomId,
+              startTime: r.startTime,
+              endTime: r.endTime,
+            })),
+          });
+        }
+      }
     }
     const targetVersionId = draftVersion?.id ?? null;
     // Occupancy and writes are confined to this one timetable context.
@@ -191,17 +280,11 @@ export async function POST(request: Request) {
     const MORNING_PERIODS = TIME_SLOTS.filter((slot) => parseMinutes(slot.start, 0) < 12 * 60).map((slot) => slot.period);
     const AFTERNOON_PERIODS = TIME_SLOTS.filter((slot) => !MORNING_PERIODS.includes(slot.period)).map((slot) => slot.period);
 
-    // ─── Step 1: Load teachers who teach THIS grade ───
+    // ─── Step 1: Load teachers who strictly teach THIS grade and THIS section ───
     const allTeachers = await db.teacher.findMany({
-      where: { schoolId },
+      where: { schoolId, role: { not: 'inactive' } },
       // Occupancy must come from THIS school and THIS timetable version only.
       include: { schedules: { where: { schoolId, ...versionScope } } },
-    });
-
-    // Filter to only teachers who teach this grade (from their grades JSON field)
-    const gradeTeachers = allTeachers.filter((t) => {
-      const grades = JSON.parse(t.grades || '[]') as string[];
-      return grades.includes(targetGrade);
     });
 
     const toTeacherInfo = (t: (typeof allTeachers)[number]): TeacherInfo => ({
@@ -209,27 +292,45 @@ export async function POST(request: Request) {
       name: t.name,
       subject: t.subject,
       subjects: readList(t.subjects ?? t.subject),
-      grades: JSON.parse(t.grades || '[]') as string[],
+      grades: readList(t.grades),
+      sections: readList(t.sections),
       existingScheduleCount: t.schedules.length,
     });
 
-    const teacherInfo: TeacherInfo[] = gradeTeachers.map(toTeacherInfo);
-
-    // Also load ALL teachers as fallback for subjects with no grade-specific teacher
-    const allTeacherInfo: TeacherInfo[] = allTeachers.map(toTeacherInfo);
+    // ONLY include teachers whose Faculty Directory configuration explicitly includes targetGrade and targetSection
+    const teacherInfo: TeacherInfo[] = allTeachers
+      .map(toTeacherInfo)
+      .filter((t) => teachesGrade(t, targetGrade) && teachesSection(t, targetSection));
 
     // Subjects and their scheduling rules come from this school's own
     // grade configuration. The hardcoded CBSE map is only a fallback for a
     // school that has not configured anything yet, so two tenants can run
     // completely different curricula.
-    const gradeSubjectConfigs = await db.gradeSubjectConfig.findMany({
-      where: { schoolId, grade: targetGrade, active: true },
-      orderBy: { subjectName: 'asc' },
-    });
+    const [gradeSubjectConfigs, schoolSubjectMasters, teacherSubjects] = await Promise.all([
+      db.gradeSubjectConfig.findMany({
+        where: { schoolId, grade: targetGrade, active: true },
+        orderBy: { subjectName: 'asc' },
+      }),
+      db.subjectMaster.findMany({
+        where: { schoolId },
+        select: { name: true },
+        orderBy: { name: 'asc' },
+      }),
+      db.teacher.findMany({
+        where: { schoolId, role: { not: 'inactive' } },
+        select: { subject: true },
+      }),
+    ]);
     const usingConfiguredSubjects = gradeSubjectConfigs.length > 0;
+    const dbSubjects = schoolSubjectMasters.map((s) => s.name);
+    const dbTeacherSubjects = Array.from(new Set(teacherSubjects.map((t) => t.subject).filter(Boolean)));
     const subjects = usingConfiguredSubjects
       ? gradeSubjectConfigs.map((c) => c.subjectName)
-      : (SUBJECTS_BY_GRADE[targetGrade] || SUBJECTS_BY_GRADE['Grade 1']);
+      : dbSubjects.length > 0
+        ? dbSubjects
+        : dbTeacherSubjects.length > 0
+          ? dbTeacherSubjects
+          : (SUBJECTS_BY_GRADE[targetGrade] || SUBJECTS_BY_GRADE['Grade 1']);
     const subjectRules = new Map(gradeSubjectConfigs.map((c) => [c.subjectName.toLowerCase(), c]));
     /** Weekly period target per subject, when configured. */
     const weeklyTargetFor = (subject: string) =>
@@ -253,12 +354,9 @@ export async function POST(request: Request) {
      */
     const subjectDailyLimitFor = (subject: string, day: string): number => {
       const configured = configuredMaxPerDay(subject);
-      if (configured !== null) return configured;
-      if (subject === 'Physical Education' && day === 'Wednesday') {
-        if (['Grade 3', 'Grade 4', 'Grade 5'].includes(targetGrade)) return 2;
-        return 1;
-      }
-      return 2;
+      if (configured !== null) return Math.min(1, configured);
+      // Strictly max 1 period per subject per day in the same grade & section (no repeating subjects on same day)
+      return 1;
     };
 
     /**
@@ -333,44 +431,34 @@ export async function POST(request: Request) {
       subjectTeacherHistory: Map<string, Map<string, string>> // subject -> day -> teacherId
     ): { score: number; matchLabel: string } => {
       const isSubjectQualified = teachesSubject(teacher, subject);
-      const teachesGrade = teacher.grades.includes(grade);
-      const teachesSimilarGrade = teacher.grades.some((g) => {
-        const gNum = parseInt(g.replace(/\D/g, ''));
-        const targetNum = parseInt(grade.replace(/\D/g, ''));
-        return !isNaN(gNum) && !isNaN(targetNum) && Math.abs(gNum - targetNum) <= 1;
-      });
+      const isGradeQualified = teachesGrade(teacher, grade);
+      const isSectionQualified = teachesSection(teacher, targetSection);
 
       const dayWorkload = getTeacherDayCount(teacher.id, day);
       const totalWorkload = getTeacherTotalLoad(teacher.id);
 
-      // Hard constraint 1: Must be qualified for the subject
+      // STRICT Hard constraint 1: Must be qualified for the subject in Faculty Directory
       if (!isSubjectQualified) {
         return { score: -Infinity, matchLabel: 'Unqualified Subject' };
       }
 
-      // Hard constraint 2: Cannot exceed max periods per day
+      // STRICT Hard constraint 2: Must be assigned to this grade in Faculty Directory
+      if (!isGradeQualified) {
+        return { score: -Infinity, matchLabel: 'Unassigned Grade' };
+      }
+
+      // STRICT Hard constraint 3: Must be assigned to this section in Faculty Directory
+      if (!isSectionQualified) {
+        return { score: -Infinity, matchLabel: 'Unassigned Section' };
+      }
+
+      // Hard constraint 4: Cannot exceed max periods per day
       if (dayWorkload >= getTeacherDayLimit(teacher.id, day)) {
         return { score: -Infinity, matchLabel: 'Overloaded' };
       }
 
-      let score = 0;
-      let matchLabel = '';
-
-      // Priority 1: Perfect Match — qualified for subject AND designated for this grade
-      if (teachesGrade) {
-        score += 1200;
-        matchLabel = 'Perfect Match';
-      }
-      // Priority 2: Subject specialist who teaches adjacent grades
-      else if (teachesSimilarGrade) {
-        score += 900;
-        matchLabel = 'Subject Specialist (Adjacent Grade)';
-      }
-      // Priority 3: Subject specialist qualified in the school
-      else {
-        score += 700;
-        matchLabel = 'Subject Specialist';
-      }
+      let score = 1200;
+      let matchLabel = 'Faculty Directory Match';
 
       // Priority 4: Teacher Section Continuity — STRONGLY prefer the same teacher for this subject throughout the week
       // (e.g. Mrs. Sharma takes all Math periods for Grade 10-A, not switching between multiple teachers)
@@ -458,28 +546,29 @@ export async function POST(request: Request) {
       period: number,
       options: { requireSubjectMatch?: boolean } = {}
     ): (TeacherInfo & { score: number; matchLabel: string }) | null => {
-      for (const pool of [teacherInfo, allTeacherInfo]) {
-        const candidates = pool
-          .filter((t) => {
-            // Must be strictly qualified for this subject
-            if (!teachesSubject(t, subject)) return false;
-            // Must NOT be busy in any other class/grade during this (day, period) slot
-            if (isTeacherBusy(t.id, day, period)) return false;
-            // Must NOT exceed daily workload limits
-            if (getTeacherDayCount(t.id, day) >= getTeacherDayLimit(t.id, day)) return false;
-            return true;
-          })
-          .map((t) => ({ ...t, ...scoreTeacher(t, subject, targetGrade, day, period, subjectTeacherHistory) }))
-          .filter((t) => t.score > -Infinity)
-          .sort((a, b) => b.score - a.score);
+      // ONLY candidates from teacherInfo who strictly match subject, targetGrade, and targetSection
+      // No fallback to other teachers - extra subjects/grades/sections are strictly forbidden!
+      const candidates = teacherInfo
+        .filter((t) => {
+          // Strictly must be eligible for subject, grade, and section from Faculty Directory
+          if (!isTeacherEligibleForSlot(t, subject, targetGrade, targetSection)) return false;
+          // Must NOT be busy in any other class/grade during this (day, period) slot
+          if (isTeacherBusy(t.id, day, period)) return false;
+          // Must NOT exceed daily workload limits
+          if (getTeacherDayCount(t.id, day) >= getTeacherDayLimit(t.id, day)) return false;
+          return true;
+        })
+        .map((t) => ({ ...t, ...scoreTeacher(t, subject, targetGrade, day, period, subjectTeacherHistory) }))
+        .filter((t) => t.score > -Infinity)
+        .sort((a, b) => b.score - a.score);
 
-        if (candidates.length > 0) {
-          const preferAnchor = isClassTeacherRuleGrade && period === 1 && period1AnchorTeacherId;
-          return preferAnchor
-            ? candidates.find((c) => c.id === period1AnchorTeacherId) ?? candidates[0]
-            : candidates[0];
-        }
+      if (candidates.length > 0) {
+        const preferAnchor = isClassTeacherRuleGrade && period === 1 && period1AnchorTeacherId;
+        return preferAnchor
+          ? candidates.find((c) => c.id === period1AnchorTeacherId) ?? candidates[0]
+          : candidates[0];
       }
+
       return null;
     };
 

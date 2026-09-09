@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 import { OWNER_ROLE_MODULES } from '@/lib/access';
 import { isSuperAdminRequest, unauthorized, writeAudit } from '@/lib/superadmin';
 
@@ -28,11 +29,12 @@ export async function POST(request: Request) {
     ? body.modules
     : (OWNER_ROLE_MODULES[role] || OWNER_ROLE_MODULES.support);
 
+  const hashedPassword = await bcrypt.hash(body.password, 10);
   const employee = await db.ownerEmployee.create({
     data: {
       name: body.name,
       email,
-      password: body.password,
+      password: hashedPassword,
       role,
       modules: JSON.stringify(modules),
       status: 'active',
@@ -49,6 +51,7 @@ export async function PATCH(request: Request) {
   if (!(await isSuperAdminRequest(request))) return unauthorized();
   const body = await request.json();
   if (!body.id) return NextResponse.json({ error: 'id required' }, { status: 400 });
+  const hashedPassword = body.password ? await bcrypt.hash(body.password, 10) : undefined;
   const employee = await db.ownerEmployee.update({
     where: { id: body.id },
     data: {
@@ -57,7 +60,7 @@ export async function PATCH(request: Request) {
       status: body.status,
       isDemo: body.isDemo,
       notes: body.notes,
-      password: body.password || undefined,
+      password: hashedPassword,
       modules: Array.isArray(body.modules) ? JSON.stringify(body.modules) : body.modules,
     },
   });

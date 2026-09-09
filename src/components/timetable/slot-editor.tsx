@@ -33,8 +33,11 @@ interface Candidate {
   name: string;
   subjects: string[];
   grades: string[];
+  sections: string[];
   qualifiedSubject: boolean;
   qualifiedGrade: boolean;
+  qualifiedSection: boolean;
+  fullyQualified: boolean;
   available: boolean;
   inactive: boolean;
   conflict: { grade: string; section: string; subject: string } | null;
@@ -188,7 +191,11 @@ export function SlotEditor({
     !currentTeacher ||
     currentTeacher.subjects.some((s) => s.toLowerCase() === newSubject.toLowerCase());
   const qualifiedForNewSubject = candidates.filter(
-    (c) => c.available && c.subjects.some((s) => s.toLowerCase() === newSubject.toLowerCase())
+    (c) =>
+      c.available &&
+      c.qualifiedGrade &&
+      c.qualifiedSection &&
+      c.subjects.some((s) => s.toLowerCase() === newSubject.toLowerCase())
   );
 
   const periodsForMoveDay = dayPeriods[moveDay] ?? 8;
@@ -418,16 +425,23 @@ export function SlotEditor({
                         )}
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {c.qualifiedSubject
-                          ? <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">qualified</Badge>
-                          : <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">not mapped</Badge>}
+                        {c.fullyQualified ? (
+                          <Badge variant="outline" className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200">
+                            qualified
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200">
+                            {!c.qualifiedSubject ? 'not subject' : !c.qualifiedGrade ? 'not grade' : 'not section'}
+                          </Badge>
+                        )}
                         <Button
                           type="button"
-                          size="sm" variant={c.qualifiedSubject ? 'default' : 'outline'}
+                          size="sm"
+                          variant={c.fullyQualified ? 'default' : 'outline'}
                           disabled={!c.available || c.isCurrent || saving}
                           className="h-7 text-[11px]"
                           onClick={async () => {
-                            if (!c.qualifiedSubject) {
+                            if (!c.fullyQualified) {
                               setOverrideReason('');
                               setOverrideAck(false);
                               setOverrideFor(c);
@@ -590,13 +604,22 @@ export function SlotEditor({
 
             <div className="rounded-lg border border-amber-300 bg-amber-50 p-3">
               <p className="text-xs font-semibold text-amber-900">
-                This teacher is not mapped to {slot.subject} for {slot.grade}. This assignment will be
-                recorded as a manual override.
+                This teacher is not fully mapped in Faculty Directory for this slot:
               </p>
-              <p className="text-[11px] text-amber-800 mt-1">
-                They currently teach: {overrideFor.subjects.join(', ') || 'no subjects'}.
-                {!overrideFor.qualifiedGrade && ' They are also not mapped to this grade.'}
-              </p>
+              <div className="text-[11px] text-amber-900 mt-1.5 space-y-1">
+                <p>
+                  <strong>Subjects:</strong> {overrideFor.subjects.join(', ') || 'None'}{' '}
+                  {!overrideFor.qualifiedSubject && <span className="text-rose-700 font-semibold">(Missing: {slot.subject})</span>}
+                </p>
+                <p>
+                  <strong>Grades:</strong> {overrideFor.grades.join(', ') || 'None'}{' '}
+                  {!overrideFor.qualifiedGrade && <span className="text-rose-700 font-semibold">(Missing: {slot.grade})</span>}
+                </p>
+                <p>
+                  <strong>Sections:</strong> {overrideFor.sections?.length ? overrideFor.sections.join(', ') : 'All'}{' '}
+                  {!overrideFor.qualifiedSection && <span className="text-rose-700 font-semibold">(Missing: Section {slot.section})</span>}
+                </p>
+              </div>
             </div>
 
             <div>
@@ -605,7 +628,7 @@ export function SlotEditor({
                 data-testid="override-reason"
                 className="mt-1"
                 rows={3}
-                placeholder="e.g. Only available staff member for this period"
+                placeholder="e.g. Coverage assigned by Principal"
                 value={overrideReason}
                 onChange={(e) => setOverrideReason(e.target.value)}
               />
@@ -618,8 +641,7 @@ export function SlotEditor({
                 onCheckedChange={(v) => setOverrideAck(v === true)}
               />
               <span className="text-xs text-slate-700">
-                I understand {overrideFor.name} is not qualified for {slot.subject} and am assigning them
-                deliberately.
+                I understand {overrideFor.name} is not mapped in Faculty Directory for {slot.grade} {slot.section} ({slot.subject}) and am assigning them deliberately.
               </span>
             </label>
           </div>

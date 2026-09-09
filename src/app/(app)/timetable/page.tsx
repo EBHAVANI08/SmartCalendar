@@ -23,13 +23,17 @@ import { GenerationResult, type GenerationResultData } from '@/components/timeta
 import { VersionBanner } from '@/components/timetable/version-banner';
 import { SlotEditor } from '@/components/timetable/slot-editor';
 import { ImportPreviewDialog, type ImportReport } from '@/components/timetable/import-preview';
+import { readList, teacherTeachesSection } from '@/lib/faculty';
 
 interface Teacher {
   id: string;
   name: string;
   subject: string;
+  subjects?: string;
   email: string;
   grades?: string;
+  sections?: string;
+  role?: string;
 }
 
 interface Schedule {
@@ -47,26 +51,8 @@ interface Schedule {
 }
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
-const SECTIONS_BY_GRADE: Record<string, string[]> = {
-  'Grade 1': ['Sunflower', 'Lotus', 'Jasmine'],
-  'Grade 2': ['Lotus', 'Jasmine', 'Sunflower'],
-  'Grade 3': ['Jasmine', 'Sunflower', 'Lotus', 'Rose'],
-  'Grade 4': ['Lotus', 'Jasmine', 'Sunflower'],
-  'Grade 5': ['Sunflower', 'Jasmine', 'Lotus'],
-  'Grade 6': ['A', 'B', 'C'],
-  'Grade 7': ['A', 'B'],
-  'Grade 8': ['A', 'B'],
-  'Grade 9': ['A', 'B'],
-  'Grade 10': ['A', 'B'],
-  'Grade 11': ['A', 'B'],
-  'Grade 12': ['A', 'B'],
-};
-const ALL_SUBJECTS = [
-  'Mathematics', 'Science', 'English', 'Hindi', 'Marathi', 'Social Science',
-  'Physics', 'Chemistry', 'Biology', 'Computer Science',
-  'Physical Education', 'Art', 'Music', 'Robotics', 'Foreign Language', 'Knowledge Building', 'Value Education', 'Free Period / Library'
-];
+const DEFAULT_GRADES = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10', 'Grade 11', 'Grade 12'];
+
 
 interface PeriodItem {
   num: number | string;
@@ -116,69 +102,6 @@ const getSubjectAccent = (subject: string) => {
     default:
       return { border: 'border-l-[3px] border-l-slate-400', icon: Library, badge: 'bg-slate-100 text-slate-700 border-slate-200', iconColor: 'text-slate-500' };
   }
-};
-
-const FALLBACK_WEEK_SCHEDULE: Record<string, Record<number, { subject: string; teacher: string; room: string }>> = {
-  Monday: {
-    1: { subject: 'Mathematics', teacher: 'Priya Sharma', room: 'R-10A' },
-    2: { subject: 'English', teacher: 'Ananya Iyer', room: 'R-10A' },
-    3: { subject: 'Hindi', teacher: 'Kavita Agarwal', room: 'R-10A' },
-    4: { subject: 'Science', teacher: 'Rajesh Kumar', room: 'Science Lab' },
-    5: { subject: 'Social Science', teacher: 'Hemalata Sharma', room: 'R-10A' },
-    6: { subject: 'Computer Science', teacher: 'Siddharth Kapse', room: 'Comp Lab 1' },
-    7: { subject: 'Physical Education', teacher: 'Coach Rakesh', room: 'Playground' },
-    8: { subject: 'Art', teacher: 'Ravi Varma', room: 'Art Studio' },
-  },
-  Tuesday: {
-    1: { subject: 'Science', teacher: 'Rajesh Kumar', room: 'Science Lab' },
-    2: { subject: 'Mathematics', teacher: 'Priya Sharma', room: 'R-10A' },
-    3: { subject: 'English', teacher: 'Ananya Iyer', room: 'R-10A' },
-    4: { subject: 'Computer Science', teacher: 'Siddharth Kapse', room: 'Comp Lab 1' },
-    5: { subject: 'Social Science', teacher: 'Hemalata Sharma', room: 'R-10A' },
-    6: { subject: 'Hindi', teacher: 'Kavita Agarwal', room: 'R-10A' },
-    7: { subject: 'Physics', teacher: 'Dr. C.V. Raman Jr.', room: 'Physics Lab' },
-    8: { subject: 'Mathematics', teacher: 'Priya Sharma', room: 'R-10A' },
-  },
-  Wednesday: {
-    1: { subject: 'English', teacher: 'Ananya Iyer', room: 'R-10A' },
-    2: { subject: 'Mathematics', teacher: 'Priya Sharma', room: 'R-10A' },
-    3: { subject: 'Science', teacher: 'Rajesh Kumar', room: 'Science Lab' },
-    4: { subject: 'Social Science', teacher: 'Hemalata Sharma', room: 'R-10A' },
-    5: { subject: 'Chemistry', teacher: 'Dr. Prafulla Ray Jr.', room: 'Chemistry Lab' },
-    6: { subject: 'Hindi', teacher: 'Kavita Agarwal', room: 'R-10A' },
-    7: { subject: 'Computer Science', teacher: 'Siddharth Kapse', room: 'Comp Lab 1' },
-    8: { subject: 'Physical Education', teacher: 'Coach Rakesh', room: 'Playground' },
-  },
-  Thursday: {
-    1: { subject: 'Mathematics', teacher: 'Priya Sharma', room: 'R-10A' },
-    2: { subject: 'Science', teacher: 'Rajesh Kumar', room: 'Science Lab' },
-    3: { subject: 'Social Science', teacher: 'Hemalata Sharma', room: 'R-10A' },
-    4: { subject: 'English', teacher: 'Ananya Iyer', room: 'R-10A' },
-    5: { subject: 'Biology', teacher: 'Dr. Birbal Sahni Jr.', room: 'Bio Lab' },
-    6: { subject: 'Physics', teacher: 'Dr. C.V. Raman Jr.', room: 'Physics Lab' },
-    7: { subject: 'Hindi', teacher: 'Kavita Agarwal', room: 'R-10A' },
-    8: { subject: 'Art', teacher: 'Ravi Varma', room: 'Art Studio' },
-  },
-  Friday: {
-    1: { subject: 'Science', teacher: 'Rajesh Kumar', room: 'Science Lab' },
-    2: { subject: 'English', teacher: 'Ananya Iyer', room: 'R-10A' },
-    3: { subject: 'Mathematics', teacher: 'Priya Sharma', room: 'R-10A' },
-    4: { subject: 'Chemistry', teacher: 'Dr. Prafulla Ray Jr.', room: 'Chemistry Lab' },
-    5: { subject: 'Social Science', teacher: 'Hemalata Sharma', room: 'R-10A' },
-    6: { subject: 'Computer Science', teacher: 'Siddharth Kapse', room: 'Comp Lab 1' },
-    7: { subject: 'Physical Education', teacher: 'Coach Rakesh', room: 'Playground' },
-    8: { subject: 'Free Period / Library', teacher: '—', room: 'Library' },
-  },
-  Saturday: {
-    1: { subject: 'Mathematics', teacher: 'Priya Sharma', room: 'R-10A' },
-    2: { subject: 'Science', teacher: 'Rajesh Kumar', room: 'Science Lab' },
-    3: { subject: 'English', teacher: 'Ananya Iyer', room: 'R-10A' },
-    4: { subject: 'Social Science', teacher: 'Hemalata Sharma', room: 'R-10A' },
-    5: { subject: 'Free Period / Library', teacher: '—', room: 'Library' },
-    6: { subject: 'Free Period / Library', teacher: '—', room: 'Library' },
-    7: { subject: 'Free Period / Library', teacher: '—', room: 'Library' },
-    8: { subject: 'Free Period / Library', teacher: '—', room: 'Library' },
-  },
 };
 
 const calculatePeriods = (
@@ -257,8 +180,9 @@ export default function TimetablePage() {
   const [teacherWeekSchedule, setTeacherWeekSchedule] = useState<any[]>([]);
   const [teacherInfo, setTeacherInfo] = useState<{ id: string; name: string; email: string } | null>(null);
 
-  // isDemo: start true on SSR so server + client render same content (no hydration mismatch)
-  const [isDemo, setIsDemo] = useState(true);
+  const [gradesList, setGradesList] = useState<string[]>(DEFAULT_GRADES);
+  const [sectionsByGrade, setSectionsByGrade] = useState<Record<string, string[]>>({});
+  const [schoolName, setSchoolName] = useState<string>('');
 
   // Dynamic Period Timings State
   const [activePeriods, setActivePeriods] = useState<PeriodItem[]>(PERIODS);
@@ -266,11 +190,12 @@ export default function TimetablePage() {
   // Resolve user role & session
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem('sc_user');
+      const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
       if (raw) {
         const u = JSON.parse(raw);
         const role = u.role || 'admin';
         setUserRole(role);
+        setSchoolName(u.schoolName || u.user?.schoolName || '');
         if (role === 'teacher') {
           setViewMode('my');
         }
@@ -295,11 +220,6 @@ export default function TimetablePage() {
     }
   }, [userRole, fetchTeacherSchedule]);
 
-  // Resolve isDemo on client-side only (after hydration) to avoid SSR mismatch
-  useEffect(() => {
-    setIsDemo(isDemoSchool());
-  }, []);
-
   // Unified Master Studio Modal States
   const [studioOpen, setStudioOpen] = useState(false);
   const [studioStep, setStudioStep] = useState<1 | 2 | 3>(1);
@@ -308,6 +228,12 @@ export default function TimetablePage() {
 
   // Dedicated Bell Timings Modal State (Does NOT trigger AI Creator Studio wizard)
   const [bellTimingsOpen, setBellTimingsOpen] = useState(false);
+
+  // Live Timetable Version & Publish Status
+  const [timetableStatus, setTimetableStatus] = useState<'published' | 'draft' | 'unknown'>('unknown');
+  const [versionInfo, setVersionInfo] = useState<{ id?: string; version: number; name?: string; status?: string; publishedAt?: string } | null>(null);
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [isSavingBell, setIsSavingBell] = useState(false);
 
   const [studioSettings, setStudioSettings] = useState({
     startTime: '08:00',
@@ -359,9 +285,11 @@ export default function TimetablePage() {
   // every other class, so this is fetched school-wide, not per section.
   const [occupancy, setOccupancy] = useState<Record<string, { grade: string; section: string; subject: string }[]>>({});
 
-  const fetchOccupancy = useCallback(async () => {
+  const fetchOccupancy = useCallback(async (explicitVersionId?: string) => {
     try {
-      const r = await fetch('/api/schedules');
+      const vId = explicitVersionId || versionInfo?.id;
+      const url = vId ? `/api/schedules?versionId=${encodeURIComponent(vId)}` : '/api/schedules';
+      const r = await fetch(url);
       if (!r.ok) return;
       const rows = await r.json();
       if (!Array.isArray(rows)) return;
@@ -375,7 +303,7 @@ export default function TimetablePage() {
     } catch {
       /* the grid still renders without clash badges */
     }
-  }, []);
+  }, [versionInfo?.id]);
 
   /** Other classes this teacher is already booked into at the same day+period. */
   const clashesFor = (teacherId: string | undefined, day: string, period: number) => {
@@ -385,13 +313,19 @@ export default function TimetablePage() {
     );
   };
 
-  const fetchSchedules = useCallback(async () => {
+  const fetchSchedules = useCallback(async (explicitVersionId?: string) => {
     setLoading(true);
     // Drop the previous class's rows immediately. Without this the grid keeps
     // rendering the old section while the new fetch is in flight.
     setSchedules([]);
     try {
-      const r = await fetch(`/api/schedules?grade=${selectedGrade}&section=${selectedSection}`);
+      const vId = explicitVersionId || versionInfo?.id;
+      const params = new URLSearchParams({
+        grade: selectedGrade,
+        section: selectedSection,
+      });
+      if (vId) params.set('versionId', vId);
+      const r = await fetch(`/api/schedules?${params.toString()}`);
       if (r.ok) {
         const data = await r.json();
         setSchedules(Array.isArray(data) ? data : []);
@@ -401,7 +335,7 @@ export default function TimetablePage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedGrade, selectedSection]);
+  }, [selectedGrade, selectedSection, versionInfo?.id]);
 
   const fetchTeachers = useCallback(async () => {
     try {
@@ -458,12 +392,150 @@ export default function TimetablePage() {
     }
   }, []);
 
+  const fetchSchoolStructure = useCallback(async () => {
+    try {
+      const r = await fetch('/api/school/detected-structure');
+      if (r.ok) {
+        const d = await r.json();
+        if (d.success && Array.isArray(d.grades) && d.grades.length > 0) {
+          const detectedGrades = d.grades.map((g: any) => g.grade);
+          const sectionsMap: Record<string, string[]> = {};
+          d.grades.forEach((g: any) => {
+            sectionsMap[g.grade] = (g.sections || []).map((s: any) => s.section);
+          });
+          setGradesList(detectedGrades);
+          setSectionsByGrade(sectionsMap);
+        }
+      }
+    } catch {
+      // Keep default structure
+    }
+  }, []);
+
+  const fetchTimetableStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/timetable/publish');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setTimetableStatus(data.currentStatus || (data.isPublished ? 'published' : 'draft'));
+          setVersionInfo(data.version || null);
+          return data.version;
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  }, []);
+
+  const handleFinalizePublish = async () => {
+    setIsPublishing(true);
+    try {
+      const res = await fetch('/api/timetable/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `Master Timetable v${(versionInfo?.version || 0) + 1}`,
+          notes: `Finalized and published via Timetable Studio on ${new Date().toLocaleDateString('en-IN')}`,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTimetableStatus('published');
+        setVersionInfo(data.version);
+        toast({
+          title: '🎉 Timetable Finalized & Published!',
+          description: `Version ${data.version?.version || 1} is now live across all teacher dashboards, attendance sync, and substitution engines.`,
+        });
+        fetchSchedules(data.version?.id);
+        fetchOccupancy(data.version?.id);
+        fetchTimetableStatus();
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Failed to Publish Timetable',
+          description: data.error || 'An unexpected error occurred while publishing.',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Publish Error',
+        description: err?.message || 'Network error while publishing.',
+      });
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleSaveBellTimings = async () => {
+    setIsSavingBell(true);
+    try {
+      const payload = {
+        startTime: studioSettings.startTime,
+        endTime: studioSettings.endTime,
+        periodsPerDay: parseInt(studioSettings.totalPeriods, 10) || 8,
+        saturdayPeriods: parseInt(studioSettings.saturdayPeriods, 10) || 5,
+        breakAfter: parseInt(studioSettings.shortBreakAfter, 10) || 3,
+        breakMinutes: studioSettings.enableShortBreak ? (parseInt(studioSettings.shortBreakMins, 10) || 15) : 0,
+        lunchAfter: parseInt(studioSettings.lunchBreakAfter, 10) || 4,
+        lunchMinutes: studioSettings.enableLunchBreak ? (parseInt(studioSettings.lunchBreakMins, 10) || 30) : 0,
+        workingDays: studioSettings.saturdayType === 'off' ? 5 : 6,
+      };
+
+      const res = await fetch('/api/school/day-config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        const newPeriods = calculatePeriods(
+          studioSettings.startTime,
+          studioSettings.periodDuration,
+          studioSettings.totalPeriods,
+          studioSettings.shortBreakAfter,
+          studioSettings.lunchBreakAfter,
+          studioSettings.enableShortBreak ? studioSettings.shortBreakMins : '0',
+          studioSettings.enableLunchBreak ? studioSettings.lunchBreakMins : '0',
+          studioSettings.enableShortBreak,
+          studioSettings.enableLunchBreak
+        );
+        setActivePeriods(newPeriods);
+        toast({
+          title: '✅ Bell Schedule Timings Saved & Applied!',
+          description: `Updated Start: ${studioSettings.startTime}, End: ${studioSettings.endTime}, Periods: ${studioSettings.totalPeriods}/day saved and active across your school!`,
+        });
+        setBellTimingsOpen(false);
+        setStudioOpen(false);
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Failed to save bell timings',
+          description: data?.error || 'Could not update day configuration.',
+        });
+      }
+    } catch (e: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error saving bell timings',
+        description: e?.message || 'Network error',
+      });
+    } finally {
+      setIsSavingBell(false);
+    }
+  };
+
   useEffect(() => {
     fetchSchedules();
     fetchTeachers();
     fetchOccupancy();
     fetchDayConfig();
-  }, [fetchSchedules, fetchTeachers, fetchOccupancy, fetchDayConfig]);
+    fetchSchoolStructure();
+    fetchTimetableStatus();
+  }, [fetchSchedules, fetchTeachers, fetchOccupancy, fetchDayConfig, fetchSchoolStructure, fetchTimetableStatus]);
 
   // Unified Master Studio Submit Handler (Handles both File Upload & AI Bulk Generation)
   /**
@@ -520,86 +592,74 @@ export default function TimetablePage() {
     setIsProcessing(true);
 
     try {
-      if (studioMode === 'upload') {
-        if (!selectedUploadFile) {
-          toast({ title: 'File Required', description: 'Please select an Excel (.xlsx/.csv) or PDF (.pdf) file to upload.', variant: 'destructive' });
-          setIsProcessing(false);
-          return;
-        }
-
-        // Preview first: the file is parsed and fully validated, and nothing is
-        // written until the Admin confirms. Bell timings, working days and period
-        // counts all come from Day & Period Setup server-side, so the studio's
-        // own settings are no longer posted here.
-        const data = await runImport(selectedUploadFile, 'validate');
-        if (!data) return;
-
-        setImportReport(data as ImportReport);
-        setImportOpen(true);
-        setStudioOpen(false);
-      } else {
-        // AI Generator Mode
-        const schoolRes = await fetch('/api/teacher/me');
-        let schoolId = '';
-        if (schoolRes.ok) {
-          const sData = await schoolRes.json();
-          schoolId = sData?.schoolId || sData?.data?.schoolId || '';
-        }
-        if (!schoolId) {
-          toast({
-            title: 'No school context',
-            description: 'Could not determine your school. Please sign in again.',
-            variant: 'destructive',
-          });
-          return; // `finally` below resets the processing state
-        }
-
-        const r = await fetch('/api/schedules/ai-generate-timetable', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            grade: selectedGrade,
-            section: selectedSection,
-            schoolId,
-            bulkAll: studioSettings.bulkAll,
-            setup: {
-              periodsPerDay: parseInt(studioSettings.totalPeriods, 10),
-              workingDays: studioSettings.saturdayType === 'off' ? 5 : 6,
-              saturdayPeriods: parseInt(studioSettings.saturdayPeriods, 10),
-              breakAfter: parseInt(studioSettings.shortBreakAfter, 10),
-              lunchAfter: parseInt(studioSettings.lunchBreakAfter, 10),
-              startTime: studioSettings.startTime,
-              endTime: studioSettings.endTime,
-              startGrade: studioSettings.startGrade,
-              endGrade: studioSettings.endGrade,
-              preventConsecutiveDouble: studioSettings.preventConsecutiveDouble,
-              enableWedPtSports: studioSettings.enableWedPtSports,
-              anchorClassTeacherP1: studioSettings.anchorClassTeacherP1,
-              customPrompt: studioSettings.customPrompt,
-            },
-          }),
+      // Direct Faculty Directory & Workload Center Generation Mode
+      const schoolRes = await fetch('/api/teacher/me');
+      let schoolId = '';
+      if (schoolRes.ok) {
+        const sData = await schoolRes.json();
+        schoolId = sData?.schoolId || sData?.data?.schoolId || '';
+      }
+      if (!schoolId) {
+        toast({
+          title: 'No school context',
+          description: 'Could not determine your school. Please sign in again.',
+          variant: 'destructive',
         });
+        return; // `finally` below resets the processing state
+      }
 
-        const d = await r.json();
-        setGenResult(d);
-        if (r.ok && d.success) {
-          toast({
-            title: studioSettings.bulkAll ? 'School-Wide Bulk Master Timetable Approved!' : 'AI Master Timetable Generated!',
-            description: studioSettings.bulkAll
-              ? 'Bulk Approved & Generated clash-free master timetables for ALL 36 classes (Grades 1-12, Sections A-C). All teacher directory timetables updated!'
-              : `Created ${d.stats?.totalGenerated || 48} clash-free slots for ${selectedGrade} Section ${selectedSection}. Teacher timetables updated in directory!`,
-          });
+      const r = await fetch('/api/schedules/ai-generate-timetable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grade: selectedGrade,
+          section: selectedSection,
+          schoolId,
+          bulkAll: studioSettings.bulkAll,
+          setup: {
+            periodsPerDay: parseInt(studioSettings.totalPeriods, 10),
+            workingDays: studioSettings.saturdayType === 'off' ? 5 : 6,
+            saturdayPeriods: parseInt(studioSettings.saturdayPeriods, 10),
+            breakAfter: parseInt(studioSettings.shortBreakAfter, 10),
+            lunchAfter: parseInt(studioSettings.lunchBreakAfter, 10),
+            startTime: studioSettings.startTime,
+            endTime: studioSettings.endTime,
+            startGrade: studioSettings.startGrade,
+            endGrade: studioSettings.endGrade,
+            preventConsecutiveDouble: studioSettings.preventConsecutiveDouble,
+            enableWedPtSports: studioSettings.enableWedPtSports,
+            anchorClassTeacherP1: studioSettings.anchorClassTeacherP1,
+            customPrompt: studioSettings.customPrompt,
+          },
+        }),
+      });
+
+      const d = await r.json();
+      setGenResult(d);
+      if (r.ok && d.success) {
+        toast({
+          title: studioSettings.bulkAll ? 'School-Wide Bulk Master Timetable Approved!' : 'Master Timetable Generated!',
+          description: studioSettings.bulkAll
+            ? 'Generated clash-free master timetables for ALL classes directly from Faculty Directory & Workload Center! Teacher workloads updated.'
+            : `Created ${d.stats?.totalGenerated || 48} clash-free slots for ${selectedGrade} Section ${selectedSection} directly from Faculty Directory!`,
+        });
+        setStudioOpen(false);
+        setStudioStep(1);
+        const newVer = await fetchTimetableStatus();
+        fetchSchedules(newVer?.id);
+        fetchOccupancy(newVer?.id);
+      } else {
+        toast({
+          title: 'Generation Notice',
+          description: d.error || d.message || 'Timetable generated from Faculty Directory and saved to database.',
+          variant: r.ok ? 'default' : 'destructive',
+        });
+        if (r.ok) {
           setStudioOpen(false);
           setStudioStep(1);
-          fetchSchedules();
-        } else {
-          toast({
-            title: 'Bulk Generation Complete',
-            description: d.message || 'School-wide timetable generated and saved to MongoDB Atlas.',
-          });
-          setStudioOpen(false);
-          setStudioStep(1);
-          fetchSchedules();
+          const newVer = await fetchTimetableStatus();
+          fetchSchedules(newVer?.id);
+          fetchOccupancy(newVer?.id);
         }
       }
     } catch (err) {
@@ -760,26 +820,8 @@ export default function TimetablePage() {
 
 
 
-const isDemoSchool = () => {
-  try {
-    const raw = typeof window !== 'undefined' ? (sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session')) : null;
-    if (!raw) return true;
-    const parsed = JSON.parse(raw);
-    const u = parsed.user || parsed;
-    const email = (u.email || '').toLowerCase();
-    const code = (u.schoolCode || '').toUpperCase();
-    if (code && code !== 'DPS_DELHI' && code !== 'DPS_TRUST' && email !== 'pilot@client.school' && !email.includes('dps.edu')) {
-      return false;
-    }
-    return true;
-  } catch {
-    return true;
-  }
-};
-
-  // Helper to get slot info for Day & Period from DB or fallback
+  // Helper to get slot info for Day & Period purely from DB
   const getSlot = (day: string, periodNum: number) => {
-    const fallback = FALLBACK_WEEK_SCHEDULE[day]?.[periodNum];
     // A timetable cell is identified by class AND time. Matching on day+period
     // alone let one section render another section's lesson whenever the state
     // array held rows for more than the selected class.
@@ -796,23 +838,29 @@ const isDemoSchool = () => {
       const resolvedTeacher =
         rawTeacher && rawTeacher !== 'Assigned Faculty'
           ? rawTeacher
-          : fallback?.teacher || 'Unassigned Faculty';
+          : 'Unassigned Faculty';
 
       return {
         id: dbMatch.id,
         subject: dbMatch.subject,
         teacherId: dbMatch.teacherId || undefined,
         teacher: resolvedTeacher,
-        room: dbMatch.roomId || fallback?.room || '—',
+        room: dbMatch.roomId || '—',
       };
     }
 
-    // Only the demo tenant's Section A shows illustrative content; any other
-    // section with no rows renders as genuinely empty rather than inventing a
-    // lesson that looks real.
-    if (isDemo && fallback && selectedSection === 'A') return { ...fallback, teacherId: undefined };
     return { subject: 'Unassigned Period', teacher: '—', room: '—', teacherId: undefined };
   };
+
+  const activeFaculty = teachersList.filter((t) => t.role !== 'inactive');
+  const gradeFaculty = activeFaculty.filter((t) => {
+    const grds = readList(t.grades);
+    return grds.length === 0 || grds.includes(selectedGrade);
+  });
+  const classSectionFaculty = gradeFaculty.filter((t) => {
+    return teacherTeachesSection(t.sections, selectedGrade, selectedSection);
+  });
+  const allMappedSubjects = Array.from(new Set(activeFaculty.flatMap((t) => readList(t.subjects ?? t.subject))));
 
   return (
     <div className="bg-[#F6F8FC] min-h-screen p-4 sm:p-6 lg:p-8 space-y-6 text-[#172033]">
@@ -882,10 +930,22 @@ const isDemoSchool = () => {
             </div>
           ) : (
             <>
-              <div className="hidden sm:flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700">
-                <Layers className="w-3.5 h-3.5 text-blue-600" />
-                <span>Active Master Timetable</span>
-              </div>
+              {timetableStatus === 'published' ? (
+                <div className="hidden sm:flex items-center gap-2 bg-emerald-50 border border-emerald-300 px-3 py-1.5 rounded-xl text-xs font-bold text-emerald-800 shadow-2xs">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Published &amp; Live {versionInfo?.version ? `(v${versionInfo.version})` : ''}</span>
+                </div>
+              ) : timetableStatus === 'draft' ? (
+                <div className="hidden sm:flex items-center gap-2 bg-amber-50 border border-amber-300 px-3 py-1.5 rounded-xl text-xs font-bold text-amber-900 shadow-2xs">
+                  <FileText className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Working Draft {versionInfo?.version ? `(v${versionInfo.version})` : ''}</span>
+                </div>
+              ) : (
+                <div className="hidden sm:flex items-center gap-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold text-slate-700 shadow-2xs">
+                  <Layers className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Active Master Timetable</span>
+                </div>
+              )}
               <Link href="/timetable-versions">
                 <Button
                   size="sm"
@@ -1006,7 +1066,7 @@ const isDemoSchool = () => {
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-[#64748B] font-semibold">Section:</span>
-                {(SECTIONS_BY_GRADE[selectedGrade] || ['A', 'B', 'C']).map((sec) => (
+                {(sectionsByGrade[selectedGrade] || ['A', 'B', 'C']).map((sec) => (
                   <Button
                     key={sec}
                     size="sm"
@@ -1022,14 +1082,14 @@ const isDemoSchool = () => {
 
             {/* Grade Buttons Carousel */}
             <div className="flex items-center gap-1.5 overflow-x-auto pb-1 pt-1 scrollbar-none">
-              {GRADES.map((g) => (
+              {gradesList.map((g) => (
                 <Button
                   key={g}
                   size="sm"
                   variant={selectedGrade === g ? 'default' : 'ghost'}
                   onClick={() => {
                     setSelectedGrade(g);
-                    const validSecs = SECTIONS_BY_GRADE[g] || ['A'];
+                    const validSecs = sectionsByGrade[g] || ['A', 'B'];
                     if (!validSecs.includes(selectedSection)) {
                       setSelectedSection(validSecs[0]);
                     }
@@ -1046,7 +1106,7 @@ const isDemoSchool = () => {
           <Card className="border-[#E2E8F0] shadow-xs overflow-hidden bg-white rounded-2xl" id="printable-timetable-container">
             {/* Printable Official Header Banner — Visible ONLY during print */}
             <div className="hidden print:block p-4 border-b border-slate-300 text-center bg-slate-50">
-              <h1 className="text-xl font-black text-slate-900 uppercase tracking-wide">Takshila School — Master Timetable</h1>
+              <h1 className="text-xl font-black text-slate-900 uppercase tracking-wide">{schoolName || 'Master Timetable'} — Master Timetable</h1>
               <h2 className="text-base font-bold text-[#0F2747] mt-0.5">Class Weekly Schedule: {selectedGrade} — Section {selectedSection}</h2>
               <p className="text-xs text-slate-600 mt-0.5">Clash-Free Academic Timetable &middot; Generated via Smart Calendar ERP OS</p>
             </div>
@@ -1063,58 +1123,46 @@ const isDemoSchool = () => {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
-                {/* Admin Only: Finalize & Publish Button */}
-                {userRole !== 'teacher' && (
+                {/* Admin Only: Finalize & Publish Button — Hidden after final publish */}
+                {userRole !== 'teacher' && timetableStatus !== 'published' && (
                   <Button
                     size="sm"
-                    onClick={() => {
-                      toast({
-                        title: 'Timetable Finalized & Published!',
-                        description: 'This master timetable is now active across all teacher dashboards, attendance sync, and substitution engines.',
-                      });
-                    }}
-                    className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-sm gap-1.5 border-none cursor-pointer"
+                    disabled={isPublishing}
+                    onClick={handleFinalizePublish}
+                    className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white shadow-sm gap-1.5 border-none cursor-pointer disabled:opacity-60"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-100" /> Finalize &amp; Publish
+                    {isPublishing ? (
+                      <RefreshCw className="w-3.5 h-3.5 text-emerald-100 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-100" />
+                    )}
+                    {isPublishing ? 'Publishing...' : 'Finalize & Publish'}
                   </Button>
                 )}
 
-                {/* Admin Only: Save as Draft Button */}
-                {userRole !== 'teacher' && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      toast({
-                        title: 'Draft Saved Successfully',
-                        description: 'All current period slots and assignments are saved in your working draft version.',
-                      });
-                    }}
-                    className="h-8 px-3 text-xs font-bold border-amber-300 bg-amber-50/80 text-amber-900 hover:bg-amber-100/90 shadow-2xs gap-1.5 cursor-pointer"
-                  >
-                    <FileText className="w-3.5 h-3.5 text-amber-700" /> Save as Draft
-                  </Button>
-                )}
-
-                {/* Admin Only: Dynamic Create / Create Another New TT Button */}
+                {/* Admin Only: Create Master Timetable Button */}
                 {userRole !== 'teacher' && (
                   <Button
                     size="sm"
                     onClick={() => {
+                      fetchTeachers();
+                      setStudioStep(1);
                       setStudioMode('ai');
+                      setStudioSettings((prev) => ({
+                        ...prev,
+                        bulkAll: false,
+                      }));
                       setStudioOpen(true);
                     }}
                     className="h-8 px-3.5 text-xs font-black bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:via-indigo-800 hover:to-slate-950 text-white shadow-sm gap-1.5 border-none cursor-pointer"
                   >
                     <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-                    {schedules.filter((s) => s.grade === selectedGrade && s.section === selectedSection).length > 0
-                      ? 'Create Another New TT'
-                      : 'Create Master Timetable'}
+                    Create Master Timetable
                   </Button>
                 )}
 
-                {/* Admin Only: Edit Bell Timings */}
-                {userRole !== 'teacher' && (
+                {/* Admin Only: Edit Bell Timings — Hidden after final publish */}
+                {userRole !== 'teacher' && timetableStatus !== 'published' && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -1358,13 +1406,13 @@ const isDemoSchool = () => {
         onChanged={() => { fetchSchedules(); fetchOccupancy(); }}
       />
 
-      {/* ── UNIFIED Master Timetable Creator Studio (AI + Bulk Upload Combined) ── */}
+      {/* ── Master Timetable Creator Studio (Faculty Directory & Workload Center Sync) ── */}
       <Dialog open={studioOpen} onOpenChange={setStudioOpen}>
         <DialogContent className="max-w-3xl max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-blue-950 text-lg">
               <Sparkles className="w-5 h-5 text-blue-700" />
-              AI & Bulk Master Timetable Creator Studio — Step {studioStep} of 3
+              Master Timetable Creator Studio — Step {studioStep} of 3
             </DialogTitle>
           </DialogHeader>
 
@@ -1377,7 +1425,7 @@ const isDemoSchool = () => {
             <ChevronRight className="w-4 h-4 text-slate-300" />
             <span className={`flex items-center gap-1.5 ${studioStep === 2 ? 'text-blue-800 font-bold' : ''}`}>
               <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] ${studioStep === 2 ? 'bg-gradient-to-r from-blue-700 to-indigo-800 text-white' : 'bg-slate-200'}`}>2</span>
-              Creation Mode (AI / Upload)
+              Faculty Directory & Workload Sync
             </span>
             <ChevronRight className="w-4 h-4 text-slate-300" />
             <span className={`flex items-center gap-1.5 ${studioStep === 3 ? 'text-blue-800 font-bold' : ''}`}>
@@ -1439,14 +1487,14 @@ const isDemoSchool = () => {
                     <Label className="text-[11px] font-semibold text-slate-600">From Grade</Label>
                     <Select value={studioSettings.startGrade} onValueChange={(val) => setStudioSettings({ ...studioSettings, startGrade: val })}>
                       <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
-                      <SelectContent>{GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+                      <SelectContent>{gradesList.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-[11px] font-semibold text-slate-600">To Grade</Label>
                     <Select value={studioSettings.endGrade} onValueChange={(val) => setStudioSettings({ ...studioSettings, endGrade: val })}>
                       <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
-                      <SelectContent>{GRADES.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+                      <SelectContent>{gradesList.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                 </div>
@@ -1571,7 +1619,7 @@ const isDemoSchool = () => {
                           </p>
                           <p className={`text-[10px] ${isIdeal ? 'text-emerald-700' : 'text-red-600 font-semibold'}`}>
                             {isIdeal
-                              ? '✓ Perfect — matches Takshila 45-period standard'
+                              ? '✓ Perfect — matches recommended 45-period standard'
                               : `⚠ Adjust to reach 45 periods/week (${45 - total > 0 ? `+${45 - total} needed` : `${total - 45} excess`})`}
                           </p>
                         </div>
@@ -1585,142 +1633,133 @@ const isDemoSchool = () => {
                 <Button variant="outline" onClick={() => setStudioOpen(false)}>Cancel</Button>
                 <div className="flex gap-2">
                   <Button variant="outline"
-                    onClick={() => { toast({ title: 'Bell Schedule Timings Saved!', description: `Start: ${studioSettings.startTime}, End: ${studioSettings.endTime}, ${studioSettings.totalPeriods} periods/day.` }); setStudioOpen(false); }}
-                    className="border-blue-300 text-blue-900 bg-blue-50 hover:bg-blue-100 font-bold text-xs">
-                    Save & Apply Timings
+                    disabled={isSavingBell}
+                    onClick={handleSaveBellTimings}
+                    className="border-blue-300 text-blue-900 bg-blue-50 hover:bg-blue-100 font-bold text-xs gap-1.5">
+                    {isSavingBell ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : null}
+                    Save &amp; Apply Timings
                   </Button>
                   <Button onClick={() => setStudioStep(2)} className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 shadow-md text-xs">
-                    Next: Creation Mode <ArrowRight className="w-4 h-4" />
+                    Next: Faculty & Workload Sync <ArrowRight className="w-4 h-4" />
                   </Button>
                 </div>
               </DialogFooter>
             </div>
           )}
 
-
-          {/* ── Step 2: Creation Mode Selection (Bulk Document Upload vs AI Generator) ── */}
+          {/* ── Step 2: Live Faculty Directory & Workload Center Sync ── */}
           {studioStep === 2 && (
             <div className="space-y-4 py-2">
-              <p className="text-xs text-slate-500 leading-relaxed">
-                Choose how you want to create your master timetable: Upload an existing spreadsheet/PDF or use the AI Constraint Engine.
-              </p>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Mode A: AI Generator */}
-                <div
-                  onClick={() => setStudioMode('ai')}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${studioMode === 'ai' ? 'border-blue-700 bg-blue-50/70 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                >
-                  <div className="flex items-center gap-2.5 mb-2">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex items-center justify-center font-bold shadow-sm">
-                      <Sparkles className="w-4 h-4 text-amber-300" />
+              <div className="p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-blue-50 rounded-xl border border-emerald-200 shadow-xs space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                      <CheckCircle2 className="w-5 h-5" />
                     </div>
                     <div>
-                      <h4 className="text-xs font-bold text-slate-900">Option 1: AI Constraint Engine</h4>
-                      <p className="text-[10px] text-slate-500">Auto-generate clash-free timetable</p>
+                      <h4 className="text-xs font-black text-emerald-950 uppercase tracking-wide flex items-center gap-1.5">
+                        Live Faculty Directory & Workload Center Sync Active
+                      </h4>
+                      <p className="text-[11px] text-emerald-800 font-medium mt-0.5">
+                        Direct Database Fetch: No file or spreadsheet upload required. Staff data is read live from your directory.
+                      </p>
                     </div>
                   </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Uses AI to automatically assign subjects, balance teacher workload, and enforce zero-clash rules across all classes.
-                  </p>
-                </div>
-
-                {/* Mode B: Bulk File Upload */}
-                <div
-                  onClick={() => setStudioMode('upload')}
-                  className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${studioMode === 'upload' ? 'border-indigo-700 bg-indigo-50/70 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300'}`}
-                >
-                  <div className="flex items-center gap-2.5 mb-2">
-                    <div className="w-8 h-8 rounded-lg bg-gradient-to-r from-indigo-700 to-slate-900 text-white flex items-center justify-center font-bold shadow-sm">
-                      <Upload className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-900">Option 2: Bulk Document Upload</h4>
-                      <p className="text-[10px] text-slate-500">Upload Excel (.xlsx) or PDF file</p>
-                    </div>
-                  </div>
-                  <p className="text-[11px] text-slate-600 leading-relaxed">
-                    Upload your school's existing master spreadsheet or PDF document. Parses schedules into MongoDB with dynamic bell timings.
-                  </p>
+                  <Badge variant="outline" className="bg-emerald-100 text-emerald-900 border-emerald-300 font-bold text-[10px] shrink-0">
+                    ● Connected to Live Database
+                  </Badge>
                 </div>
               </div>
 
-              {/* Mode-Specific Settings */}
-              {studioMode === 'upload' ? (
-                <div className="space-y-3 pt-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold text-slate-800 uppercase tracking-wide">
-                      Upload Master Timetable Spreadsheet / Document
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="link"
-                      onClick={handleDownloadTemplate}
-                      className="h-auto p-0 text-xs font-extrabold text-[#2563EB] hover:underline flex items-center gap-1"
-                    >
-                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" /> Download Excel Format Template
-                    </Button>
-                  </div>
-                  <div className="border-2 border-dashed border-blue-200 rounded-xl p-5 bg-blue-50/40 text-center hover:bg-blue-50/70 transition-colors">
-                    <input
-                      type="file"
-                      id="unified-file-upload"
-                      accept=".xlsx,.xls,.csv,.pdf"
-                      className="hidden"
-                      onChange={(e) => {
-                        if (e.target.files && e.target.files[0]) {
-                          setSelectedUploadFile(e.target.files[0]);
-                        }
-                      }}
-                    />
-                    <label htmlFor="unified-file-upload" className="cursor-pointer space-y-2 block">
-                      <div className="flex justify-center gap-2">
-                        <FileSpreadsheet className="w-8 h-8 text-blue-700" />
-                        <FileText className="w-8 h-8 text-indigo-700" />
-                      </div>
-                      {selectedUploadFile ? (
-                        <div className="space-y-1">
-                          <p className="text-xs font-bold text-slate-800">{selectedUploadFile.name}</p>
-                          <p className="text-[10px] text-slate-500 font-mono">{(selectedUploadFile.size / 1024).toFixed(1)} KB</p>
-                          <Badge variant="outline" className="text-[10px] bg-blue-100 text-blue-900 border-blue-300 font-bold">
-                            File Attached
-                          </Badge>
-                        </div>
-                      ) : (
-                        <div>
-                          <p className="text-xs font-bold text-blue-950">Click to select file or drag & drop</p>
-                          <p className="text-[11px] text-slate-500 mt-0.5">Supports Excel (.xlsx, .csv) and PDF documents</p>
-                        </div>
-                      )}
-                    </label>
-                  </div>
+              {/* 3 Live Metric Badges */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-center shadow-2xs">
+                  <p className="text-xl font-black text-slate-900">{activeFaculty.length}</p>
+                  <p className="text-[11px] font-bold text-slate-600">Active Teachers</p>
+                  <p className="text-[10px] text-emerald-600 font-semibold mt-0.5">✓ In Faculty Directory</p>
                 </div>
-              ) : (
-                <div className="p-4 bg-blue-50/80 rounded-xl border border-blue-200 space-y-2 pt-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-bold text-blue-950 flex items-center gap-2 cursor-pointer">
-                      <Sparkles className="w-4 h-4 text-blue-700" />
-                      Bulk Approve Entire School (Grades 1 to 12)
-                    </Label>
-                    <input
-                      type="checkbox"
-                      checked={studioSettings.bulkAll}
-                      onChange={(e) => setStudioSettings({ ...studioSettings, bulkAll: e.target.checked })}
-                      className="w-4 h-4 text-blue-700 rounded cursor-pointer accent-blue-700"
-                    />
-                  </div>
-                  <p className="text-[11px] text-blue-800 leading-relaxed">
-                    {studioSettings.bulkAll
-                      ? '⚡ BULK APPROVE ACTIVE: Generates, clash-checks, and publishes master timetables for ALL 36 classes (Grades 1-12, Sections A-C) in one click!'
-                      : `Single Class Mode: Generates schedule for ${selectedGrade} Section ${selectedSection} only.`}
-                  </p>
+                <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-center shadow-2xs">
+                  <p className="text-xl font-black text-blue-700">{allMappedSubjects.length}</p>
+                  <p className="text-[11px] font-bold text-slate-600">Mapped Subjects</p>
+                  <p className="text-[10px] text-blue-600 font-semibold mt-0.5">Active Subject Catalogue</p>
                 </div>
-              )}
+                <div className="p-3.5 bg-white rounded-xl border border-slate-200 text-center shadow-2xs">
+                  <p className="text-xl font-black text-indigo-700">{classSectionFaculty.length}</p>
+                  <p className="text-[11px] font-bold text-slate-600">Designated for {selectedGrade}-{selectedSection}</p>
+                  <p className="text-[10px] text-indigo-600 font-semibold mt-0.5">Subject &amp; Grade Qualified</p>
+                </div>
+              </div>
+
+              {/* Live Preview of Mapped Faculty for this Class from Faculty Directory */}
+              <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
+                <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                    <Users className="w-3.5 h-3.5 text-blue-700" />
+                    Faculty Directory Mappings for {selectedGrade} Section {selectedSection}
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    {classSectionFaculty.length} teacher(s) mapped
+                  </span>
+                </div>
+                <div className="p-3 max-h-44 overflow-y-auto divide-y divide-slate-100">
+                  {classSectionFaculty.length > 0 ? (
+                    classSectionFaculty.map((t) => {
+                      const tSubs = readList(t.subjects ?? t.subject);
+                      const tSecs = readList(t.sections);
+                      return (
+                        <div key={t.id} className="py-2 first:pt-0 last:pb-0 flex items-center justify-between gap-2 text-xs">
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900 truncate">{t.name}</p>
+                            <p className="text-[11px] text-slate-500 truncate">
+                              Subject: <span className="font-semibold text-slate-700">{tSubs.join(', ') || t.subject}</span>
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {tSecs.length > 0 && (
+                              <Badge variant="outline" className="text-[9px] bg-slate-50 text-slate-600 border-slate-200 font-medium">
+                                Sec: {tSecs.join(', ')}
+                              </Badge>
+                            )}
+                            <Badge variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-200 font-bold">
+                              ✓ Mapped in Directory
+                            </Badge>
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="py-4 text-center text-xs text-slate-500">
+                      No teacher is currently scoped specifically for {selectedGrade} {selectedSection} in Faculty Directory.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Scope Selector: Single Class vs Entire School */}
+              <div className="p-3.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-bold text-blue-950 flex items-center gap-2 cursor-pointer">
+                    <Sparkles className="w-4 h-4 text-blue-700" />
+                    Bulk Approve &amp; Generate Entire School (Grades 1 to 12)
+                  </Label>
+                  <input
+                    type="checkbox"
+                    checked={studioSettings.bulkAll}
+                    onChange={(e) => setStudioSettings({ ...studioSettings, bulkAll: e.target.checked })}
+                    className="w-4 h-4 text-blue-700 rounded cursor-pointer accent-blue-700"
+                  />
+                </div>
+                <p className="text-[11px] text-blue-800 leading-relaxed">
+                  {studioSettings.bulkAll
+                    ? '⚡ Entire School Mode: Automatically assigns, balances teacher workload, and creates master timetables for ALL classes (Grades 1-12, Sections A-C) directly from the Faculty Directory.'
+                    : `Single Class Mode: Generates master timetable for ${selectedGrade} Section ${selectedSection} using its mapped Faculty Directory teachers.`}
+                </p>
+              </div>
 
               <DialogFooter className="pt-2">
                 <Button variant="outline" onClick={() => setStudioStep(1)}>Back</Button>
                 <Button onClick={() => setStudioStep(3)} className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 shadow-md">
-                  Next: Review & Publish <ArrowRight className="w-4 h-4" />
+                  Next: Review &amp; Publish <ArrowRight className="w-4 h-4" />
                 </Button>
               </DialogFooter>
             </div>
@@ -1730,7 +1769,7 @@ const isDemoSchool = () => {
           {studioStep === 3 && (
             <div className="space-y-4 py-2">
               <p className="text-xs text-slate-500 leading-relaxed">
-                Review active configurations and publish your master timetables to MongoDB Atlas database.
+                Review active configurations and generate your master timetable directly from Faculty Directory &amp; Workload Center.
               </p>
 
               <div className="p-4 bg-blue-50/70 rounded-xl border border-blue-200 space-y-2 text-xs text-blue-950">
@@ -1739,12 +1778,14 @@ const isDemoSchool = () => {
                   Active Timetable Configuration:
                 </p>
                 <div className="grid grid-cols-2 gap-2 text-[11px] text-blue-900 pt-1">
-                  <div>• Mode: <span className="font-bold">{studioMode === 'upload' ? 'Bulk Spreadsheet Upload' : 'AI Constraint Engine'}</span></div>
+                  <div>• Faculty Source: <span className="font-bold text-emerald-800">Faculty Directory &amp; Workload Center (Live)</span></div>
+                  <div>• Data Upload: <span className="font-bold text-emerald-800">None Required (Direct Sync ✓)</span></div>
                   <div>• School Hours: <span className="font-bold">{studioSettings.startTime} - {studioSettings.endTime}</span></div>
                   <div>• Periods / Day: <span className="font-bold">{studioSettings.totalPeriods} Periods</span></div>
                   <div>• Saturday Rules: <span className="font-bold">{studioSettings.saturdayType}</span></div>
                   <div>• Target Scope: <span className="font-bold">{studioSettings.bulkAll ? 'ALL Classes (Grades 1-12)' : `${selectedGrade} ${selectedSection}`}</span></div>
-                  <div>• Directory Sync: <span className="font-bold">Auto-Updates Teacher Directory</span></div>
+                  <div>• Faculty Synced: <span className="font-bold">{activeFaculty.length} Active Staff Members</span></div>
+                  <div>• Directory Auto-Sync: <span className="font-bold text-emerald-700">Enabled</span></div>
                 </div>
               </div>
 
@@ -1752,13 +1793,13 @@ const isDemoSchool = () => {
                 <Button variant="outline" onClick={() => setStudioStep(2)} disabled={isProcessing}>Back</Button>
                 <Button
                   onClick={handleStudioSubmit}
-                  disabled={isProcessing || (studioMode === 'upload' && !selectedUploadFile)}
+                  disabled={isProcessing}
                   className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 shadow-md"
                 >
                   {isProcessing ? (
-                    <><RefreshCw className="w-4 h-4 animate-spin" /> Processing & Publishing...</>
+                    <><RefreshCw className="w-4 h-4 animate-spin" /> Generating &amp; Publishing...</>
                   ) : (
-                    <><Sparkles className="w-4 h-4 text-amber-300" /> Bulk Approve & Publish Master Timetable</>
+                    <><Sparkles className="w-4 h-4 text-amber-300" /> Generate &amp; Publish Master Timetable</>
                   )}
                 </Button>
               </DialogFooter>
@@ -1847,7 +1888,7 @@ const isDemoSchool = () => {
                         <SelectContent>
                           <SelectItem value="30">30 Mins</SelectItem>
                           <SelectItem value="35">35 Mins</SelectItem>
-                          <SelectItem value="40">40 Mins (Takshila)</SelectItem>
+                          <SelectItem value="40">40 Mins (Standard)</SelectItem>
                           <SelectItem value="45">45 Mins</SelectItem>
                           <SelectItem value="50">50 Mins</SelectItem>
                           <SelectItem value="60">60 Mins</SelectItem>
@@ -2119,7 +2160,7 @@ const isDemoSchool = () => {
                             isIdeal ? 'text-emerald-700 font-semibold' : 'text-red-600 font-bold'
                           }`}>
                             {isIdeal
-                              ? '✓ Matches Takshila 45 standard (40 + 5)'
+                              ? '✓ Matches recommended 45 standard (40 + 5)'
                               : `⚠ ${45 - total > 0 ? `+${45 - total} periods needed` : `${total - 45} excess periods`}`}
                           </p>
                         </div>
@@ -2136,28 +2177,16 @@ const isDemoSchool = () => {
               Cancel
             </Button>
             <Button
-              onClick={() => {
-                const newPeriods = calculatePeriods(
-                  studioSettings.startTime,
-                  studioSettings.periodDuration,
-                  studioSettings.totalPeriods,
-                  studioSettings.shortBreakAfter,
-                  studioSettings.lunchBreakAfter,
-                  studioSettings.shortBreakMins,
-                  studioSettings.lunchBreakMins,
-                  studioSettings.enableShortBreak,
-                  studioSettings.enableLunchBreak
-                );
-                setActivePeriods(newPeriods);
-                toast({
-                  title: 'Bell Schedule Timings Updated!',
-                  description: `Updated Start: ${studioSettings.startTime}, End: ${studioSettings.endTime}, Periods: ${studioSettings.totalPeriods}/day. Grid timing badges updated!`,
-                });
-                setBellTimingsOpen(false);
-              }}
-              className="h-10 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 shadow-md text-xs px-5"
+              disabled={isSavingBell}
+              onClick={handleSaveBellTimings}
+              className="h-10 bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 hover:from-blue-800 hover:to-slate-950 text-white font-bold gap-2 shadow-md text-xs px-5 disabled:opacity-60"
             >
-              <Check className="w-4 h-4 text-emerald-300" /> Save & Apply Bell Schedule
+              {isSavingBell ? (
+                <RefreshCw className="w-4 h-4 text-white animate-spin" />
+              ) : (
+                <Check className="w-4 h-4 text-emerald-300" />
+              )}
+              {isSavingBell ? 'Saving Bell Schedule...' : 'Save & Apply Bell Schedule'}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -115,6 +115,7 @@ const TEACHER: Capability[] = [
   'substitution.read.own', 'substitution.lessoncontext',
   'calendar.read',
   'lessonplan.read', 'lessonplan.write',
+  'support.read', 'support.write',
   'profile.own',
 ];
 

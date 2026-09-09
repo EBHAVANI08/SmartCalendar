@@ -98,3 +98,48 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ success: false, error: 'Failed to update leave' }, { status: 500 });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  const denied = requireCapability(req, 'leave.apply.own');
+  if (denied) return denied;
+
+  try {
+    const schoolId = await getTenantSchoolId(req);
+    if (!schoolId) return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+
+    const { searchParams } = new URL(req.url);
+    let id = searchParams.get('id');
+    if (!id) {
+      const body = await req.json().catch(() => ({}));
+      id = body?.id;
+    }
+    if (!id) return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
+
+    const mine = await ownTeacherId(req, schoolId);
+    const existing = await db.leaveApplication.findFirst({
+      where: {
+        id,
+        teacher: { schoolId },
+        ...(mine ? { teacherId: mine } : {}),
+      },
+      select: { id: true, status: true },
+    });
+
+    if (!existing) {
+      return NextResponse.json({ success: false, error: 'Leave application not found' }, { status: 404 });
+    }
+
+    // Clean up any pending substitutions created for this leave
+    await db.substitution.deleteMany({
+      where: { leaveId: id, status: 'pending' },
+    }).catch(() => null);
+
+    await db.leaveApplication.delete({ where: { id } });
+
+    return NextResponse.json({ success: true, message: 'Leave application cancelled and removed.' });
+  } catch (error) {
+    console.error('[LEAVES DELETE ERROR]', error);
+    return NextResponse.json({ success: false, error: 'Failed to delete leave application' }, { status: 500 });
+  }
+}
+

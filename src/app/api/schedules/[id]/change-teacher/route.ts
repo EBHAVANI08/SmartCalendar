@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
-import { readList } from '@/lib/faculty';
+import { readList, teacherTeachesSection } from '@/lib/faculty';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { getDayConfig } from '@/lib/timetable-config';
 import { checkSlotConflicts, isPeriodWithinDay } from '@/lib/timetable-constraints';
@@ -30,6 +30,36 @@ async function loadSlot(id: string, schoolId: string) {
  * Unqualified and conflicting teachers are still listed, but flagged, so the
  * UI can show them greyed out rather than pretending they do not exist.
  */
+function matchesSubject(teacherSubjects: string[], targetSubject: string): boolean {
+  if (!targetSubject) return false;
+  const target = targetSubject.trim().toLowerCase();
+  return teacherSubjects.some((s) => {
+    const clean = s.trim().toLowerCase();
+    return clean === target || clean.replace(/\s+/g, '') === target.replace(/\s+/g, '');
+  });
+}
+
+function matchesGrade(teacherGrades: string[], targetGrade: string): boolean {
+  if (!teacherGrades || teacherGrades.length === 0) return false;
+  const target = targetGrade.trim().toLowerCase();
+  const targetNum = target.replace(/[^0-9]/g, '');
+  return teacherGrades.some((g) => {
+    const clean = g.trim().toLowerCase();
+    if (clean === target) return true;
+    const gNum = clean.replace(/[^0-9]/g, '');
+    if (targetNum && gNum && gNum === targetNum) return true;
+    if (clean === target.replace('grade ', '') || `grade ${clean}` === target) return true;
+    return false;
+  });
+}
+
+function matchesSection(teacherSections: unknown, targetSection: string, targetGrade?: string): boolean {
+  if (targetGrade) {
+    return teacherTeachesSection(teacherSections, targetGrade, targetSection);
+  }
+  return teacherTeachesSection(teacherSections, '', targetSection);
+}
+
 export async function GET(request: Request, ctx: Ctx) {
   const schoolId = await getTenantSchoolId(request);
   if (!schoolId) {
@@ -42,7 +72,7 @@ export async function GET(request: Request, ctx: Ctx) {
   const [teachers, dayRows] = await Promise.all([
     db.teacher.findMany({
       where: { schoolId },
-      select: { id: true, name: true, subject: true, subjects: true, grades: true, role: true },
+      select: { id: true, name: true, subject: true, subjects: true, grades: true, sections: true, role: true },
     }),
     db.schedule.findMany({
       where: { schoolId, day: slot.day },
@@ -63,26 +93,34 @@ export async function GET(request: Request, ctx: Ctx) {
   const candidates = teachers.map((t) => {
     const subjects = readList(t.subjects ?? t.subject);
     const grades = readList(t.grades);
+    const sections = readList(t.sections);
     const conflict = busyHere.get(t.id) || null;
-    const qualifiedSubject = subjects.some((s) => s.toLowerCase() === slot.subject.toLowerCase());
-    const qualifiedGrade = grades.length === 0 || grades.includes(slot.grade);
+    const qualifiedSubject = matchesSubject(subjects, slot.subject);
+    const qualifiedGrade = matchesGrade(grades, slot.grade);
+    const qualifiedSection = matchesSection(sections, slot.section);
+    const fullyQualified = qualifiedSubject && qualifiedGrade && qualifiedSection;
     const inactive = t.role === 'inactive';
     return {
       id: t.id,
       name: t.name,
       subjects,
       grades,
+      sections,
       inactive,
       qualifiedSubject,
       qualifiedGrade,
-      available: !conflict && !inactive,
+      qualifiedSection,
+      fullyQualified,
+      available: !conflict && !inactive && fullyQualified,
       conflict,
       dailyWorkload: dailyLoad.get(t.id) || 0,
       isCurrent: t.id === slot.teacherId,
       // Higher is a better suggestion; negatives are not assignable automatically.
       score:
+        (fullyQualified ? 200 : -200) +
         (qualifiedSubject ? 100 : -100) +
-        (qualifiedGrade ? 20 : 0) +
+        (qualifiedGrade ? 50 : -100) +
+        (qualifiedSection ? 50 : -100) +
         (conflict || inactive ? -1000 : 0) -
         (dailyLoad.get(t.id) || 0) * 2,
     };
@@ -109,7 +147,7 @@ export async function GET(request: Request, ctx: Ctx) {
       version && LOCKED_STATUSES.includes(version.status)
         ? `This slot belongs to a ${version.status} timetable (v${version.version}). Create a revision to change it.`
         : null,
-    recommended: candidates.filter((c) => c.available && c.qualifiedSubject && !c.isCurrent).slice(0, 10),
+    recommended: candidates.filter((c) => c.available && c.fullyQualified && !c.isCurrent).slice(0, 10),
     candidates,
   });
 }
@@ -189,20 +227,32 @@ export async function POST(request: Request, ctx: Ctx) {
     );
   }
 
-  // Subject qualification - refused unless explicitly overridden.
+  // Faculty Directory qualification - refused unless explicitly overridden.
   let overrideApplied = false;
   if (teacher) {
     const subjects = readList(teacher.subjects ?? teacher.subject);
-    const qualified = subjects.some((s) => s.toLowerCase() === slot.subject.toLowerCase());
-    if (!qualified) {
+    const grades = readList(teacher.grades);
+    const sections = readList(teacher.sections);
+
+    const qualifiedSubject = matchesSubject(subjects, slot.subject);
+    const qualifiedGrade = matchesGrade(grades, slot.grade);
+    const qualifiedSection = matchesSection(teacher.sections, slot.section, slot.grade);
+
+    if (!qualifiedSubject || !qualifiedGrade || !qualifiedSection) {
+      const issues: string[] = [];
+      if (!qualifiedSubject) issues.push(`subject '${slot.subject}' (teaches: ${subjects.join(', ') || 'None'})`);
+      if (!qualifiedGrade) issues.push(`grade '${slot.grade}' (assigned grades: ${grades.join(', ') || 'None'})`);
+      if (!qualifiedSection) issues.push(`section '${slot.section}' (assigned sections: ${sections.join(', ')})`);
+
       if (!manualOverride) {
         return NextResponse.json(
           {
-            error: `${teacher.name} is not mapped to ${slot.subject}. Continue with manual override?`,
-            code: 'NOT_SUBJECT_QUALIFIED',
+            error: `${teacher.name} is not mapped in Faculty Directory for ${issues.join('; ')}. Continue with manual override?`,
+            code: 'NOT_QUALIFIED',
             requiresOverride: true,
-            teacher: { id: teacher.id, name: teacher.name, subjects },
+            teacher: { id: teacher.id, name: teacher.name, subjects, grades, sections },
             subject: slot.subject,
+            issues,
           },
           { status: 409 }
         );

@@ -139,19 +139,34 @@ export async function PATCH(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => ({}));
-  const { id, type, capacity, supportedSubjects, unavailablePeriods, active } = body;
+  const { id, name, code, type, capacity, supportedSubjects, unavailablePeriods, active } = body;
   if (!id) return NextResponse.json({ success: false, error: 'id is required' }, { status: 400 });
 
-  const existing = await db.room.findFirst({ where: { id, schoolId }, select: { id: true } });
+  const existing = await db.room.findFirst({ where: { id, schoolId }, select: { id: true, code: true } });
   if (!existing) return NextResponse.json({ success: false, error: 'Room not found' }, { status: 404 });
 
   if (type !== undefined && !isKnownRoomType(type)) {
     return NextResponse.json({ success: false, error: `"${type}" is not a recognised room type.` }, { status: 400 });
   }
 
+  if (code !== undefined && code.trim().toUpperCase() !== existing.code) {
+    const dup = await db.room.findFirst({
+      where: { schoolId, code: code.trim().toUpperCase(), NOT: { id } },
+      select: { id: true },
+    });
+    if (dup) {
+      return NextResponse.json(
+        { success: false, error: 'Another room with this code already exists in your school.' },
+        { status: 409 }
+      );
+    }
+  }
+
   const room = await db.room.update({
     where: { id },
     data: {
+      ...(name !== undefined ? { name: String(name).trim() } : {}),
+      ...(code !== undefined ? { code: String(code).trim().toUpperCase() } : {}),
       ...(type !== undefined ? { type } : {}),
       ...(capacity !== undefined ? { capacity: Number(capacity) || 0 } : {}),
       ...(supportedSubjects !== undefined ? { supportedSubjects: Array.isArray(supportedSubjects) ? supportedSubjects.map(String) : [] } : {}),
@@ -162,3 +177,56 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json({ success: true, room });
 }
+
+export async function DELETE(req: NextRequest) {
+  const denied = requireCapability(req, 'rooms.write');
+  if (denied) return denied;
+
+  const schoolId = await getTenantSchoolId(req);
+  if (!schoolId) {
+    return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  let id = searchParams.get('id');
+  if (!id) {
+    const body = await req.json().catch(() => ({}));
+    id = body?.id;
+  }
+  if (!id) {
+    return NextResponse.json({ success: false, error: 'Room id is required' }, { status: 400 });
+  }
+
+  const existing = await db.room.findFirst({
+    where: { id, schoolId },
+    select: { id: true, name: true, code: true },
+  });
+  if (!existing) {
+    return NextResponse.json({ success: false, error: 'Room not found in this school' }, { status: 404 });
+  }
+
+  // Check if room is used in timetable schedule
+  const scheduleCount = await db.schedule.count({
+    where: { roomId: id, schoolId },
+  });
+  if (scheduleCount > 0) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Cannot delete room "${existing.name}" because it is currently assigned to ${scheduleCount} timetable period(s). Please unassign it from timetable first or mark it inactive.`,
+        code: 'ROOM_IN_USE',
+        scheduleCount,
+      },
+      { status: 409 }
+    );
+  }
+
+  await db.roomAvailabilitySlot.deleteMany({ where: { roomId: id } }).catch(() => null);
+  await db.room.delete({ where: { id } });
+
+  return NextResponse.json({
+    success: true,
+    message: `Room "${existing.name}" (${existing.code}) deleted successfully.`,
+  });
+}
+

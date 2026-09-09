@@ -59,18 +59,38 @@ export async function getPublishedVersion(schoolId: string) {
  */
 export async function operationalScheduleFilter(schoolId: string) {
   const published = await getPublishedVersion(schoolId);
-  if (published) return { schoolId, timetableVersionId: published.id };
+  if (published) {
+    const publishedCount = await db.schedule.count({
+      where: { schoolId, timetableVersionId: published.id },
+    });
+    if (publishedCount > 0) {
+      return { schoolId, timetableVersionId: published.id };
+    }
+  }
 
-  // No published version yet. Fall back to the newest live version (a school
-  // that has adopted its rows into a draft but not published), and finally to
-  // unversioned rows. Without this a school mid-adoption would see an empty
-  // timetable.
-  const newest = await db.timetableVersion.findFirst({
-    where: { schoolId, status: { in: ['approved', 'review', 'draft'] } },
+  // Fall back to newest live draft/review version that has schedules
+  const liveVersions = await db.timetableVersion.findMany({
+    where: { schoolId, status: { in: ['draft', 'review', 'approved'] } },
     orderBy: { version: 'desc' },
     select: { id: true },
   });
-  if (newest) return { schoolId, timetableVersionId: newest.id };
+  for (const v of liveVersions) {
+    const cnt = await db.schedule.count({ where: { schoolId, timetableVersionId: v.id } });
+    if (cnt > 0) return { schoolId, timetableVersionId: v.id };
+  }
+
+  // Fall back to newest version that actually has schedules (e.g. preserved in history)
+  const newestWithSchedules = await db.schedule.findFirst({
+    where: { schoolId, timetableVersionId: { not: null } },
+    orderBy: { createdAt: 'desc' },
+    select: { timetableVersionId: true },
+  });
+  if (newestWithSchedules?.timetableVersionId) {
+    return { schoolId, timetableVersionId: newestWithSchedules.timetableVersionId };
+  }
+
+  if (published) return { schoolId, timetableVersionId: published.id };
+  if (liveVersions.length > 0) return { schoolId, timetableVersionId: liveVersions[0].id };
 
   return {
     schoolId,
@@ -79,7 +99,7 @@ export async function operationalScheduleFilter(schoolId: string) {
 }
 
 /** Ensure an AcademicYear exists, since TimetableVersion requires one. */
-async function ensureAcademicYear(schoolId: string): Promise<string> {
+export async function ensureAcademicYear(schoolId: string): Promise<string> {
   const existing = await db.academicYear.findFirst({ where: { schoolId }, orderBy: { startDate: 'desc' } });
   if (existing) return existing.id;
 

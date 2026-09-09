@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { readList } from '@/lib/faculty';
 
 const MAX_PERIODS_PER_DAY = 8;
 
@@ -64,10 +65,39 @@ export async function POST(request: Request) {
       }, { status: 409 });
     }
 
-    // Verify teacher teaches the right subject for this schedule
-    const teacherGrades = JSON.parse(teacher.grades || '[]') as string[];
-    const subjectMatch = teacher.subject === schedule.subject;
-    const gradeMatch = teacherGrades.includes(schedule.grade);
+    // Strictly verify teacher teaches the right subject, grade, and section for this schedule
+    const subjects = readList(teacher.subjects ?? teacher.subject);
+    const grades = readList(teacher.grades);
+    const sections = readList(teacher.sections);
+
+    const subjectMatch = subjects.some((s) => {
+      const clean = s.trim().toLowerCase();
+      const target = schedule.subject.trim().toLowerCase();
+      return clean === target || clean.replace(/\s+/g, '') === target.replace(/\s+/g, '');
+    });
+    const gradeMatch = grades.length > 0 && grades.some((g) => {
+      const clean = g.trim().toLowerCase();
+      const target = schedule.grade.trim().toLowerCase();
+      if (clean === target) return true;
+      const gNum = clean.replace(/[^0-9]/g, '');
+      const tNum = target.replace(/[^0-9]/g, '');
+      return gNum && tNum && gNum === tNum;
+    });
+    const sectionMatch = sections.length === 0 || sections.some((sec) => {
+      const clean = sec.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+      const target = schedule.section.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+      return clean === target;
+    });
+
+    if (!subjectMatch || !gradeMatch || !sectionMatch) {
+      const issues: string[] = [];
+      if (!subjectMatch) issues.push(`subject '${schedule.subject}'`);
+      if (!gradeMatch) issues.push(`grade '${schedule.grade}'`);
+      if (!sectionMatch) issues.push(`section '${schedule.section}'`);
+      return NextResponse.json({
+        error: `FACULTY MISMATCH: ${teacher.name} is not mapped in Faculty Directory for ${issues.join(', ')}.`,
+      }, { status: 409 });
+    }
 
     const updated = await db.schedule.update({
       where: { id: scheduleId },
@@ -77,20 +107,19 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ...updated,
-      warning: !subjectMatch
-        ? `Warning: ${teacher.name} teaches ${teacher.subject}, not ${schedule.subject}. This is a cross-subject assignment.`
-        : !gradeMatch
-        ? `Warning: ${teacher.name} does not typically teach ${schedule.grade}. Assignment saved but verify suitability.`
-        : dayScheduleCount >= 5
+      warning: dayScheduleCount >= 5
         ? `Warning: ${teacher.name} now has ${dayScheduleCount + 1} periods on ${schedule.day}. Consider workload balancing.`
         : undefined,
       matchInfo: {
         subjectMatch,
         gradeMatch,
-        teacherSubject: teacher.subject,
+        sectionMatch,
+        teacherSubjects: subjects,
         scheduleSubject: schedule.subject,
-        teacherGrades,
+        teacherGrades: grades,
         scheduleGrade: schedule.grade,
+        teacherSections: sections,
+        scheduleSection: schedule.section,
       },
     });
   } catch (error) {

@@ -100,18 +100,52 @@ export default function TenantDetailPage() {
   };
 
   const impersonate = async () => {
-    const owner = { user: sessionStorage.getItem('sc_user'), token: sessionStorage.getItem('sc_token') };
-    const res = await fetch(`/api/superadmin/tenants/${id}/impersonate`, { method: 'POST' });
-    const d = await res.json();
-    if (!res.ok) {
-      toast({ title: 'Access denied', description: d.error, variant: 'destructive' });
-      return;
+    try {
+      const currentToken = sessionStorage.getItem('sc_token');
+      const currentUser = sessionStorage.getItem('sc_user');
+      let parsedUser = null;
+      try {
+        parsedUser = currentUser ? JSON.parse(currentUser) : null;
+      } catch {}
+
+      const owner = { user: parsedUser, token: currentToken };
+
+      const res = await fetch(`/api/superadmin/tenants/${id}/impersonate`, { method: 'POST' });
+      const d = await res.json();
+      if (!res.ok) {
+        toast({ title: 'Access denied', description: d.error || 'Cannot impersonate', variant: 'destructive' });
+        return;
+      }
+
+      const ownerSession = {
+        user: owner.user || d.superadminUser,
+        token: owner.token || d.superadminToken,
+      };
+
+      sessionStorage.setItem('sc_owner_session', JSON.stringify(ownerSession));
+      localStorage.setItem('sc_owner_session', JSON.stringify(ownerSession));
+
+      sessionStorage.setItem('sc_user', JSON.stringify(d.user));
+      if (d.token) sessionStorage.setItem('sc_token', d.token);
+
+      const schoolLabel = data?.tenant?.name || form.name || d.user?.name || 'Tenant School';
+      sessionStorage.setItem('sc_impersonating', schoolLabel);
+      localStorage.setItem('sc_impersonating', schoolLabel);
+
+      localStorage.setItem(
+        'smart_calendar_auth_session',
+        JSON.stringify({
+          isLoggedIn: true,
+          user: d.user,
+          role: d.user.role || 'admin',
+          token: d.token,
+        })
+      );
+
+      window.location.href = '/dashboard';
+    } catch (e: any) {
+      toast({ title: 'Impersonation failed', description: e.message, variant: 'destructive' });
     }
-    sessionStorage.setItem('sc_owner_session', JSON.stringify(owner));
-    sessionStorage.setItem('sc_user', JSON.stringify(d.user));
-    if (d.token) sessionStorage.setItem('sc_token', d.token);
-    sessionStorage.setItem('sc_impersonating', t.name);
-    router.push('/dashboard');
   };
 
   const addMember = async () => {
@@ -340,9 +374,17 @@ export default function TenantDetailPage() {
             <CardContent className="p-5">
               <h2 className="font-bold mb-3">Invoices</h2>
               {(t.invoices || []).map((inv: any) => (
-                <div key={inv.id} className="flex justify-between text-sm border-b py-2">
-                  <span className="font-mono">{inv.number} · {inv.status}</span>
-                  <span className="font-bold">{inr(inv.total)}</span>
+                <div key={inv.id} className="flex justify-between items-center text-sm border-b py-2">
+                  <div>
+                    <span className="font-mono font-bold text-violet-700">{inv.number}</span>
+                    <span className="ml-2 text-xs text-slate-500 capitalize">· {inv.status}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-bold">{inr(inv.total)}</span>
+                    <Link href="/superadmin/payments" className="text-xs text-violet-700 hover:underline font-semibold">
+                      View in Invoices →
+                    </Link>
+                  </div>
                 </div>
               ))}
               {(!t.invoices || t.invoices.length === 0) && <p className="text-sm text-slate-500">No invoices yet. Recording a payment creates one.</p>}

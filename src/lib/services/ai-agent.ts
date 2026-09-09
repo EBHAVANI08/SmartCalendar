@@ -130,9 +130,14 @@ const SUGGESTED_ACTIVITIES: Record<string, string[]> = {
   'Science': ['Simple experiment demonstration', 'Nature walk observation', 'Science quiz'],
 };
 
-export async function detectAndCreateSubstitutionRequests(date: string) {
+export async function detectAndCreateSubstitutionRequests(date: string, schoolId?: string | null) {
   const approvedLeaves = await db.leaveApplication.findMany({
-    where: { status: 'approved', startDate: { lte: date }, endDate: { gte: date } },
+    where: {
+      status: 'approved',
+      startDate: { lte: date },
+      endDate: { gte: date },
+      ...(schoolId ? { teacher: { schoolId } } : {}),
+    },
     include: { teacher: true },
   });
 
@@ -251,20 +256,47 @@ export async function findSubstituteCandidates(params: {
   sectionId: string;
   absentTeacherDepartment?: string;
 }): Promise<SubstituteCandidate[]> {
-  const teachers = await db.teacher.findMany({
-    include: {
-      schedules: true,
-      substituteSubstitutions: true,
-    },
+  const absentTeacher = await db.teacher.findUnique({
+    where: { id: params.absentTeacherId },
+    select: { schoolId: true },
   });
+  const schoolId = absentTeacher?.schoolId;
 
+  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayNameStr = days[params.dayOfWeek] || 'Monday';
+
+  const [teachers, busySubs] = await Promise.all([
+    db.teacher.findMany({
+      where: {
+        ...(schoolId ? { schoolId } : {}),
+        role: { not: 'inactive' },
+      },
+      include: {
+        schedules: { where: { day: dayNameStr } },
+        substituteSubstitutions: { where: { status: { in: ['assigned', 'completed'] } } },
+      },
+    }),
+    db.substitution.findMany({
+      where: {
+        ...(schoolId ? { schoolId } : {}),
+        date: params.date,
+        period: params.timeSlotId,
+        status: { in: ['assigned', 'completed'] },
+      },
+      select: { substituteId: true },
+    }),
+  ]);
+
+  const busySubTeacherIds = new Set(busySubs.map((s) => s.substituteId).filter(Boolean));
   const candidates: SubstituteCandidate[] = [];
 
   for (const teacher of teachers) {
     if (teacher.id === params.absentTeacherId) continue;
 
     const teachesSameSubject = teacher.subject === params.subjectId;
-    const isAvailable = !teacher.schedules.some(s => s.period === params.timeSlotId);
+    const teachesScheduleConflict = teacher.schedules.some(s => s.period === params.timeSlotId);
+    const hasSubConflict = busySubTeacherIds.has(teacher.id);
+    const isAvailable = !teachesScheduleConflict && !hasSubConflict;
 
     let score = 50;
     const reasons: string[] = [];
@@ -278,6 +310,10 @@ export async function findSubstituteCandidates(params: {
       reasons.push('Free period during this time slot');
     }
 
+    const conflicts: string[] = [];
+    if (teachesScheduleConflict) conflicts.push('Busy teaching another class');
+    if (hasSubConflict) conflicts.push('Already assigned to cover another class');
+
     candidates.push({
       teacherId: teacher.id,
       teacherName: teacher.name,
@@ -286,13 +322,13 @@ export async function findSubstituteCandidates(params: {
       designation: teacher.role,
       score,
       reasons,
-      conflicts: isAvailable ? [] : ['Busy teaching another class'],
+      conflicts,
       isAvailable,
       teachesSameSubject,
       isCrossSubject: !teachesSameSubject,
       hasGradeExperience: true,
       currentLoad: teacher.schedules.length,
-      freePeriodsToday: 8 - teacher.schedules.length,
+      freePeriodsToday: Math.max(0, 8 - teacher.schedules.length),
       weeklySubCount: teacher.substituteSubstitutions.length,
     });
   }

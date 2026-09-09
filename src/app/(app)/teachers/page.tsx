@@ -20,6 +20,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { DedupReview, DataIssues } from '@/components/faculty/dedup-review';
+import { readList, parseGradeSectionsMap, serializeGradeSectionsMap } from '@/lib/faculty';
 
 interface ScheduleSlot {
   id: string;
@@ -114,30 +115,12 @@ const getTeacherScheduleSlot = (teacher: Teacher, day: string, period: number) =
   return null;
 };
 
-const DEFAULT_TIMETABLE_FACULTY: Teacher[] = [];
-
-const isDemoSchool = () => {
-  try {
-    const raw = typeof window !== 'undefined' ? (sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session')) : null;
-    if (!raw) return true;
-    const parsed = JSON.parse(raw);
-    const u = parsed.user || parsed;
-    const email = (u.email || '').toLowerCase();
-    const code = (u.schoolCode || '').toUpperCase();
-    if (code && code !== 'DPS_DELHI' && code !== 'DPS_TRUST' && email !== 'pilot@client.school' && !email.includes('dps.edu')) {
-      return false;
-    }
-    return true;
-  } catch {
-    return true;
-  }
-};
-
 export default function TeachersPage() {
   const { toast } = useToast();
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [filtered, setFiltered] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
+  const [schoolName, setSchoolName] = useState('');
   const [search, setSearch] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -165,7 +148,7 @@ export default function TeachersPage() {
     employeeId: '',
     selectedSubjects: [] as string[],
     selectedGrades: [] as string[],
-    selectedSections: [] as string[],
+    gradeSections: {} as Record<string, string[]>,
   });
 
   const [editForm, setEditForm] = useState({
@@ -176,7 +159,7 @@ export default function TeachersPage() {
     employeeId: '',
     selectedSubjects: [] as string[],
     selectedGrades: [] as string[],
-    selectedSections: [] as string[],
+    gradeSections: {} as Record<string, string[]>,
     role: 'teacher',
   });
 
@@ -298,6 +281,158 @@ export default function TeachersPage() {
     return Array.from(secSet).sort();
   };
 
+  // Grade-wise Section toggle handlers for Form (Add Faculty)
+  const handleToggleFormGrade = (grade: string) => {
+    setForm((prev) => {
+      const isSelected = prev.selectedGrades.includes(grade);
+      const nextGrades = isSelected
+        ? prev.selectedGrades.filter((g) => g !== grade)
+        : [...prev.selectedGrades, grade];
+
+      const nextGradeSections = { ...prev.gradeSections };
+      if (!isSelected && (!nextGradeSections[grade] || nextGradeSections[grade].length === 0)) {
+        nextGradeSections[grade] = gradeSectionsMap[grade] ? [...gradeSectionsMap[grade]] : [...DEFAULT_SECTIONS];
+      }
+      return {
+        ...prev,
+        selectedGrades: nextGrades,
+        gradeSections: nextGradeSections,
+      };
+    });
+  };
+
+  const handleToggleFormSection = (grade: string, section: string) => {
+    setForm((prev) => {
+      const current = prev.gradeSections[grade] || [];
+      const isChecked = current.includes(section);
+      const next = isChecked ? current.filter((s) => s !== section) : [...current, section];
+      return {
+        ...prev,
+        gradeSections: {
+          ...prev.gradeSections,
+          [grade]: next,
+        },
+      };
+    });
+  };
+
+  const handleSelectAllFormSectionsForGrade = (grade: string) => {
+    const avail = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
+    setForm((prev) => ({
+      ...prev,
+      gradeSections: {
+        ...prev.gradeSections,
+        [grade]: [...avail],
+      },
+    }));
+  };
+
+  const handleClearFormSectionsForGrade = (grade: string) => {
+    setForm((prev) => ({
+      ...prev,
+      gradeSections: {
+        ...prev.gradeSections,
+        [grade]: [],
+      },
+    }));
+  };
+
+  const handleSelectAllFormSectionsEverywhere = () => {
+    setForm((prev) => {
+      const next = { ...prev.gradeSections };
+      prev.selectedGrades.forEach((g) => {
+        next[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
+      });
+      return { ...prev, gradeSections: next };
+    });
+  };
+
+  const handleClearAllFormSectionsEverywhere = () => {
+    setForm((prev) => {
+      const next = { ...prev.gradeSections };
+      prev.selectedGrades.forEach((g) => {
+        next[g] = [];
+      });
+      return { ...prev, gradeSections: next };
+    });
+  };
+
+  // Grade-wise Section toggle handlers for EditForm (Edit Faculty)
+  const handleToggleEditGrade = (grade: string) => {
+    setEditForm((prev) => {
+      const isSelected = prev.selectedGrades.includes(grade);
+      const nextGrades = isSelected
+        ? prev.selectedGrades.filter((g) => g !== grade)
+        : [...prev.selectedGrades, grade];
+
+      const nextGradeSections = { ...prev.gradeSections };
+      if (!isSelected && (!nextGradeSections[grade] || nextGradeSections[grade].length === 0)) {
+        nextGradeSections[grade] = gradeSectionsMap[grade] ? [...gradeSectionsMap[grade]] : [...DEFAULT_SECTIONS];
+      }
+      return {
+        ...prev,
+        selectedGrades: nextGrades,
+        gradeSections: nextGradeSections,
+      };
+    });
+  };
+
+  const handleToggleEditSection = (grade: string, section: string) => {
+    setEditForm((prev) => {
+      const current = prev.gradeSections[grade] || [];
+      const isChecked = current.includes(section);
+      const next = isChecked ? current.filter((s) => s !== section) : [...current, section];
+      return {
+        ...prev,
+        gradeSections: {
+          ...prev.gradeSections,
+          [grade]: next,
+        },
+      };
+    });
+  };
+
+  const handleSelectAllEditSectionsForGrade = (grade: string) => {
+    const avail = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
+    setEditForm((prev) => ({
+      ...prev,
+      gradeSections: {
+        ...prev.gradeSections,
+        [grade]: [...avail],
+      },
+    }));
+  };
+
+  const handleClearEditSectionsForGrade = (grade: string) => {
+    setEditForm((prev) => ({
+      ...prev,
+      gradeSections: {
+        ...prev.gradeSections,
+        [grade]: [],
+      },
+    }));
+  };
+
+  const handleSelectAllEditSectionsEverywhere = () => {
+    setEditForm((prev) => {
+      const next = { ...prev.gradeSections };
+      prev.selectedGrades.forEach((g) => {
+        next[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
+      });
+      return { ...prev, gradeSections: next };
+    });
+  };
+
+  const handleClearAllEditSectionsEverywhere = () => {
+    setEditForm((prev) => {
+      const next = { ...prev.gradeSections };
+      prev.selectedGrades.forEach((g) => {
+        next[g] = [];
+      });
+      return { ...prev, gradeSections: next };
+    });
+  };
+
   // Dedicated print function
   const printTeacherTimetable = (teacher: Teacher) => {
     const rows = DAYS.map((day) => {
@@ -339,17 +474,11 @@ export default function TeachersPage() {
       }
       if (list.length > 0) {
         setTeachers(list);
-      } else if (isDemoSchool()) {
-        setTeachers(DEFAULT_TIMETABLE_FACULTY);
       } else {
         setTeachers([]);
       }
     } catch {
-      if (isDemoSchool()) {
-        setTeachers(DEFAULT_TIMETABLE_FACULTY);
-      } else {
-        setTeachers([]);
-      }
+      setTeachers([]);
     } finally {
       setLoading(false);
     }
@@ -358,6 +487,13 @@ export default function TeachersPage() {
   useEffect(() => {
     fetchTeachers();
     refreshCounts();
+    try {
+      const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setSchoolName(parsed.schoolName || parsed.user?.schoolName || '');
+      }
+    } catch {}
   }, [fetchTeachers]);
 
   // Main Directory Filtering logic
@@ -414,6 +550,7 @@ export default function TeachersPage() {
     }
     setSaving(true);
     try {
+      const serializedSections = serializeGradeSectionsMap(form.gradeSections);
       const r = await fetch('/api/teachers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -425,7 +562,7 @@ export default function TeachersPage() {
           subject: form.selectedSubjects[0],
           subjects: form.selectedSubjects,
           grades: form.selectedGrades,
-          sections: form.selectedSections,
+          sections: serializedSections,
         }),
       });
       if (r.ok) {
@@ -438,7 +575,7 @@ export default function TeachersPage() {
           employeeId: '',
           selectedSubjects: [],
           selectedGrades: [],
-          selectedSections: [],
+          gradeSections: {},
         });
         fetchTeachers();
         refreshCounts();
@@ -456,7 +593,7 @@ export default function TeachersPage() {
     if (e) e.stopPropagation();
     const subs = parseList(teacher.subjects || teacher.subject);
     const grs = parseList(teacher.grades);
-    const secs = parseList(teacher.sections);
+    const parsedGradeSections = parseGradeSectionsMap(teacher.sections, grs, gradeSectionsMap);
 
     setEditForm({
       id: teacher.id,
@@ -466,7 +603,7 @@ export default function TeachersPage() {
       employeeId: teacher.employeeId || '',
       selectedSubjects: subs.length > 0 ? subs : (teacher.subject ? [teacher.subject] : []),
       selectedGrades: grs,
-      selectedSections: secs,
+      gradeSections: parsedGradeSections,
       role: teacher.role || 'teacher',
     });
     setEditOpen(true);
@@ -484,6 +621,7 @@ export default function TeachersPage() {
     }
     setSaving(true);
     try {
+      const serializedSections = serializeGradeSectionsMap(editForm.gradeSections);
       const r = await fetch('/api/teachers', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -496,7 +634,7 @@ export default function TeachersPage() {
           subject: editForm.selectedSubjects[0],
           subjects: editForm.selectedSubjects,
           grades: editForm.selectedGrades,
-          sections: editForm.selectedSections,
+          sections: serializedSections,
           role: editForm.role,
         }),
       });
@@ -517,7 +655,7 @@ export default function TeachersPage() {
             subjects: JSON.stringify(editForm.selectedSubjects),
             employeeId: editForm.employeeId,
             grades: JSON.stringify(editForm.selectedGrades),
-            sections: JSON.stringify(editForm.selectedSections),
+            sections: JSON.stringify(serializedSections),
             role: editForm.role,
           });
         }
@@ -803,9 +941,16 @@ export default function TeachersPage() {
     }
   };
 
-  const gradesDisplay = (gradesJson: string) => {
+  const gradesDisplay = (gradesJson: string, sectionsJson?: string) => {
     const list = parseList(gradesJson);
-    return list.length > 0 ? list.join(', ') : 'All Grades';
+    if (list.length === 0) return 'All Grades';
+    if (!sectionsJson) return list.join(', ');
+
+    const map = parseGradeSectionsMap(sectionsJson, list, gradeSectionsMap);
+    return list.map((g) => {
+      const s = map[g];
+      return s && s.length > 0 ? `${g} (${s.join(',')})` : g;
+    }).join(', ');
   };
 
   const subjectsDisplay = (subjectsJson: string | undefined, defaultSubj: string) => {
@@ -860,9 +1005,25 @@ export default function TeachersPage() {
     else if (type === 'clear') targetGrades = [];
 
     if (isEdit) {
-      setEditForm((prev) => ({ ...prev, selectedGrades: targetGrades }));
+      setEditForm((prev) => {
+        const nextGradeSections = { ...prev.gradeSections };
+        targetGrades.forEach((g) => {
+          if (!nextGradeSections[g] || nextGradeSections[g].length === 0) {
+            nextGradeSections[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
+          }
+        });
+        return { ...prev, selectedGrades: targetGrades, gradeSections: nextGradeSections };
+      });
     } else {
-      setForm((prev) => ({ ...prev, selectedGrades: targetGrades }));
+      setForm((prev) => {
+        const nextGradeSections = { ...prev.gradeSections };
+        targetGrades.forEach((g) => {
+          if (!nextGradeSections[g] || nextGradeSections[g].length === 0) {
+            nextGradeSections[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
+          }
+        });
+        return { ...prev, selectedGrades: targetGrades, gradeSections: nextGradeSections };
+      });
     }
   };
 
@@ -871,18 +1032,18 @@ export default function TeachersPage() {
     teacherName: string,
     subjects: string[],
     grades: string[],
-    sections: string[]
+    gradeSections: Record<string, string[]>
   ) => {
     const hasSubjects = subjects.length > 0;
     const hasGrades = grades.length > 0;
-    const effectiveSecs = sections.length > 0 ? sections : ['All'];
+    const totalConfiguredSecs = grades.reduce((acc, g) => acc + (gradeSections[g]?.length || 0), 0);
 
     if (!hasSubjects || !hasGrades) {
       return (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-3 text-center">
           <p className="text-xs font-semibold text-slate-500 flex items-center justify-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-            Select at least one subject & grade to preview teaching qualifications
+            Select at least one subject &amp; grade to preview teaching qualifications
           </p>
         </div>
       );
@@ -898,11 +1059,11 @@ export default function TeachersPage() {
             </span>
           </div>
           <Badge className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.2 shadow-xs">
-            {subjects.length} Subj &bull; {grades.length} Gr &bull; {effectiveSecs.length} Sec
+            {subjects.length} Subj &bull; {grades.length} Gr &bull; {totalConfiguredSecs} Sec
           </Badge>
         </div>
 
-        <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
           {subjects.map((subj) => (
             <div key={subj} className="bg-white/90 border border-blue-100 rounded-lg p-2 text-xs shadow-2xs space-y-1">
               <div className="flex items-center justify-between">
@@ -911,13 +1072,20 @@ export default function TeachersPage() {
                 </span>
                 <span className="text-[10px] text-slate-400 font-medium">{teacherName || 'Faculty Member'}</span>
               </div>
-              <div className="flex flex-wrap items-center gap-1">
-                {grades.map((gr) => (
-                  <span key={gr} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded border border-slate-200">
-                    <GraduationCap className="w-2.5 h-2.5 text-slate-500" />
-                    {gr} {effectiveSecs.length > 0 && effectiveSecs[0] !== 'All' ? `(${effectiveSecs.join(', ')})` : ''}
-                  </span>
-                ))}
+              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                {grades.map((gr) => {
+                  const secs = gradeSections[gr] || [];
+                  return (
+                    <span key={gr} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded border border-slate-200">
+                      <GraduationCap className="w-2.5 h-2.5 text-indigo-500" />
+                      {gr} {secs.length > 0 ? (
+                        <span className="text-blue-700 font-bold">({secs.join(', ')})</span>
+                      ) : (
+                        <span className="text-slate-400 italic">(none)</span>
+                      )}
+                    </span>
+                  );
+                })}
               </div>
             </div>
           ))}
@@ -940,7 +1108,7 @@ export default function TeachersPage() {
                 Faculty Directory & Workload Center
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Takshila School
+                {schoolName || 'Faculty Portal'}
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
@@ -1218,7 +1386,7 @@ export default function TeachersPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map((teacher) => {
                 const initials = teacher.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-                const gradesStr = gradesDisplay(teacher.grades);
+                const gradesStr = gradesDisplay(teacher.grades, teacher.sections);
                 const subjs = subjectsDisplay(teacher.subjects, teacher.subject);
                 const scheduleCount = teacher.schedules?.length || teacher._count?.schedules || 0;
                 const isInactive = teacher.role === 'inactive';
@@ -1508,14 +1676,7 @@ export default function TeachersPage() {
                     <button
                       key={grade}
                       type="button"
-                      onClick={() => {
-                        setForm((prev) => ({
-                          ...prev,
-                          selectedGrades: isSelected
-                            ? prev.selectedGrades.filter((g) => g !== grade)
-                            : [...prev.selectedGrades, grade],
-                        }));
-                      }}
+                      onClick={() => handleToggleFormGrade(grade)}
                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                         isSelected
                           ? 'bg-indigo-600 text-white shadow-xs'
@@ -1530,64 +1691,102 @@ export default function TeachersPage() {
               </div>
             </div>
 
-            {/* Dynamic Sections Checkboxes */}
-            <div className="space-y-2 border-t border-slate-100 pt-3">
-              <div className="flex items-center justify-between">
+            {/* Grade-wise Sections Selector */}
+            <div className="space-y-3 border-t border-slate-100 pt-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                 <div>
-                  <Label className="text-xs font-bold text-slate-900">Sections (Dynamic to Selected Grades)</Label>
-                  <p className="text-[11px] text-slate-500">Only sections configured for active grades are displayed.</p>
+                  <Label className="text-xs font-bold text-slate-900">Sections Assigned (Grade-wise)</Label>
+                  <p className="text-[11px] text-slate-500">
+                    Configure distinct sections for each assigned grade (e.g. Grade 1: A, B &bull; Grade 2: A only).
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const avail = getDynamicSectionsForGrades(form.selectedGrades);
-                      setForm((prev) => ({ ...prev, selectedSections: avail }));
-                    }}
-                    className="text-[10px] text-blue-600 font-bold hover:underline"
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setForm((prev) => ({ ...prev, selectedSections: [] }))}
-                    className="text-[10px] text-slate-500 font-bold hover:underline"
-                  >
-                    Clear
-                  </button>
-                </div>
+                {form.selectedGrades.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllFormSectionsEverywhere}
+                      className="text-[10px] text-blue-600 font-bold hover:underline"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAllFormSectionsEverywhere}
+                      className="text-[10px] text-slate-500 font-bold hover:underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="flex flex-wrap gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                {getDynamicSectionsForGrades(form.selectedGrades).map((sec) => {
-                  const isChecked = form.selectedSections.includes(sec);
-                  return (
-                    <label
-                      key={sec}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
-                        isChecked
-                          ? 'bg-blue-50 border-blue-300 text-blue-900'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {
-                          setForm((prev) => ({
-                            ...prev,
-                            selectedSections: isChecked
-                              ? prev.selectedSections.filter((s) => s !== sec)
-                              : [...prev.selectedSections, sec],
-                          }));
-                        }}
-                        className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-                      />
-                      Section {sec}
-                    </label>
-                  );
-                })}
-              </div>
+              {form.selectedGrades.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-3 text-center">
+                  <p className="text-xs text-slate-500">
+                    Please select one or more <strong>Grades Assigned</strong> above to configure their sections.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                  {form.selectedGrades.map((grade) => {
+                    const availableSecs = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
+                    const assignedSecs = form.gradeSections[grade] || [];
+                    return (
+                      <div
+                        key={grade}
+                        className="rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 space-y-2"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-200/60 pb-1.5">
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                            {grade} Sections
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectAllFormSectionsForGrade(grade)}
+                              className="text-[10px] text-blue-600 font-bold hover:underline"
+                            >
+                              Select All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleClearFormSectionsForGrade(grade)}
+                              className="text-[10px] text-slate-500 font-bold hover:underline"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {availableSecs.map((sec) => {
+                            const isChecked = assignedSecs.includes(sec);
+                            return (
+                              <label
+                                key={sec}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
+                                  isChecked
+                                    ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-2xs'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleFormSection(grade, sec)}
+                                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                                />
+                                Section {sec}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Real-Time Mapping Preview */}
@@ -1596,7 +1795,7 @@ export default function TeachersPage() {
                 form.name,
                 form.selectedSubjects,
                 form.selectedGrades,
-                form.selectedSections
+                form.gradeSections
               )}
             </div>
           </div>
@@ -1757,14 +1956,7 @@ export default function TeachersPage() {
                     <button
                       key={grade}
                       type="button"
-                      onClick={() => {
-                        setEditForm((prev) => ({
-                          ...prev,
-                          selectedGrades: isSelected
-                            ? prev.selectedGrades.filter((g) => g !== grade)
-                            : [...prev.selectedGrades, grade],
-                        }));
-                      }}
+                      onClick={() => handleToggleEditGrade(grade)}
                       className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                         isSelected
                           ? 'bg-indigo-600 text-white shadow-xs'
@@ -1779,64 +1971,102 @@ export default function TeachersPage() {
               </div>
             </div>
 
-            {/* Dynamic Sections */}
-            <div className="space-y-2 border-t border-slate-100 pt-3">
-              <div className="flex items-center justify-between">
+            {/* Grade-wise Sections Selector */}
+            <div className="space-y-3 border-t border-slate-100 pt-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
                 <div>
-                  <Label className="text-xs font-bold text-slate-900">Sections</Label>
-                  <p className="text-[11px] text-slate-500">Sections available for selected grades.</p>
+                  <Label className="text-xs font-bold text-slate-900">Sections Assigned (Grade-wise)</Label>
+                  <p className="text-[11px] text-slate-500">
+                    Configure distinct sections for each assigned grade (e.g. Grade 1: A, B &bull; Grade 2: A only).
+                  </p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const avail = getDynamicSectionsForGrades(editForm.selectedGrades);
-                      setEditForm((prev) => ({ ...prev, selectedSections: avail }));
-                    }}
-                    className="text-[10px] text-blue-600 font-bold hover:underline"
-                  >
-                    Select All
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditForm((prev) => ({ ...prev, selectedSections: [] }))}
-                    className="text-[10px] text-slate-500 font-bold hover:underline"
-                  >
-                    Clear
-                  </button>
-                </div>
+                {editForm.selectedGrades.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSelectAllEditSectionsEverywhere}
+                      className="text-[10px] text-blue-600 font-bold hover:underline"
+                    >
+                      Select All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleClearAllEditSectionsEverywhere}
+                      className="text-[10px] text-slate-500 font-bold hover:underline"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
               </div>
 
-              <div className="flex flex-wrap gap-2 p-2.5 bg-slate-50 rounded-xl border border-slate-200">
-                {getDynamicSectionsForGrades(editForm.selectedGrades).map((sec) => {
-                  const isChecked = editForm.selectedSections.includes(sec);
-                  return (
-                    <label
-                      key={sec}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
-                        isChecked
-                          ? 'bg-blue-50 border-blue-300 text-blue-900'
-                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => {
-                          setEditForm((prev) => ({
-                            ...prev,
-                            selectedSections: isChecked
-                              ? prev.selectedSections.filter((s) => s !== sec)
-                              : [...prev.selectedSections, sec],
-                          }));
-                        }}
-                        className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-                      />
-                      Section {sec}
-                    </label>
-                  );
-                })}
-              </div>
+              {editForm.selectedGrades.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-3 text-center">
+                  <p className="text-xs text-slate-500">
+                    Please select one or more <strong>Grades Assigned</strong> above to configure their sections.
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                  {editForm.selectedGrades.map((grade) => {
+                    const availableSecs = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
+                    const assignedSecs = editForm.gradeSections[grade] || [];
+                    return (
+                      <div
+                        key={grade}
+                        className="rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 space-y-2"
+                      >
+                        <div className="flex items-center justify-between border-b border-slate-200/60 pb-1.5">
+                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                            {grade} Sections
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleSelectAllEditSectionsForGrade(grade)}
+                              className="text-[10px] text-blue-600 font-bold hover:underline"
+                            >
+                              Select All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleClearEditSectionsForGrade(grade)}
+                              className="text-[10px] text-slate-500 font-bold hover:underline"
+                            >
+                              Clear
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5">
+                          {availableSecs.map((sec) => {
+                            const isChecked = assignedSecs.includes(sec);
+                            return (
+                              <label
+                                key={sec}
+                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
+                                  isChecked
+                                    ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-2xs'
+                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleEditSection(grade, sec)}
+                                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                                />
+                                Section {sec}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Status & Role */}
@@ -1863,7 +2093,7 @@ export default function TeachersPage() {
                 editForm.name,
                 editForm.selectedSubjects,
                 editForm.selectedGrades,
-                editForm.selectedSections
+                editForm.gradeSections
               )}
             </div>
           </div>

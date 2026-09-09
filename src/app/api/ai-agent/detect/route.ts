@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { detectAndCreateSubstitutionRequests } from '@/lib/services/ai-agent';
 import { requireCapability } from '@/lib/authz';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function POST(req: NextRequest) {
   const denied = requireCapability(req, 'substitution.assign');
@@ -11,7 +12,12 @@ export async function POST(req: NextRequest) {
     const { date } = await req.json();
     if (!date) return NextResponse.json({ success: false, error: 'Date required' }, { status: 400 });
 
-    const results = await detectAndCreateSubstitutionRequests(date);
+    const schoolId = await getTenantSchoolId(req);
+    if (!schoolId) {
+      return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+    }
+
+    const results = await detectAndCreateSubstitutionRequests(date, schoolId);
 
     return NextResponse.json({
       success: true,

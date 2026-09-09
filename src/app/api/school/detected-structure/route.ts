@@ -5,6 +5,7 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
 import { getDayConfig } from '@/lib/timetable-config';
 import { periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
+import { ensureAcademicYear } from '@/lib/timetable-lifecycle';
 import { NextResponse } from 'next/server';
 
 /**
@@ -29,7 +30,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
   }
 
-  const [rows, configs, config] = await Promise.all([
+  const [rows, configs, config, classSections] = await Promise.all([
     db.schedule.findMany({
       where: { schoolId },
       select: { grade: true, section: true, subject: true, day: true, period: true },
@@ -38,13 +39,29 @@ export async function GET(request: Request) {
       .findMany({ where: { schoolId }, select: { grade: true, subjectName: true, active: true } })
       .catch(() => []),
     getDayConfig(schoolId),
+    db.classSection
+      .findMany({ where: { schoolId, active: true } })
+      .catch(() => []),
   ]);
 
-  // ── Grades and their sections, from what is actually scheduled ────────────
+  // ── Grades and their sections, from configured class sections + actual schedule rows ──
   const sectionsByGrade = new Map<string, Map<string, number>>();
+
+  // 1. Add from ClassSection table
+  for (const cs of classSections) {
+    const secName = cs.section.trim().toUpperCase();
+    const sections = sectionsByGrade.get(cs.grade) ?? new Map<string, number>();
+    if (!sections.has(secName)) {
+      sections.set(secName, 0);
+    }
+    sectionsByGrade.set(cs.grade, sections);
+  }
+
+  // 2. Add and count from schedule rows
   for (const r of rows) {
+    const secName = r.section.trim().toUpperCase();
     const sections = sectionsByGrade.get(r.grade) ?? new Map<string, number>();
-    sections.set(r.section, (sections.get(r.section) ?? 0) + 1);
+    sections.set(secName, (sections.get(secName) ?? 0) + 1);
     sectionsByGrade.set(r.grade, sections);
   }
 
@@ -124,3 +141,131 @@ export async function GET(request: Request) {
     },
   });
 }
+
+/**
+ * Add a new section (or grade with section) to the school's academic structure.
+ */
+export async function POST(request: Request) {
+  const denied = requireCapability(request, 'school.settings.write');
+  if (denied) return denied;
+
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) {
+    return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    let grade = (body.grade || '').trim();
+    let section = (body.section || '').trim().toUpperCase();
+
+    if (!grade) {
+      return NextResponse.json({ error: 'Grade name is required.' }, { status: 400 });
+    }
+
+    // Default to 'A' if section not provided
+    if (!section) {
+      section = 'A';
+    }
+
+    // Strip any "Section " prefix
+    section = section.replace(/^SECTION\s*/i, '').trim().toUpperCase();
+
+    if (!section) {
+      return NextResponse.json({ error: 'Section name cannot be empty.' }, { status: 400 });
+    }
+
+    const academicYearId = await ensureAcademicYear(schoolId);
+    const code = `${grade.replace(/\s+/g, '')}-${section}`;
+
+    // Check if section already exists
+    const existing = await db.classSection.findFirst({
+      where: { schoolId, grade, section },
+    });
+
+    if (existing) {
+      if (!existing.active) {
+        await db.classSection.update({
+          where: { id: existing.id },
+          data: { active: true },
+        });
+      }
+    } else {
+      await db.classSection.create({
+        data: {
+          schoolId,
+          academicYearId,
+          code,
+          grade,
+          section,
+          active: true,
+        },
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Section ${section} added to ${grade} successfully.`,
+      grade,
+      section,
+    });
+  } catch (error) {
+    console.error('Error adding section:', error);
+    return NextResponse.json({ error: 'Failed to add section: ' + String(error) }, { status: 500 });
+  }
+}
+
+/**
+ * Delete a section from a grade.
+ */
+export async function DELETE(request: Request) {
+  const denied = requireCapability(request, 'school.settings.write');
+  if (denied) return denied;
+
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) {
+    return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+  }
+
+  try {
+    const { searchParams } = new URL(request.url);
+    let grade = searchParams.get('grade') || '';
+    let section = searchParams.get('section') || '';
+
+    if (!grade || !section) {
+      const body = await request.json().catch(() => ({}));
+      grade = grade || (body.grade || '');
+      section = section || (body.section || '');
+    }
+
+    grade = grade.trim();
+    section = section.replace(/^SECTION\s*/i, '').trim().toUpperCase();
+
+    if (!grade || !section) {
+      return NextResponse.json({ error: 'Grade and Section are required to delete.' }, { status: 400 });
+    }
+
+    // 1. Delete matching classSection records
+    const csDeleted = await db.classSection.deleteMany({
+      where: { schoolId, grade, section },
+    });
+
+    // 2. Delete schedule rows for this class
+    const schedulesDeleted = await db.schedule.deleteMany({
+      where: { schoolId, grade, section },
+    });
+
+    return NextResponse.json({
+      success: true,
+      message: `Section ${section} removed from ${grade}.`,
+      grade,
+      section,
+      deletedSchedules: schedulesDeleted.count,
+      deletedSections: csDeleted.count,
+    });
+  } catch (error) {
+    console.error('Error deleting section:', error);
+    return NextResponse.json({ error: 'Failed to delete section: ' + String(error) }, { status: 500 });
+  }
+}
+

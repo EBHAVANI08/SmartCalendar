@@ -10,9 +10,12 @@ export async function GET(request: NextRequest) {
     const periodStr = searchParams.get('timeSlotId');
     const period = periodStr ? parseInt(periodStr) : 1;
     const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
 
     const teachers = await db.teacher.findMany({
-      where: schoolId ? { schoolId } : {},
+      where: { schoolId },
       include: {
         schedules: true,
         leaveApplications: true,

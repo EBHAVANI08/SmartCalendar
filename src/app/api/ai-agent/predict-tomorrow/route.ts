@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runPredictionEngine, getPredictionsForDate } from '@/lib/services/prediction-engine';
 import { requireCapability } from '@/lib/authz';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 /**
  * POST /api/ai-agent/predict-tomorrow
@@ -12,10 +13,15 @@ export async function POST(request: NextRequest) {
   if (denied) return denied;
 
   try {
+    const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+    }
+
     const body = await request.json().catch(() => ({}));
     const baseDate = body.date || new Date().toISOString().split('T')[0];
 
-    const predictionResult = await runPredictionEngine(baseDate);
+    const predictionResult = await runPredictionEngine(baseDate, schoolId);
 
     return NextResponse.json({
       success: true,
@@ -38,8 +44,13 @@ export async function POST(request: NextRequest) {
  */
 export async function GET(request: NextRequest) {
   try {
+    const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+    }
+
     const date = request.nextUrl.searchParams.get('date') || new Date().toISOString().split('T')[0];
-    const predictions = await getPredictionsForDate(date);
+    const predictions = await getPredictionsForDate(date, schoolId);
 
     return NextResponse.json({
       success: true,

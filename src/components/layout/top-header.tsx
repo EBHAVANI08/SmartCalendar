@@ -18,6 +18,8 @@ interface TopHeaderProps {
   userRole?: string;
   userEmail?: string;
   pendingSubstitutions?: number;
+  impersonating?: string | null;
+  onExitImpersonation?: () => void;
   onToggleMobile?: () => void;
   onLogout?: () => void;
 }
@@ -34,63 +36,7 @@ interface NotificationItem {
   actionLabel?: string;
 }
 
-const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
-  {
-    id: 'notif-1',
-    category: 'substitution',
-    title: 'Absentee Coverage Required Today',
-    description: '3 faculty members marked absent in biometric scan. 6 class periods need substitution.',
-    time: '10 mins ago',
-    isUnread: true,
-    priority: 'high',
-    actionUrl: '/substitutions',
-    actionLabel: 'Assign Substitutes',
-  },
-  {
-    id: 'notif-2',
-    category: 'attendance',
-    title: 'Biometric Attendance Sync Complete',
-    description: 'Morning faculty biometric punch synced: 42 present, 8 absent / on leave.',
-    time: '25 mins ago',
-    isUnread: true,
-    priority: 'medium',
-    actionUrl: '/attendance',
-    actionLabel: 'View Attendance',
-  },
-  {
-    id: 'notif-3',
-    category: 'leave',
-    title: 'Pending Faculty Leave Request',
-    description: 'Priya Verma (Science) applied for Casual Leave for tomorrow (Period 3–5).',
-    time: '1 hour ago',
-    isUnread: true,
-    priority: 'medium',
-    actionUrl: '/leaves',
-    actionLabel: 'Review Request',
-  },
-  {
-    id: 'notif-4',
-    category: 'system',
-    title: 'Weekly Master Timetable Active',
-    description: '45 periods standard timetable configured for Takshila School (8 Mon–Fri + 5 Sat).',
-    time: '2 hours ago',
-    isUnread: false,
-    priority: 'info',
-    actionUrl: '/timetable',
-    actionLabel: 'View Timetable',
-  },
-  {
-    id: 'notif-5',
-    category: 'substitution',
-    title: 'AI Auto-Substitution Ready',
-    description: 'AI engine generated optimal conflict-free substitution plan for today’s absentees.',
-    time: '3 hours ago',
-    isUnread: false,
-    priority: 'info',
-    actionUrl: '/substitutions',
-    actionLabel: 'Review AI Plan',
-  },
-];
+const DEFAULT_NOTIFICATIONS: NotificationItem[] = [];
 
 export function TopHeader({
   schoolName,
@@ -98,13 +44,15 @@ export function TopHeader({
   userRole,
   userEmail,
   pendingSubstitutions = 0,
+  impersonating,
+  onExitImpersonation,
   onToggleMobile,
   onLogout,
 }: TopHeaderProps) {
   const [currentTime, setCurrentTime] = useState('');
   const [currentDate, setCurrentDate] = useState('');
   const [notificationsOpen, setNotificationsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationItem[]>(DEFAULT_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [activeFilter, setActiveFilter] = useState<'all' | 'substitution' | 'leave' | 'system'>('all');
   const dropdownRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -139,12 +87,11 @@ export function TopHeader({
               actionUrl: n.type === 'leave' ? '/leaves' : n.type === 'substitution' ? '/substitutions' : '/dashboard',
               actionLabel: 'View Details',
             }));
-            // Combine with default alerts
-            setNotifications([...mapped, ...DEFAULT_NOTIFICATIONS]);
+            setNotifications(mapped);
           }
         }
       } catch {
-        // Fallback to initial defaults
+        // Fallback to empty
       }
     };
     fetchLiveNotifications();
@@ -224,6 +171,20 @@ export function TopHeader({
           <Wifi className="w-3 h-3 text-blue-600 animate-pulse" />
           <span className="font-semibold font-mono">{currentTime}</span>
         </div>
+
+        {/* Return to SuperAdmin action if impersonating */}
+        {impersonating && onExitImpersonation && (
+          <button
+            type="button"
+            onClick={onExitImpersonation}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-700 hover:bg-violet-800 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
+            title="Return to SuperAdmin Console"
+          >
+            <ShieldCheck className="w-4 h-4 text-amber-300" />
+            <span className="hidden md:inline">Exit to SuperAdmin</span>
+            <span className="md:hidden">Exit</span>
+          </button>
+        )}
 
         {/* Interactive Notifications bell with Dropdown */}
         <div className="relative" ref={dropdownRef}>
@@ -446,6 +407,15 @@ export function TopHeader({
               <p className="text-sm font-bold truncate">{userName}</p>
               <p className="text-[11px] text-slate-500 truncate">{userEmail}</p>
             </div>
+            {impersonating && onExitImpersonation && (
+              <button
+                type="button"
+                onClick={onExitImpersonation}
+                className="w-full flex items-center gap-2 px-2 py-2 rounded-lg text-sm text-violet-700 hover:bg-violet-50 font-bold border-b border-slate-100 mb-1 cursor-pointer"
+              >
+                <ShieldCheck className="w-4 h-4 text-violet-600" /> Return to SuperAdmin
+              </button>
+            )}
             <Link href="/profile" className="flex items-center gap-2 px-2 py-2 rounded-lg text-sm hover:bg-slate-100">
               <User className="w-4 h-4 text-slate-500" /> My profile
             </Link>

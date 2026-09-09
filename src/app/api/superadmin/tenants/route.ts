@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 import {
   addDays,
   addMonths,
@@ -39,7 +40,9 @@ export async function GET(request: Request) {
     orderBy: { createdAt: 'desc' },
   });
 
-  return NextResponse.json({ tenants });
+  return NextResponse.json({
+    tenants: tenants.map(({ password: _p, ...t }) => t),
+  });
 }
 
 export async function POST(request: Request) {
@@ -62,12 +65,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'A tenant with this email or school code already exists' }, { status: 409 });
   }
 
+  const hashedPassword = await bcrypt.hash(password, 10);
   const school = await db.school.create({
     data: {
       name,
       code: code.toUpperCase(),
       email: email.toLowerCase(),
-      password,
+      password: hashedPassword,
       contactName: contactName || undefined,
       phone: phone || undefined,
       notes: notes || undefined,
@@ -78,6 +82,7 @@ export async function POST(request: Request) {
   });
 
   const planKey = (planName || 'trial').toLowerCase();
+  await ensureDefaultPlans();
   const plan = await db.plan.findUnique({ where: { name: planKey } });
 
   await db.schoolFeatureFlags.create({
@@ -108,5 +113,6 @@ export async function POST(request: Request) {
   }
 
   await writeAudit(request, 'tenant.create', 'school', school.id, { name, code: school.code, plan: planKey });
-  return NextResponse.json({ success: true, school }, { status: 201 });
+  const { password: _p, ...safeSchool } = school;
+  return NextResponse.json({ success: true, school: safeSchool }, { status: 201 });
 }

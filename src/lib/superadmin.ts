@@ -15,8 +15,13 @@ export async function isSuperAdminRequest(request: Request): Promise<boolean> {
   const configuredToken = process.env.SUPERADMIN_TOKEN;
   if (!configuredToken || configuredToken.length < 32) return false;
 
-  const { searchParams } = new URL(request.url);
-  return searchParams.get('token') === configuredToken;
+  const authHeader = request.headers.get('authorization');
+  const serviceHeader = request.headers.get('x-superadmin-token');
+  if (serviceHeader && serviceHeader === configuredToken) return true;
+  if (authHeader && authHeader.startsWith('Bearer ') && authHeader.substring(7).trim() === configuredToken) {
+    return true;
+  }
+  return false;
 }
 
 export function unauthorized() {

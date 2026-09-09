@@ -10,9 +10,12 @@ export async function GET(request: NextRequest) {
   try {
     const date = request.nextUrl.searchParams.get('date') || undefined;
     const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ success: false, error: 'No school in session' }, { status: 401 });
+    }
     const [wellbeing, fairness] = await Promise.all([
       computeAllWellbeingMetrics(date, schoolId),
-      computeFairnessReport(),
+      computeFairnessReport(schoolId),
     ]);
 
     return NextResponse.json({

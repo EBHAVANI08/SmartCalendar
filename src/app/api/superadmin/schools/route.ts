@@ -2,6 +2,8 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { isSuperAdminRequest, unauthorized, writeAudit } from '@/lib/superadmin';
 
+import bcrypt from 'bcryptjs';
+
 export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
@@ -15,7 +17,9 @@ export async function GET(request: Request) {
     orderBy: { createdAt: 'desc' },
   });
 
-  return NextResponse.json({ schools });
+  return NextResponse.json({
+    schools: schools.map(({ password: _p, ...s }) => s),
+  });
 }
 
 export async function POST(request: Request) {
@@ -27,8 +31,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'name, code, email and password are required' }, { status: 400 });
   }
 
+  const hashedPassword = await bcrypt.hash(password, 10);
   const school = await db.school.create({
-    data: { name, code: String(code).toUpperCase(), email: String(email).toLowerCase(), password },
+    data: { name, code: String(code).toUpperCase(), email: String(email).toLowerCase(), password: hashedPassword },
   });
 
   await db.schoolFeatureFlags.create({
@@ -36,5 +41,6 @@ export async function POST(request: Request) {
   });
 
   await writeAudit(request, 'tenant.create', 'school', school.id, { via: 'legacy-schools' });
-  return NextResponse.json({ success: true, school });
+  const { password: _p, ...safeSchool } = school;
+  return NextResponse.json({ success: true, school: safeSchool });
 }

@@ -40,13 +40,9 @@ export async function GET(request: NextRequest) {
     }
 
     if (!school) {
-      school = await db.school.findFirst();
-    }
-
-    if (!school) {
       return NextResponse.json({
         success: false,
-        error: 'No school tenant found',
+        error: 'No matching school tenant found',
       }, { status: 404 });
     }
 

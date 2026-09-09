@@ -234,3 +234,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Failed to create substitutions' }, { status: 500 });
   }
 }
+
+export async function DELETE(request: Request) {
+  const denied = requireCapability(request, 'substitution.assign');
+  if (denied) return denied;
+
+  try {
+    const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
+
+    const url = new URL(request.url);
+    let id = url.searchParams.get('id');
+    if (!id) {
+      const body = await request.json().catch(() => ({}));
+      id = body?.id;
+    }
+    if (!id) return NextResponse.json({ error: 'Substitution ID is required' }, { status: 400 });
+
+    const existing = await db.substitution.findFirst({
+      where: { id, schoolId },
+    });
+    if (!existing) {
+      return NextResponse.json({ error: 'Substitution not found in this school' }, { status: 404 });
+    }
+
+    await db.substitution.delete({ where: { id } });
+
+    return NextResponse.json({ success: true, message: 'Substitution removed successfully.' });
+  } catch (error) {
+    console.error('Error deleting substitution:', error);
+    return NextResponse.json({ error: 'Failed to delete substitution' }, { status: 500 });
+  }
+}
+

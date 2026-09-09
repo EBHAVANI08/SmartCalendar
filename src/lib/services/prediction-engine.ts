@@ -31,11 +31,15 @@ interface TeacherRiskAssessment {
  * Run the prediction engine for a specific date.
  * Returns risk assessments for all teachers who might be absent on that date.
  */
-export async function predictAbsencesForDate(targetDate: string): Promise<TeacherRiskAssessment[]> {
+export async function predictAbsencesForDate(targetDate: string, schoolId?: string | null): Promise<TeacherRiskAssessment[]> {
   const results: TeacherRiskAssessment[] = [];
 
-  // Get all teachers
+  // Get teachers scoped to schoolId
   const teachers = await db.teacher.findMany({
+    where: {
+      ...(schoolId ? { schoolId } : {}),
+      role: { not: 'inactive' },
+    },
     include: {
       leaveApplications: true,
       schedules: true,
@@ -58,6 +62,7 @@ export async function predictAbsencesForDate(targetDate: string): Promise<Teache
     where: {
       status: 'approved',
       startDate: { gte: ninetyDaysAgoStr, lte: targetDate },
+      ...(schoolId ? { teacher: { schoolId } } : {}),
     },
     include: { teacher: true },
   });
@@ -83,28 +88,30 @@ export async function predictAbsencesForDate(targetDate: string): Promise<Teache
     where: {
       status: 'approved',
       startDate: { gte: fourteenDaysAgoStr, lte: targetDate },
+      ...(schoolId ? { teacher: { schoolId } } : {}),
     },
     include: { teacher: true },
   });
 
-  // Count leaves per subject/department
-  const deptLeaveCount = new Map<string, number>();
+  const deptLeaveCounts = new Map<string, number>();
   for (const leave of recentLeaves) {
-    const dept = leave.teacher.subject || 'General';
-    deptLeaveCount.set(dept, (deptLeaveCount.get(dept) || 0) + 1);
+    const dept = leave.teacher?.subject || 'General';
+    deptLeaveCounts.set(dept, (deptLeaveCounts.get(dept) || 0) + 1);
   }
 
-  const clusterDepts = new Set<string>();
-  for (const [dept, count] of deptLeaveCount) {
-    if (count >= 3) clusterDepts.add(dept);
-  }
+  const clusterDepts = new Set(
+    Array.from(deptLeaveCounts.entries())
+      .filter(([_, count]) => count >= 3)
+      .map(([dept]) => dept)
+  );
 
-  // ── Signal 4: Pending leave applications for target date ──
+  // ── Signal 3: Pending leave applications for tomorrow/day-after ──
   const pendingLeaves = await db.leaveApplication.findMany({
     where: {
       status: 'pending',
       startDate: { lte: targetDate },
       endDate: { gte: targetDate },
+      ...(schoolId ? { teacher: { schoolId } } : {}),
     },
     include: { teacher: true },
   });
@@ -167,9 +174,9 @@ export async function predictAbsencesForDate(targetDate: string): Promise<Teache
 /**
  * Convenience export for running prediction engine and returning summary stats
  */
-export async function runPredictionEngine(targetDate?: string) {
+export async function runPredictionEngine(targetDate?: string, schoolId?: string | null) {
   const date = targetDate || new Date(Date.now() + 86400000).toISOString().split('T')[0];
-  const assessments = await predictAbsencesForDate(date);
+  const assessments = await predictAbsencesForDate(date, schoolId);
   return {
     targetDate: date,
     totalAssessed: assessments.length,
@@ -179,6 +186,6 @@ export async function runPredictionEngine(targetDate?: string) {
   };
 }
 
-export async function getPredictionsForDate(date: string) {
-  return predictAbsencesForDate(date);
+export async function getPredictionsForDate(date: string, schoolId?: string | null) {
+  return predictAbsencesForDate(date, schoolId);
 }

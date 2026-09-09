@@ -8,6 +8,9 @@ export async function GET(request: NextRequest) {
     const section = searchParams.get('section') || searchParams.get('sectionId');
     const grade = searchParams.get('grade');
     const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
 
     const dayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
     const weekData: Record<string, any> = {};
@@ -16,7 +19,7 @@ export async function GET(request: NextRequest) {
       const schedules = await db.schedule.findMany({
         where: {
           day,
-          ...(schoolId ? { schoolId } : {}),
+          schoolId,
           ...(section ? { section } : {}),
           ...(grade ? { grade } : {}),
         },

@@ -112,8 +112,8 @@ export async function computeAllWellbeingMetrics(baseDate?: string, schoolId?: s
   return results;
 }
 
-export async function computeFairnessReport() {
-  const metrics = await computeAllWellbeingMetrics();
+export async function computeFairnessReport(schoolId?: string | null) {
+  const metrics = await computeAllWellbeingMetrics(undefined, schoolId);
   return {
     totalTeachers: metrics.length,
     highStressCount: metrics.filter(m => m.stressScore > 70).length,

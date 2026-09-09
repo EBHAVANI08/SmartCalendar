@@ -1,12 +1,13 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import {
   LayoutDashboard, Building2, CreditCard, TicketPercent, HeartPulse,
   ScrollText, Shield, LogOut, ChevronLeft, ChevronRight, Sparkles, X,
-  UsersRound, LifeBuoy, MessageSquare, Globe,
+  UsersRound, LifeBuoy, MessageSquare, Globe, Layers,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { hasModule, resolveOwnerModules } from '@/lib/access';
@@ -14,6 +15,7 @@ import { hasModule, resolveOwnerModules } from '@/lib/access';
 const nav = [
   { href: '/superadmin', label: 'Overview', icon: LayoutDashboard, exact: true, id: 'overview' },
   { href: '/superadmin/tenants', label: 'Tenants', icon: Building2, id: 'tenants' },
+  { href: '/superadmin/plans', label: 'Plans & pricing', icon: Layers, id: 'plans' },
   { href: '/superadmin/payments', label: 'Payments', icon: CreditCard, id: 'payments' },
   { href: '/superadmin/coupons', label: 'Coupons', icon: TicketPercent, id: 'coupons' },
   { href: '/superadmin/team', label: 'Owner team', icon: UsersRound, id: 'team' },
@@ -72,22 +74,43 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
           collapsed ? 'md:w-[72px]' : 'md:w-[240px]'
         )}
       >
-        <div className={cn('flex items-center h-16 border-b border-slate-800 shrink-0', collapsed ? 'justify-center px-2' : 'justify-between px-3.5')}>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-700 flex items-center justify-center shadow-md shrink-0">
-              <Shield className="w-5 h-5 text-white" />
+        <div className={cn('flex items-center h-16 border-b border-slate-800 shrink-0 transition-all bg-slate-900/40', collapsed ? 'justify-center px-2' : 'justify-between px-3.5')}>
+          <Link
+            href="/superadmin"
+            className={cn("flex items-center gap-2.5 min-w-0 group", collapsed && "cursor-pointer")}
+            title={collapsed ? "Owner Console - SuperAdmin" : undefined}
+          >
+            <div className="w-10 h-10 rounded-xl bg-white border border-slate-700/80 shadow-md flex items-center justify-center overflow-hidden p-1 shrink-0 group-hover:scale-105 transition-transform">
+              <Image
+                src="/logo-icon.png"
+                alt="AI Smart Calendar"
+                width={40}
+                height={40}
+                className="w-full h-full object-contain"
+                priority
+                unoptimized
+              />
             </div>
             {!collapsed && (
               <div className="min-w-0">
-                <p className="font-bold text-sm leading-none truncate">Owner Console</p>
-                <p className="text-violet-300 text-[10px] font-mono font-bold mt-0.5 tracking-wider">SUPERADMIN</p>
+                <p className="font-bold text-sm leading-none truncate text-white group-hover:text-violet-300 transition-colors">
+                  Smart Calendar
+                </p>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-violet-400 text-[10px] font-mono font-bold tracking-wider">SUPERADMIN</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                </div>
               </div>
             )}
-          </div>
-          <button onClick={() => setCollapsed(!collapsed)} className="hidden md:flex w-7 h-7 items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800">
-            {collapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+          </Link>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            className="hidden md:flex w-7 h-7 items-center justify-center rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
+          >
+            {collapsed ? <ChevronRight className="w-4 h-4 text-violet-400" /> : <ChevronLeft className="w-4 h-4" />}
           </button>
-          <button onClick={() => setMobileOpen(false)} className="md:hidden p-1 text-slate-400">
+          <button onClick={() => setMobileOpen(false)} className="md:hidden p-1 text-slate-400 hover:text-white">
             <X className="w-5 h-5" />
           </button>
         </div>
@@ -130,8 +153,8 @@ export default function SuperadminLayout({ children }: { children: React.ReactNo
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <header className="h-16 shrink-0 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-3">
-            <button onClick={() => setMobileOpen(true)} className="md:hidden p-2 rounded-lg hover:bg-slate-100">
-              <Shield className="w-5 h-5 text-violet-700" />
+            <button onClick={() => setMobileOpen(true)} className="md:hidden p-1.5 rounded-lg hover:bg-slate-100 flex items-center justify-center">
+              <Image src="/logo-icon.png" alt="Logo" width={24} height={24} className="w-6 h-6 object-contain" unoptimized />
             </button>
             <div>
               <p className="text-sm font-bold text-slate-900">Application Owner</p>

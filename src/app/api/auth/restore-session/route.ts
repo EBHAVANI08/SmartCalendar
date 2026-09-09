@@ -6,12 +6,49 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
-  const token = body.token as string | undefined;
-  if (!token) return NextResponse.json({ error: 'token required' }, { status: 400 });
+  let token = (body.token as string | undefined)?.trim();
+
+  // If token was not provided in request body, inspect cookies
+  if (!token) {
+    const cookieHeader = request.headers.get('cookie') || '';
+    for (const part of cookieHeader.split(';')) {
+      const sep = part.indexOf('=');
+      if (sep === -1) continue;
+      const key = part.slice(0, sep).trim();
+      const val = part.slice(sep + 1).trim();
+      if (key === 'smart_calendar_impersonator_token') {
+        token = decodeURIComponent(val);
+        break;
+      }
+    }
+  }
+
+  // Fallback: check if the existing token in smart_calendar_token is already superadmin
+  if (!token) {
+    const cookieHeader = request.headers.get('cookie') || '';
+    for (const part of cookieHeader.split(';')) {
+      const sep = part.indexOf('=');
+      if (sep === -1) continue;
+      const key = part.slice(0, sep).trim();
+      const val = part.slice(sep + 1).trim();
+      if (key === 'smart_calendar_token') {
+        const candidate = decodeURIComponent(val);
+        const check = await verifyJwt(candidate);
+        if (check && check.role === 'superadmin') {
+          token = candidate;
+        }
+        break;
+      }
+    }
+  }
+
+  if (!token) {
+    return NextResponse.json({ error: 'SuperAdmin session token not found' }, { status: 400 });
+  }
 
   const session = await verifyJwt(token);
   if (!session || session.role !== 'superadmin') {
-    return NextResponse.json({ error: 'Invalid owner session' }, { status: 401 });
+    return NextResponse.json({ error: 'Invalid owner session. Please log in as SuperAdmin.' }, { status: 401 });
   }
 
   const fresh = await signJwt({
@@ -42,5 +79,15 @@ export async function POST(request: Request) {
     path: '/',
     maxAge: 7 * 24 * 60 * 60,
   });
+
+  // Expire the impersonation backup cookie
+  response.cookies.set('smart_calendar_impersonator_token', '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
+
   return response;
 }

@@ -299,10 +299,11 @@ export default function DashboardPage() {
 
   useEffect(() => {
     try {
-      const raw = sessionStorage.getItem('sc_user');
+      const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
       if (raw) {
-        const u = JSON.parse(raw);
-        setUserRole(u.role || 'admin');
+        const parsed = JSON.parse(raw);
+        const u = parsed.user || parsed;
+        if (u.role) setUserRole(u.role === 'teacher' ? 'teacher' : 'admin');
       }
     } catch {}
   }, []);
@@ -312,8 +313,12 @@ export default function DashboardPage() {
     try {
       let role = 'admin';
       try {
-        const raw = sessionStorage.getItem('sc_user');
-        if (raw) role = JSON.parse(raw).role || 'admin';
+        const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const u = parsed.user || parsed;
+          if (u.role) role = u.role;
+        }
       } catch {}
 
       if (role === 'teacher') {
@@ -327,6 +332,15 @@ export default function DashboardPage() {
           fetch('/api/dashboard/stats'),
           fetch('/api/substitutions?limit=10'),
         ]);
+        if (statsRes.status === 403) {
+          setUserRole('teacher');
+          const tRes = await fetch('/api/teacher/dashboard');
+          if (tRes.ok) {
+            const d = await tRes.json();
+            setTeacherData(d);
+          }
+          return;
+        }
         if (statsRes.ok) { const d = await statsRes.json(); setStats(d.data); }
         if (subsRes.ok) {
           const d = await subsRes.json();
@@ -627,7 +641,7 @@ export default function DashboardPage() {
                 Academic Command Centre
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                {stats?.schoolName || 'Takshila School'}
+                {stats?.schoolName || 'School Workspace'}
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
@@ -645,7 +659,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Setup progress, from real data. Disappears once the school is set up. */}
-      <SetupChecklist />
+      {userRole !== 'teacher' && <SetupChecklist />}
 
       {/* KPI Row - every card below is a live tenant-scoped database count. */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">

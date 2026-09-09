@@ -1,6 +1,7 @@
 export const OWNER_MODULES = [
   { id: 'overview', label: 'Overview' },
   { id: 'tenants', label: 'Tenants' },
+  { id: 'plans', label: 'Plans & pricing' },
   { id: 'payments', label: 'Payments & invoices' },
   { id: 'coupons', label: 'Coupons' },
   { id: 'team', label: 'Owner team' },
@@ -29,11 +30,11 @@ export const TENANT_MODULES = [
 
 export const OWNER_ROLE_MODULES: Record<string, string[]> = {
   owner: OWNER_MODULES.map((m) => m.id),
-  sales: ['overview', 'tenants', 'coupons', 'messages', 'tickets', 'website'],
+  sales: ['overview', 'tenants', 'plans', 'coupons', 'messages', 'tickets', 'website'],
   support: ['overview', 'tenants', 'tickets', 'messages', 'health'],
-  demo: ['overview', 'tenants', 'health'],
-  finance: ['overview', 'tenants', 'payments', 'coupons'],
-  engineer: ['overview', 'tenants', 'health', 'audit', 'tickets'],
+  demo: ['overview', 'tenants', 'plans', 'health'],
+  finance: ['overview', 'tenants', 'plans', 'payments', 'coupons'],
+  engineer: ['overview', 'tenants', 'plans', 'health', 'audit', 'tickets'],
 };
 
 export const TENANT_ROLE_MODULES: Record<string, string[]> = {

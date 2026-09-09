@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import Image from 'next/image';
 import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 import {
@@ -107,8 +108,8 @@ export function SidebarNav({
             className={cn("flex items-center gap-2.5 min-w-0", collapsed && !mobileOpen && "cursor-pointer")}
             title={collapsed ? "Click to expand sidebar" : undefined}
           >
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 flex items-center justify-center shadow-md shadow-blue-500/20 shrink-0">
-              <Brain className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-50 to-indigo-50 border border-blue-200/80 shadow-xs flex items-center justify-center overflow-hidden p-1 shrink-0 group-hover:scale-105 transition-transform">
+              <Image src="/logo-icon.png" alt="Smart Calendar Icon" width={40} height={40} className="w-full h-full object-contain" priority unoptimized />
             </div>
             {(!collapsed || mobileOpen) && (
               <div className="min-w-0">

@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import bcrypt from 'bcryptjs';
 import {
   addMonths,
   ensureDefaultPlans,
@@ -67,13 +68,13 @@ export async function PATCH(request: Request, ctx: Ctx) {
   const existing = await db.school.findUnique({ where: { id } });
   if (!existing) return NextResponse.json({ error: 'Tenant not found' }, { status: 404 });
 
-  if (action === 'suspend' || action === 'activate' || action === 'cancel') {
-    const status = action === 'suspend' ? 'suspended' : action === 'cancel' ? 'cancelled' : 'active';
+  if (action === 'suspend' || action === 'activate' || action === 'cancel' || action === 'inactive') {
+    const status = action === 'suspend' ? 'suspended' : (action === 'cancel' || action === 'inactive') ? 'cancelled' : 'active';
     const school = await db.school.update({ where: { id }, data: { status } });
     if (action !== 'activate') {
       await db.subscription.updateMany({
         where: { schoolId: id, status: { in: ['active', 'trial'] } },
-        data: { status: action === 'cancel' ? 'cancelled' : 'paused', cancelledAt: action === 'cancel' ? new Date() : undefined },
+        data: { status: (action === 'cancel' || action === 'inactive') ? 'cancelled' : 'paused', cancelledAt: (action === 'cancel' || action === 'inactive') ? new Date() : undefined },
       });
     }
     await writeAudit(request, `tenant.${action}`, 'school', id, { status });
@@ -82,7 +83,8 @@ export async function PATCH(request: Request, ctx: Ctx) {
 
   if (action === 'resetPassword') {
     const password = (body.password as string) || `School${Math.random().toString(36).slice(2, 8)}`;
-    await db.school.update({ where: { id }, data: { password } });
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await db.school.update({ where: { id }, data: { password: hashedPassword } });
     await writeAudit(request, 'tenant.resetPassword', 'school', id);
     return NextResponse.json({ success: true, password });
   }
@@ -139,14 +141,38 @@ export async function PATCH(request: Request, ctx: Ctx) {
     return NextResponse.json({ success: true, school });
   }
 
+  if (body.planName) {
+    const plan = await db.plan.findUnique({ where: { name: String(body.planName).toLowerCase() } });
+    if (plan) {
+      await db.schoolFeatureFlags.upsert({
+        where: { schoolId: id },
+        create: {
+          schoolId: id,
+          planName: plan.name,
+          maxTeachers: plan.maxTeachers,
+          maxGrades: plan.maxGrades,
+          maxPeriodsPerDay: plan.maxPeriodsPerDay,
+        },
+        update: {
+          planName: plan.name,
+          maxTeachers: plan.maxTeachers,
+          maxGrades: plan.maxGrades,
+          maxPeriodsPerDay: plan.maxPeriodsPerDay,
+        },
+      });
+    }
+  }
+
   const school = await db.school.update({
     where: { id },
     data: {
       name: body.name ?? undefined,
+      code: body.code ? String(body.code).toUpperCase() : undefined,
       email: body.email ? String(body.email).toLowerCase() : undefined,
       contactName: body.contactName,
       phone: body.phone,
       notes: body.notes,
+      status: body.status ?? undefined,
     },
   });
   await writeAudit(request, 'tenant.update', 'school', id, { fields: Object.keys(body) });
@@ -156,6 +182,30 @@ export async function PATCH(request: Request, ctx: Ctx) {
 export async function DELETE(request: Request, ctx: Ctx) {
   if (!(await isSuperAdminRequest(request))) return unauthorized();
   const { id } = await ctx.params;
+  const url = new URL(request.url);
+  const permanent = url.searchParams.get('permanent') === 'true';
+
+  if (permanent) {
+    // Delete associated records first
+    await db.schedule.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.substitution.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.room.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.gradeSubjectConfig.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.calendarEvent.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.teacher.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.subscription.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.payment.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.invoice.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.schoolFeatureFlags.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.schoolPreferences.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.workspaceMember.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.supportTicket.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    await db.tenantMessage.deleteMany({ where: { schoolId: id } }).catch(() => null);
+    const school = await db.school.delete({ where: { id } });
+    await writeAudit(request, 'tenant.deletePermanent', 'school', id);
+    return NextResponse.json({ success: true, deleted: true, school });
+  }
+
   const school = await db.school.update({ where: { id }, data: { status: 'cancelled' } });
   await writeAudit(request, 'tenant.cancel', 'school', id);
   return NextResponse.json({ success: true, school });

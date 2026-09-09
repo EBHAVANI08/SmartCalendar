@@ -9,7 +9,10 @@ import { requireCapability } from '@/lib/authz';
 const calendarDb = db as unknown as {
   calendarEvent: {
     findMany(args: unknown): Promise<unknown[]>;
+    findFirst(args: unknown): Promise<any>;
     count(args: unknown): Promise<number>;
+    update(args: unknown): Promise<any>;
+    delete(args: unknown): Promise<any>;
   };
   $transaction<T>(callback: (tx: {
     calendarEvent: { create(args: unknown): Promise<any> };
@@ -49,3 +52,71 @@ export async function POST(request: Request) {
   });
   return NextResponse.json({ success: true, event }, { status: 201 });
 }
+
+export async function PATCH(request: Request) {
+  const denied = requireCapability(request, 'calendar.write');
+  if (denied) return denied;
+
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
+
+  const body = await request.json().catch(() => ({}));
+  const { id, title, description, category, startAt, endAt, roomId, allDay } = body;
+  if (!id) return NextResponse.json({ error: 'Event id is required' }, { status: 400 });
+
+  const existing = await calendarDb.calendarEvent.findFirst({
+    where: { id, schoolId },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: 'Calendar event not found' }, { status: 404 });
+  }
+
+  const updatedStart = startAt ? new Date(startAt) : existing.startAt;
+  const updatedEnd = endAt ? new Date(endAt) : existing.endAt;
+  if (updatedEnd <= updatedStart) {
+    return NextResponse.json({ error: 'Event end must be after its start.' }, { status: 400 });
+  }
+
+  const updated = await calendarDb.calendarEvent.update({
+    where: { id },
+    data: {
+      ...(title ? { title: String(title).trim() } : {}),
+      ...(description !== undefined ? { description: String(description).trim() || null } : {}),
+      ...(category ? { category: String(category).trim() } : {}),
+      ...(startAt ? { startAt: updatedStart } : {}),
+      ...(endAt ? { endAt: updatedEnd } : {}),
+      ...(roomId !== undefined ? { roomId: roomId ? String(roomId) : null } : {}),
+      ...(allDay !== undefined ? { allDay: Boolean(allDay) } : {}),
+    },
+  });
+
+  return NextResponse.json({ success: true, event: updated });
+}
+
+export async function DELETE(request: Request) {
+  const denied = requireCapability(request, 'calendar.write');
+  if (denied) return denied;
+
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
+
+  const url = new URL(request.url);
+  let id = url.searchParams.get('id');
+  if (!id) {
+    const body = await request.json().catch(() => ({}));
+    id = body?.id;
+  }
+  if (!id) return NextResponse.json({ error: 'Event id is required' }, { status: 400 });
+
+  const existing = await calendarDb.calendarEvent.findFirst({
+    where: { id, schoolId },
+  });
+  if (!existing) {
+    return NextResponse.json({ error: 'Calendar event not found in this school' }, { status: 404 });
+  }
+
+  await calendarDb.calendarEvent.delete({ where: { id } });
+
+  return NextResponse.json({ success: true, message: `Event "${existing.title}" deleted successfully.` });
+}
+

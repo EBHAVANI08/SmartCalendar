@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Building2, Plus, Search, RefreshCw, Users, Maximize2, Monitor, Beaker } from 'lucide-react';
+import { Building2, Plus, Search, RefreshCw, Users, Maximize2, Monitor, Beaker, Edit2, Trash2, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -54,8 +54,14 @@ export default function RoomsPage() {
   const [search, setSearch] = useState('');
   const [pendingType, setPendingType] = useState<Record<string, string>>({});
   const [addOpen, setAddOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<Room | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [form, setForm] = useState({ code: '', name: '', type: 'classroom', capacity: '30' });
+  const [editForm, setEditForm] = useState({ code: '', name: '', type: 'classroom', capacity: '30' });
   const [saving, setSaving] = useState(false);
+  const [schoolName, setSchoolName] = useState('');
+
 
   const fetchRooms = useCallback(async () => {
     setLoading(true);
@@ -69,7 +75,16 @@ export default function RoomsPage() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { fetchRooms(); }, [fetchRooms]);
+  useEffect(() => {
+    fetchRooms();
+    try {
+      const raw = sessionStorage.getItem('sc_user') || localStorage.getItem('smart_calendar_auth_session');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        setSchoolName(parsed.schoolName || parsed.user?.schoolName || '');
+      }
+    } catch {}
+  }, [fetchRooms]);
 
   // Rooms whose stored type is not one of the normalised values.
   const needsReview = rooms.filter((r) => r.typeIsNormalised === false);
@@ -121,6 +136,72 @@ export default function RoomsPage() {
     } finally { setSaving(false); }
   };
 
+  const handleOpenEdit = (room: Room, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingRoom(room);
+    setEditForm({
+      code: room.code,
+      name: room.name,
+      type: room.type,
+      capacity: String(room.capacity || 30),
+    });
+    setEditOpen(true);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingRoom || !editForm.code || !editForm.name) {
+      toast({ title: 'Validation', description: 'Code and name are required.', variant: 'destructive' });
+      return;
+    }
+    setSaving(true);
+    try {
+      const r = await fetch('/api/rooms', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: editingRoom.id,
+          code: editForm.code,
+          name: editForm.name,
+          type: editForm.type,
+          capacity: parseInt(editForm.capacity) || 30,
+        }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        toast({ title: 'Room Updated', description: `${editForm.name} has been updated.` });
+        setEditOpen(false);
+        setEditingRoom(null);
+        fetchRooms();
+      } else {
+        toast({ title: 'Error', description: d.error || 'Failed to update room', variant: 'destructive' });
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (room: Room, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!confirm(`Are you sure you want to delete room "${room.name}" (${room.code})?`)) return;
+    setDeleteId(room.id);
+    try {
+      const res = await fetch(`/api/rooms?id=${encodeURIComponent(room.id)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({ title: 'Room Deleted', description: `${room.name} was successfully removed.` });
+        fetchRooms();
+      } else {
+        toast({ title: 'Could not delete room', description: data.error || 'Failed to delete room', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Request failed', description: 'Network error deleting room.', variant: 'destructive' });
+    } finally {
+      setDeleteId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* ── Enterprise SaaS Rooms & Labs Header ── */}
@@ -135,7 +216,7 @@ export default function RoomsPage() {
                 Rooms, Laboratories & Facilities
               </h1>
               <Badge className="bg-blue-50 text-[#2563EB] border border-blue-200 font-bold text-[10px] uppercase tracking-wider">
-                Takshila School
+                {schoolName || 'Campus Facilities'}
               </Badge>
             </div>
             <p className="text-xs text-[#64748B] font-medium mt-1">
@@ -262,6 +343,31 @@ export default function RoomsPage() {
                       <span>{room.capacity}</span>
                     </div>
                   </div>
+
+                  <div className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-end gap-1.5">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs text-slate-600 hover:text-blue-600 hover:bg-blue-50"
+                      onClick={(e) => handleOpenEdit(room, e)}
+                    >
+                      <Edit2 className="w-3.5 h-3.5 mr-1 text-blue-600" /> Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      disabled={deleteId === room.id}
+                      className="h-7 px-2 text-xs text-slate-600 hover:text-rose-600 hover:bg-rose-50"
+                      onClick={(e) => handleDelete(room, e)}
+                    >
+                      {deleteId === room.id ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin text-rose-600" />
+                      ) : (
+                        <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-500" />
+                      )}
+                      Delete
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             );
@@ -306,6 +412,48 @@ export default function RoomsPage() {
             <Button variant="outline" onClick={() => setAddOpen(false)}>Cancel</Button>
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700">
               {saving ? 'Saving…' : 'Add Room'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Room Dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit2 className="w-5 h-5 text-blue-600" /> Edit Room / Facility
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Room Code</Label>
+                <Input placeholder="e.g., CR-101" value={editForm.code} onChange={e => setEditForm(f => ({ ...f, code: e.target.value }))} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Capacity</Label>
+                <Input type="number" placeholder="30" value={editForm.capacity} onChange={e => setEditForm(f => ({ ...f, capacity: e.target.value }))} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Room Name</Label>
+              <Input placeholder="e.g., Classroom 101" value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Room Type</Label>
+              <Select value={editForm.type} onValueChange={v => setEditForm(f => ({ ...f, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {ROOM_TYPES.map(t => <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setEditOpen(false); setEditingRoom(null); }}>Cancel</Button>
+            <Button onClick={handleEditSave} disabled={saving} className="bg-blue-600 hover:bg-blue-700 text-white">
+              {saving ? 'Saving…' : 'Update Room'}
             </Button>
           </DialogFooter>
         </DialogContent>

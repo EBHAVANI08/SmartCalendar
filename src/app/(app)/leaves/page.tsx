@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ClipboardList, Search, Loader2, CheckCircle2, XCircle, Clock,
   CalendarDays, User, ChevronDown, ChevronUp, AlertCircle, CalendarPlus,
+  Trash2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -87,6 +88,27 @@ export default function LeaveManagementPage() {
       });
       if (status === 'approved') setExpanded(leave.id);
       await load();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const deleteLeave = async (leave: Leave) => {
+    if (!confirm(`Cancel and delete leave application for ${leave.teacher?.name ?? 'teacher'}?`)) return;
+    setBusy(leave.id);
+    try {
+      const res = await fetch(`/api/leaves?id=${encodeURIComponent(leave.id)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({ title: 'Leave cancelled', description: 'The leave application has been removed.' });
+        await load();
+      } else {
+        toast({ title: 'Could not delete leave', description: data.error || 'Request rejected', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Request failed', description: 'Network error deleting leave.', variant: 'destructive' });
     } finally {
       setBusy(null);
     }
@@ -212,6 +234,16 @@ export default function LeaveManagementPage() {
                       <Button size="sm" variant="ghost" onClick={() => setExpanded(open ? null : l.id)}>
                         {open ? <ChevronUp className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
                         Affected classes
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={busy === l.id}
+                        title="Cancel & Delete Application"
+                        className="text-slate-400 hover:text-rose-600 hover:bg-rose-50 h-8 px-2"
+                        onClick={() => deleteLeave(l)}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
                       </Button>
                     </div>
                   </div>
