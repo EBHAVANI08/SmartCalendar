@@ -56,7 +56,7 @@ export default function LoginPage() {
       try {
         data = await res.json();
       } catch {
-        data = { error: 'Authentication service response format invalid.' };
+        data = { error: `Server error (${res.status}). Please try again shortly.` };
       }
 
       if (res.ok && data?.success) {

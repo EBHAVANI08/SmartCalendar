@@ -7,32 +7,37 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 
 async function createLoginResponse(user: any) {
-  const token = await signJwt({
-    userId: user.id,
-    email: user.email,
-    role: user.role,
-    schoolId: user.schoolId || null,
-    schoolCode: user.schoolCode || null,
-    name: user.name,
-    ownerRole: user.ownerRole || null,
-    modules: Array.isArray(user.modules) ? JSON.stringify(user.modules) : (user.modules || null),
-  });
+  try {
+    const token = await signJwt({
+      userId: user.id,
+      email: user.email,
+      role: user.role,
+      schoolId: user.schoolId || null,
+      schoolCode: user.schoolCode || null,
+      name: user.name,
+      ownerRole: user.ownerRole || null,
+      modules: Array.isArray(user.modules) ? JSON.stringify(user.modules) : (user.modules || null),
+    });
 
-  const response = NextResponse.json({
-    success: true,
-    token,
-    user,
-  });
+    const response = NextResponse.json({
+      success: true,
+      token,
+      user,
+    });
 
-  response.cookies.set('smart_calendar_token', token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: 7 * 24 * 60 * 60,
-  });
+    response.cookies.set('smart_calendar_token', token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 7 * 24 * 60 * 60,
+    });
 
-  return response;
+    return response;
+  } catch (err: any) {
+    console.error('createLoginResponse error:', err);
+    return NextResponse.json({ error: 'Failed to generate authentication session' }, { status: 500 });
+  }
 }
 
 async function verifyPassword(
@@ -97,7 +102,7 @@ export async function POST(request: Request) {
         if (ok) {
           let modules: string[] = [];
           try { modules = JSON.parse(employee.modules || '[]'); } catch { modules = []; }
-          return createLoginResponse({
+          return await createLoginResponse({
             id: employee.id,
             name: employee.name,
             email: employee.email,
@@ -139,7 +144,7 @@ export async function POST(request: Request) {
           role: 'superadmin',
         },
       }).catch(() => null);
-      return createLoginResponse({
+      return await createLoginResponse({
         id: 'superadmin-owner',
         name: 'Platform SuperAdmin',
         email: SUPERADMIN_EMAIL,
@@ -167,7 +172,7 @@ export async function POST(request: Request) {
         });
 
         if (isSchoolPassValid) {
-          return createLoginResponse({
+          return await createLoginResponse({
             id: school.id,
             name: school.name,
             email: school.email,
@@ -199,7 +204,7 @@ export async function POST(request: Request) {
           let modules: string[] = [];
           try { modules = JSON.parse(member.modules || '[]'); } catch { modules = []; }
           const mappedRole = ['teacher'].includes(member.role) ? 'teacher' : 'admin';
-          return createLoginResponse({
+          return await createLoginResponse({
             id: member.id,
             name: member.name,
             email: member.email,
@@ -231,7 +236,7 @@ export async function POST(request: Request) {
         });
 
         if (isTeacherPassValid) {
-          return createLoginResponse({
+          return await createLoginResponse({
             id: teacher.id,
             name: teacher.name,
             email: teacher.email,
@@ -285,7 +290,7 @@ export async function POST(request: Request) {
             }
           }
 
-          return createLoginResponse({
+          return await createLoginResponse({
             id: admin.id,
             name: admin.name,
             email: admin.email,
