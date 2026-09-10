@@ -47,7 +47,7 @@ export async function POST(request: Request) {
       const tNum = target.replace(/[^0-9]/g, '');
       return gNum && tNum && gNum === tNum;
     });
-    const teachesSection = teacherTeachesSection(teacher.sections, schedule.grade, schedule.section);
+    const teachesSection = teacherTeachesSection(teacher.sections, schedule.grade, schedule.section, schedule.subject);
 
     if (!teachesSubject || !teachesGrade || !teachesSection) {
       const issues: string[] = [];

@@ -23,7 +23,7 @@ import { GenerationResult, type GenerationResultData } from '@/components/timeta
 import { VersionBanner } from '@/components/timetable/version-banner';
 import { SlotEditor } from '@/components/timetable/slot-editor';
 import { ImportPreviewDialog, type ImportReport } from '@/components/timetable/import-preview';
-import { readList, teacherTeachesSection } from '@/lib/faculty';
+import { readList, teacherTeachesSection, formatTeacherQualifications } from '@/lib/faculty';
 
 interface Teacher {
   id: string;
@@ -34,6 +34,8 @@ interface Teacher {
   grades?: string;
   sections?: string;
   role?: string;
+  schedules?: any[];
+  _count?: { schedules: number };
 }
 
 interface Schedule {
@@ -1690,38 +1692,69 @@ export default function TimetablePage() {
                 </div>
               </div>
 
-              {/* Live Preview of Mapped Faculty for this Class from Faculty Directory */}
+              {/* Live Preview of Mapped Faculty from Faculty Directory */}
               <div className="rounded-xl border border-slate-200 bg-white overflow-hidden shadow-2xs">
                 <div className="px-3.5 py-2.5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                   <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                     <Users className="w-3.5 h-3.5 text-blue-700" />
-                    Faculty Directory Mappings for {selectedGrade} Section {selectedSection}
+                    {studioSettings.bulkAll
+                      ? 'Live Faculty Directory Roster & Qualifications (All Active Staff)'
+                      : `Faculty Directory Mappings for ${selectedGrade} Section ${selectedSection}`}
                   </span>
                   <span className="text-[10px] text-slate-500 font-medium">
-                    {classSectionFaculty.length} teacher(s) mapped
+                    {studioSettings.bulkAll
+                      ? `${activeFaculty.length} active teacher(s)`
+                      : `${classSectionFaculty.length} teacher(s) mapped`}
                   </span>
                 </div>
-                <div className="p-3 max-h-44 overflow-y-auto divide-y divide-slate-100">
-                  {classSectionFaculty.length > 0 ? (
-                    classSectionFaculty.map((t) => {
-                      const tSubs = readList(t.subjects ?? t.subject);
-                      const tSecs = readList(t.sections);
+                <div className="p-3 max-h-56 overflow-y-auto divide-y divide-slate-100 space-y-2">
+                  {(studioSettings.bulkAll ? activeFaculty : classSectionFaculty).length > 0 ? (
+                    (studioSettings.bulkAll ? activeFaculty : classSectionFaculty).map((t) => {
+                      const tAllSubs = readList(t.subjects ?? t.subject);
+                      const classSubs = tAllSubs.filter((s) =>
+                        teacherTeachesSection(t.sections, selectedGrade, selectedSection, s)
+                      );
+                      const displayClassSubs = classSubs.length > 0 ? classSubs : tAllSubs;
+                      const initials = t.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
+                      const scheduleCount = t.schedules?.length || t._count?.schedules || 0;
+                      const qualsStr = formatTeacherQualifications(t.grades, t.sections, t.subjects, t.subject);
+
                       return (
-                        <div key={t.id} className="py-2 first:pt-0 last:pb-0 flex items-center justify-between gap-2 text-xs">
-                          <div className="min-w-0">
-                            <p className="font-bold text-slate-900 truncate">{t.name}</p>
-                            <p className="text-[11px] text-slate-500 truncate">
-                              Subject: <span className="font-semibold text-slate-700">{tSubs.join(', ') || t.subject}</span>
-                            </p>
+                        <div key={t.id} className="pt-2 first:pt-0 flex items-start justify-between gap-2.5 text-xs">
+                          <div className="flex items-start gap-2.5 min-w-0">
+                            <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-blue-700 to-indigo-900 text-white font-bold text-[10px] flex items-center justify-center shrink-0 mt-0.5 shadow-2xs">
+                              {initials}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <p className="font-bold text-slate-900 truncate">{t.name}</p>
+                                <span className="text-[10px] text-slate-400 font-normal">({t.email})</span>
+                              </div>
+                              
+                              {!studioSettings.bulkAll ? (
+                                <div className="mt-1 flex flex-wrap items-center gap-1">
+                                  <span className="text-[10px] text-slate-500 font-semibold">Taught in {selectedGrade} ({selectedSection}):</span>
+                                  {displayClassSubs.map((sub) => (
+                                    <Badge key={sub} variant="outline" className="text-[9px] bg-blue-50 text-blue-800 border-blue-200 font-bold px-1.5 py-0.2">
+                                      {sub}
+                                    </Badge>
+                                  ))}
+                                </div>
+                              ) : (
+                                <div className="mt-1 flex flex-wrap items-center gap-1">
+                                  <span className="text-[10px] text-slate-500 font-semibold">Qualifications:</span>
+                                  <span className="text-[10px] text-slate-700 font-medium truncate max-w-md">{qualsStr}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {tSecs.length > 0 && (
-                              <Badge variant="outline" className="text-[9px] bg-slate-50 text-slate-600 border-slate-200 font-medium">
-                                Sec: {tSecs.join(', ')}
-                              </Badge>
-                            )}
+
+                          <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+                            <Badge variant="outline" className="text-[9px] bg-slate-50 text-slate-700 border-slate-200 font-bold">
+                              {scheduleCount} P/Wk
+                            </Badge>
                             <Badge variant="outline" className="text-[9px] bg-emerald-50 text-emerald-700 border-emerald-200 font-bold">
-                              ✓ Mapped in Directory
+                              ✓ Mapped
                             </Badge>
                           </div>
                         </div>

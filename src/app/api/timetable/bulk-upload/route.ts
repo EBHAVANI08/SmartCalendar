@@ -304,7 +304,7 @@ export async function POST(request: Request) {
             const tNum = target.replace(/[^0-9]/g, '');
             return gNum && tNum && gNum === tNum;
           });
-          const teachesSec = teacherTeachesSection(teacher.sections, item.grade, item.section);
+          const teachesSec = teacherTeachesSection(teacher.sections, item.grade, item.section, item.subject);
 
           if (!teachesSub || !teachesGrd || !teachesSec) {
             const mismatches: string[] = [];

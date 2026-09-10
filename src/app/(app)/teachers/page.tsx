@@ -20,7 +20,14 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { DedupReview, DataIssues } from '@/components/faculty/dedup-review';
-import { readList, parseGradeSectionsMap, serializeGradeSectionsMap } from '@/lib/faculty';
+import {
+  readList,
+  parseGradeSectionsMap,
+  serializeGradeSectionsMap,
+  parseSubjectGradeSectionsMap,
+  serializeSubjectGradeSectionsMap,
+  type SubjectGradeMapping,
+} from '@/lib/faculty';
 
 interface ScheduleSlot {
   id: string;
@@ -140,16 +147,16 @@ export default function TeachersPage() {
   const [overloadSearch, setOverloadSearch] = useState('');
   const [overloadOnlyToggle, setOverloadOnlyToggle] = useState(true);
 
-  // Form State using Chips/Multi-Select
+  // Form State using Chips/Multi-Select with Per-Subject Mapping
   const [form, setForm] = useState({
     name: '',
     email: '',
     phone: '',
     employeeId: '',
     selectedSubjects: [] as string[],
-    selectedGrades: [] as string[],
-    gradeSections: {} as Record<string, string[]>,
+    subjectMapping: {} as SubjectGradeMapping,
   });
+  const [addActiveSubject, setAddActiveSubject] = useState<string>('');
 
   const [editForm, setEditForm] = useState({
     id: '',
@@ -158,10 +165,10 @@ export default function TeachersPage() {
     phone: '',
     employeeId: '',
     selectedSubjects: [] as string[],
-    selectedGrades: [] as string[],
-    gradeSections: {} as Record<string, string[]>,
+    subjectMapping: {} as SubjectGradeMapping,
     role: 'teacher',
   });
+  const [editActiveSubject, setEditActiveSubject] = useState<string>('');
 
   const [addSubjectSearch, setAddSubjectSearch] = useState('');
   const [editSubjectSearch, setEditSubjectSearch] = useState('');
@@ -281,155 +288,355 @@ export default function TeachersPage() {
     return Array.from(secSet).sort();
   };
 
-  // Grade-wise Section toggle handlers for Form (Add Faculty)
-  const handleToggleFormGrade = (grade: string) => {
+  // --- ADD FORM PER-SUBJECT MAPPING HANDLERS ---
+  const handleToggleFormSubject = (subj: string) => {
     setForm((prev) => {
-      const isSelected = prev.selectedGrades.includes(grade);
-      const nextGrades = isSelected
-        ? prev.selectedGrades.filter((g) => g !== grade)
-        : [...prev.selectedGrades, grade];
-
-      const nextGradeSections = { ...prev.gradeSections };
-      if (!isSelected && (!nextGradeSections[grade] || nextGradeSections[grade].length === 0)) {
-        nextGradeSections[grade] = gradeSectionsMap[grade] ? [...gradeSectionsMap[grade]] : [...DEFAULT_SECTIONS];
+      const isSelected = prev.selectedSubjects.includes(subj);
+      const nextSubjects = isSelected
+        ? prev.selectedSubjects.filter((s) => s !== subj)
+        : [...prev.selectedSubjects, subj];
+      const nextMapping = { ...prev.subjectMapping };
+      if (isSelected) {
+        delete nextMapping[subj];
+      } else {
+        if (!nextMapping[subj]) {
+          nextMapping[subj] = { grades: [], sections: {} };
+        }
       }
       return {
         ...prev,
-        selectedGrades: nextGrades,
-        gradeSections: nextGradeSections,
+        selectedSubjects: nextSubjects,
+        subjectMapping: nextMapping,
       };
+    });
+
+    if (!form.selectedSubjects.includes(subj)) {
+      setAddActiveSubject(subj);
+    } else if (addActiveSubject === subj) {
+      const remaining = form.selectedSubjects.filter((s) => s !== subj);
+      setAddActiveSubject(remaining[0] || '');
+    }
+  };
+
+  const handleCopyFormMappingToOtherSubjects = (sourceSubj: string) => {
+    const sourceData = form.subjectMapping[sourceSubj];
+    if (!sourceData) return;
+    setForm((prev) => {
+      const nextMapping = { ...prev.subjectMapping };
+      for (const subj of prev.selectedSubjects) {
+        if (subj !== sourceSubj) {
+          nextMapping[subj] = {
+            grades: [...sourceData.grades],
+            sections: JSON.parse(JSON.stringify(sourceData.sections || {})),
+          };
+        }
+      }
+      return { ...prev, subjectMapping: nextMapping };
+    });
+    toast({
+      title: 'Mapping Copied',
+      description: `Copied ${sourceSubj} grade & section mappings to all other selected subjects.`,
     });
   };
 
-  const handleToggleFormSection = (grade: string, section: string) => {
+  const handleToggleFormGradeForSubject = (subj: string, grade: string) => {
     setForm((prev) => {
-      const current = prev.gradeSections[grade] || [];
-      const isChecked = current.includes(section);
-      const next = isChecked ? current.filter((s) => s !== section) : [...current, section];
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      const isSelected = curData.grades.includes(grade);
+      const nextGrades = isSelected
+        ? curData.grades.filter((g) => g !== grade)
+        : [...curData.grades, grade];
+      const nextSections = { ...curData.sections };
+      if (!isSelected && (!nextSections[grade] || nextSections[grade].length === 0)) {
+        nextSections[grade] = gradeSectionsMap[grade] ? [...gradeSectionsMap[grade]] : [...DEFAULT_SECTIONS];
+      }
       return {
         ...prev,
-        gradeSections: {
-          ...prev.gradeSections,
-          [grade]: next,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            grades: nextGrades,
+            sections: nextSections,
+          },
         },
       };
     });
   };
 
-  const handleSelectAllFormSectionsForGrade = (grade: string) => {
-    const avail = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
-    setForm((prev) => ({
-      ...prev,
-      gradeSections: {
-        ...prev.gradeSections,
-        [grade]: [...avail],
-      },
-    }));
-  };
-
-  const handleClearFormSectionsForGrade = (grade: string) => {
-    setForm((prev) => ({
-      ...prev,
-      gradeSections: {
-        ...prev.gradeSections,
-        [grade]: [],
-      },
-    }));
-  };
-
-  const handleSelectAllFormSectionsEverywhere = () => {
+  const handleToggleFormSectionForSubject = (subj: string, grade: string, section: string) => {
     setForm((prev) => {
-      const next = { ...prev.gradeSections };
-      prev.selectedGrades.forEach((g) => {
-        next[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
-      });
-      return { ...prev, gradeSections: next };
-    });
-  };
-
-  const handleClearAllFormSectionsEverywhere = () => {
-    setForm((prev) => {
-      const next = { ...prev.gradeSections };
-      prev.selectedGrades.forEach((g) => {
-        next[g] = [];
-      });
-      return { ...prev, gradeSections: next };
-    });
-  };
-
-  // Grade-wise Section toggle handlers for EditForm (Edit Faculty)
-  const handleToggleEditGrade = (grade: string) => {
-    setEditForm((prev) => {
-      const isSelected = prev.selectedGrades.includes(grade);
-      const nextGrades = isSelected
-        ? prev.selectedGrades.filter((g) => g !== grade)
-        : [...prev.selectedGrades, grade];
-
-      const nextGradeSections = { ...prev.gradeSections };
-      if (!isSelected && (!nextGradeSections[grade] || nextGradeSections[grade].length === 0)) {
-        nextGradeSections[grade] = gradeSectionsMap[grade] ? [...gradeSectionsMap[grade]] : [...DEFAULT_SECTIONS];
-      }
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      const curSecs = curData.sections[grade] || [];
+      const isChecked = curSecs.includes(section);
+      const nextSecs = isChecked ? curSecs.filter((s) => s !== section) : [...curSecs, section];
       return {
         ...prev,
-        selectedGrades: nextGrades,
-        gradeSections: nextGradeSections,
-      };
-    });
-  };
-
-  const handleToggleEditSection = (grade: string, section: string) => {
-    setEditForm((prev) => {
-      const current = prev.gradeSections[grade] || [];
-      const isChecked = current.includes(section);
-      const next = isChecked ? current.filter((s) => s !== section) : [...current, section];
-      return {
-        ...prev,
-        gradeSections: {
-          ...prev.gradeSections,
-          [grade]: next,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: {
+              ...curData.sections,
+              [grade]: nextSecs,
+            },
+          },
         },
       };
     });
   };
 
-  const handleSelectAllEditSectionsForGrade = (grade: string) => {
+  const handleSelectAllFormSectionsForGrade = (subj: string, grade: string) => {
     const avail = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
-    setEditForm((prev) => ({
-      ...prev,
-      gradeSections: {
-        ...prev.gradeSections,
-        [grade]: [...avail],
-      },
-    }));
-  };
-
-  const handleClearEditSectionsForGrade = (grade: string) => {
-    setEditForm((prev) => ({
-      ...prev,
-      gradeSections: {
-        ...prev.gradeSections,
-        [grade]: [],
-      },
-    }));
-  };
-
-  const handleSelectAllEditSectionsEverywhere = () => {
-    setEditForm((prev) => {
-      const next = { ...prev.gradeSections };
-      prev.selectedGrades.forEach((g) => {
-        next[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
-      });
-      return { ...prev, gradeSections: next };
+    setForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: {
+              ...curData.sections,
+              [grade]: [...avail],
+            },
+          },
+        },
+      };
     });
   };
 
-  const handleClearAllEditSectionsEverywhere = () => {
-    setEditForm((prev) => {
-      const next = { ...prev.gradeSections };
-      prev.selectedGrades.forEach((g) => {
-        next[g] = [];
+  const handleClearFormSectionsForGrade = (subj: string, grade: string) => {
+    setForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: {
+              ...curData.sections,
+              [grade]: [],
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const handleSelectAllFormSectionsEverywhere = (subj: string) => {
+    setForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      const nextSections = { ...curData.sections };
+      curData.grades.forEach((g) => {
+        nextSections[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
       });
-      return { ...prev, gradeSections: next };
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: nextSections,
+          },
+        },
+      };
+    });
+  };
+
+  const handleClearAllFormSectionsEverywhere = (subj: string) => {
+    setForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      const nextSections = { ...curData.sections };
+      curData.grades.forEach((g) => {
+        nextSections[g] = [];
+      });
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: nextSections,
+          },
+        },
+      };
+    });
+  };
+
+  // --- EDIT FORM PER-SUBJECT MAPPING HANDLERS ---
+  const handleToggleEditSubject = (subj: string) => {
+    setEditForm((prev) => {
+      const isSelected = prev.selectedSubjects.includes(subj);
+      const nextSubjects = isSelected
+        ? prev.selectedSubjects.filter((s) => s !== subj)
+        : [...prev.selectedSubjects, subj];
+      const nextMapping = { ...prev.subjectMapping };
+      if (isSelected) {
+        delete nextMapping[subj];
+      } else {
+        if (!nextMapping[subj]) {
+          nextMapping[subj] = { grades: [], sections: {} };
+        }
+      }
+      return {
+        ...prev,
+        selectedSubjects: nextSubjects,
+        subjectMapping: nextMapping,
+      };
+    });
+
+    if (!editForm.selectedSubjects.includes(subj)) {
+      setEditActiveSubject(subj);
+    } else if (editActiveSubject === subj) {
+      const remaining = editForm.selectedSubjects.filter((s) => s !== subj);
+      setEditActiveSubject(remaining[0] || '');
+    }
+  };
+
+  const handleCopyEditMappingToOtherSubjects = (sourceSubj: string) => {
+    const sourceData = editForm.subjectMapping[sourceSubj];
+    if (!sourceData) return;
+    setEditForm((prev) => {
+      const nextMapping = { ...prev.subjectMapping };
+      for (const subj of prev.selectedSubjects) {
+        if (subj !== sourceSubj) {
+          nextMapping[subj] = {
+            grades: [...sourceData.grades],
+            sections: JSON.parse(JSON.stringify(sourceData.sections || {})),
+          };
+        }
+      }
+      return { ...prev, subjectMapping: nextMapping };
+    });
+    toast({
+      title: 'Mapping Copied',
+      description: `Copied ${sourceSubj} grade & section mappings to all other selected subjects.`,
+    });
+  };
+
+  const handleToggleEditGradeForSubject = (subj: string, grade: string) => {
+    setEditForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      const isSelected = curData.grades.includes(grade);
+      const nextGrades = isSelected
+        ? curData.grades.filter((g) => g !== grade)
+        : [...curData.grades, grade];
+      const nextSections = { ...curData.sections };
+      if (!isSelected && (!nextSections[grade] || nextSections[grade].length === 0)) {
+        nextSections[grade] = gradeSectionsMap[grade] ? [...gradeSectionsMap[grade]] : [...DEFAULT_SECTIONS];
+      }
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            grades: nextGrades,
+            sections: nextSections,
+          },
+        },
+      };
+    });
+  };
+
+  const handleToggleEditSectionForSubject = (subj: string, grade: string, section: string) => {
+    setEditForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      const curSecs = curData.sections[grade] || [];
+      const isChecked = curSecs.includes(section);
+      const nextSecs = isChecked ? curSecs.filter((s) => s !== section) : [...curSecs, section];
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: {
+              ...curData.sections,
+              [grade]: nextSecs,
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const handleSelectAllEditSectionsForGrade = (subj: string, grade: string) => {
+    const avail = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
+    setEditForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: {
+              ...curData.sections,
+              [grade]: [...avail],
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const handleClearEditSectionsForGrade = (subj: string, grade: string) => {
+    setEditForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: {
+              ...curData.sections,
+              [grade]: [],
+            },
+          },
+        },
+      };
+    });
+  };
+
+  const handleSelectAllEditSectionsEverywhere = (subj: string) => {
+    setEditForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      const nextSections = { ...curData.sections };
+      curData.grades.forEach((g) => {
+        nextSections[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
+      });
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: nextSections,
+          },
+        },
+      };
+    });
+  };
+
+  const handleClearAllEditSectionsEverywhere = (subj: string) => {
+    setEditForm((prev) => {
+      const curData = prev.subjectMapping[subj] || { grades: [], sections: {} };
+      const nextSections = { ...curData.sections };
+      curData.grades.forEach((g) => {
+        nextSections[g] = [];
+      });
+      return {
+        ...prev,
+        subjectMapping: {
+          ...prev.subjectMapping,
+          [subj]: {
+            ...curData,
+            sections: nextSections,
+          },
+        },
+      };
     });
   };
 
@@ -550,7 +757,18 @@ export default function TeachersPage() {
     }
     setSaving(true);
     try {
-      const serializedSections = serializeGradeSectionsMap(form.gradeSections);
+      const allGradesSet = new Set<string>();
+      Object.values(form.subjectMapping).forEach((data) => {
+        data.grades?.forEach((g) => allGradesSet.add(g));
+      });
+      const consolidatedGrades = Array.from(allGradesSet).sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+        const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+        if (numA !== numB) return numA - numB;
+        return a.localeCompare(b);
+      });
+
+      const serializedSections = serializeSubjectGradeSectionsMap(form.subjectMapping);
       const r = await fetch('/api/teachers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -561,7 +779,7 @@ export default function TeachersPage() {
           employeeId: form.employeeId.trim(),
           subject: form.selectedSubjects[0],
           subjects: form.selectedSubjects,
-          grades: form.selectedGrades,
+          grades: consolidatedGrades,
           sections: serializedSections,
         }),
       });
@@ -574,9 +792,9 @@ export default function TeachersPage() {
           phone: '',
           employeeId: '',
           selectedSubjects: [],
-          selectedGrades: [],
-          gradeSections: {},
+          subjectMapping: {},
         });
+        setAddActiveSubject('');
         fetchTeachers();
         refreshCounts();
       } else {
@@ -593,7 +811,8 @@ export default function TeachersPage() {
     if (e) e.stopPropagation();
     const subs = parseList(teacher.subjects || teacher.subject);
     const grs = parseList(teacher.grades);
-    const parsedGradeSections = parseGradeSectionsMap(teacher.sections, grs, gradeSectionsMap);
+    const selectedSubs = subs.length > 0 ? subs : (teacher.subject ? [teacher.subject] : []);
+    const parsedMapping = parseSubjectGradeSectionsMap(teacher.sections, selectedSubs, grs, gradeSectionsMap);
 
     setEditForm({
       id: teacher.id,
@@ -601,11 +820,11 @@ export default function TeachersPage() {
       email: teacher.email,
       phone: teacher.phone || '',
       employeeId: teacher.employeeId || '',
-      selectedSubjects: subs.length > 0 ? subs : (teacher.subject ? [teacher.subject] : []),
-      selectedGrades: grs,
-      gradeSections: parsedGradeSections,
+      selectedSubjects: selectedSubs,
+      subjectMapping: parsedMapping,
       role: teacher.role || 'teacher',
     });
+    setEditActiveSubject(selectedSubs[0] || '');
     setEditOpen(true);
   };
 
@@ -621,7 +840,18 @@ export default function TeachersPage() {
     }
     setSaving(true);
     try {
-      const serializedSections = serializeGradeSectionsMap(editForm.gradeSections);
+      const allGradesSet = new Set<string>();
+      Object.values(editForm.subjectMapping).forEach((data) => {
+        data.grades?.forEach((g) => allGradesSet.add(g));
+      });
+      const consolidatedGrades = Array.from(allGradesSet).sort((a, b) => {
+        const numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+        const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+        if (numA !== numB) return numA - numB;
+        return a.localeCompare(b);
+      });
+
+      const serializedSections = serializeSubjectGradeSectionsMap(editForm.subjectMapping);
       const r = await fetch('/api/teachers', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -633,7 +863,7 @@ export default function TeachersPage() {
           employeeId: editForm.employeeId.trim(),
           subject: editForm.selectedSubjects[0],
           subjects: editForm.selectedSubjects,
-          grades: editForm.selectedGrades,
+          grades: consolidatedGrades,
           sections: serializedSections,
           role: editForm.role,
         }),
@@ -654,7 +884,7 @@ export default function TeachersPage() {
             subject: editForm.selectedSubjects[0],
             subjects: JSON.stringify(editForm.selectedSubjects),
             employeeId: editForm.employeeId,
-            grades: JSON.stringify(editForm.selectedGrades),
+            grades: JSON.stringify(consolidatedGrades),
             sections: JSON.stringify(serializedSections),
             role: editForm.role,
           });
@@ -941,16 +1171,31 @@ export default function TeachersPage() {
     }
   };
 
-  const gradesDisplay = (gradesJson: string, sectionsJson?: string) => {
-    const list = parseList(gradesJson);
-    if (list.length === 0) return 'All Grades';
-    if (!sectionsJson) return list.join(', ');
+  const gradesDisplay = (gradesJson: string, sectionsJson?: string, subjectsJson?: string, defaultSubj?: string) => {
+    const subs = parseList(subjectsJson || defaultSubj);
+    const grs = parseList(gradesJson);
+    if (grs.length === 0) return 'All Grades';
+    if (!sectionsJson) return grs.join(', ');
 
-    const map = parseGradeSectionsMap(sectionsJson, list, gradeSectionsMap);
-    return list.map((g) => {
-      const s = map[g];
-      return s && s.length > 0 ? `${g} (${s.join(',')})` : g;
-    }).join(', ');
+    const map = parseSubjectGradeSectionsMap(sectionsJson, subs.length > 0 ? subs : ['General'], grs, gradeSectionsMap);
+    const parts: string[] = [];
+
+    for (const [subj, data] of Object.entries(map)) {
+      if (!data.grades || data.grades.length === 0) continue;
+      const gradeParts = data.grades.map((g) => {
+        const secs = data.sections[g];
+        return secs && secs.length > 0 ? `${g} (${secs.join(', ')})` : g;
+      });
+      if (subs.length > 1) {
+        parts.push(`${subj}: ${gradeParts.join(', ')}`);
+      } else {
+        parts.push(gradeParts.join(', '));
+      }
+    }
+
+    if (parts.length > 0) return parts.join(' • ');
+
+    return grs.join(', ');
   };
 
   const subjectsDisplay = (subjectsJson: string | undefined, defaultSubj: string) => {
@@ -994,7 +1239,8 @@ export default function TeachersPage() {
   // Helper for quick Grade Presets
   const setGradePreset = (
     type: 'all' | 'primary' | 'middle' | 'secondary' | 'senior' | 'clear',
-    isEdit = false
+    isEdit = false,
+    subject?: string
   ) => {
     let targetGrades: string[] = [];
     if (type === 'all') targetGrades = [...schoolGrades];
@@ -1004,25 +1250,48 @@ export default function TeachersPage() {
     else if (type === 'senior') targetGrades = ['Grade 11', 'Grade 12'];
     else if (type === 'clear') targetGrades = [];
 
+    const targetSubj = subject || (isEdit ? editActiveSubject : addActiveSubject);
+    if (!targetSubj) return;
+
     if (isEdit) {
       setEditForm((prev) => {
-        const nextGradeSections = { ...prev.gradeSections };
+        const curData = prev.subjectMapping[targetSubj] || { grades: [], sections: {} };
+        const nextSections = { ...curData.sections };
         targetGrades.forEach((g) => {
-          if (!nextGradeSections[g] || nextGradeSections[g].length === 0) {
-            nextGradeSections[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
+          if (!nextSections[g] || nextSections[g].length === 0) {
+            nextSections[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
           }
         });
-        return { ...prev, selectedGrades: targetGrades, gradeSections: nextGradeSections };
+        return {
+          ...prev,
+          subjectMapping: {
+            ...prev.subjectMapping,
+            [targetSubj]: {
+              grades: targetGrades,
+              sections: nextSections,
+            },
+          },
+        };
       });
     } else {
       setForm((prev) => {
-        const nextGradeSections = { ...prev.gradeSections };
+        const curData = prev.subjectMapping[targetSubj] || { grades: [], sections: {} };
+        const nextSections = { ...curData.sections };
         targetGrades.forEach((g) => {
-          if (!nextGradeSections[g] || nextGradeSections[g].length === 0) {
-            nextGradeSections[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
+          if (!nextSections[g] || nextSections[g].length === 0) {
+            nextSections[g] = gradeSectionsMap[g] ? [...gradeSectionsMap[g]] : [...DEFAULT_SECTIONS];
           }
         });
-        return { ...prev, selectedGrades: targetGrades, gradeSections: nextGradeSections };
+        return {
+          ...prev,
+          subjectMapping: {
+            ...prev.subjectMapping,
+            [targetSubj]: {
+              grades: targetGrades,
+              sections: nextSections,
+            },
+          },
+        };
       });
     }
   };
@@ -1031,19 +1300,21 @@ export default function TeachersPage() {
   const renderMappingPreview = (
     teacherName: string,
     subjects: string[],
-    grades: string[],
-    gradeSections: Record<string, string[]>
+    subjectMapping: SubjectGradeMapping
   ) => {
     const hasSubjects = subjects.length > 0;
-    const hasGrades = grades.length > 0;
-    const totalConfiguredSecs = grades.reduce((acc, g) => acc + (gradeSections[g]?.length || 0), 0);
+    const totalConfiguredSecs = Object.values(subjectMapping).reduce((acc, data) => {
+      return acc + Object.values(data.sections || {}).reduce((sAcc, secs) => sAcc + (secs?.length || 0), 0);
+    }, 0);
+    const totalGrades = new Set<string>();
+    Object.values(subjectMapping).forEach((d) => d.grades?.forEach((g) => totalGrades.add(g)));
 
-    if (!hasSubjects || !hasGrades) {
+    if (!hasSubjects || totalGrades.size === 0) {
       return (
         <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-3 text-center">
           <p className="text-xs font-semibold text-slate-500 flex items-center justify-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-blue-500" />
-            Select at least one subject &amp; grade to preview teaching qualifications
+            Select subjects and assign grades &amp; sections below to preview teaching qualifications
           </p>
         </div>
       );
@@ -1059,36 +1330,44 @@ export default function TeachersPage() {
             </span>
           </div>
           <Badge className="bg-blue-600 text-white font-bold text-[10px] px-2 py-0.2 shadow-xs">
-            {subjects.length} Subj &bull; {grades.length} Gr &bull; {totalConfiguredSecs} Sec
+            {subjects.length} Subj &bull; {totalGrades.size} Gr &bull; {totalConfiguredSecs} Sec
           </Badge>
         </div>
 
-        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-          {subjects.map((subj) => (
-            <div key={subj} className="bg-white/90 border border-blue-100 rounded-lg p-2 text-xs shadow-2xs space-y-1">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-900 flex items-center gap-1">
-                  <BookOpen className="w-3 h-3 text-blue-600" /> {subj}
-                </span>
-                <span className="text-[10px] text-slate-400 font-medium">{teacherName || 'Faculty Member'}</span>
+        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+          {subjects.map((subj) => {
+            const data = subjectMapping[subj];
+            const subjGrades = data?.grades || [];
+            return (
+              <div key={subj} className="bg-white/90 border border-blue-100 rounded-lg p-2 text-xs shadow-2xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 flex items-center gap-1">
+                    <BookOpen className="w-3 h-3 text-blue-600" /> {subj}
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-medium">{teacherName || 'Faculty Member'}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  {subjGrades.length === 0 ? (
+                    <span className="text-[10px] text-slate-400 italic">No grades assigned for this subject yet</span>
+                  ) : (
+                    subjGrades.map((gr) => {
+                      const secs = data?.sections[gr] || [];
+                      return (
+                        <span key={gr} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded border border-slate-200">
+                          <GraduationCap className="w-2.5 h-2.5 text-indigo-500" />
+                          {gr} {secs.length > 0 ? (
+                            <span className="text-blue-700 font-bold">({secs.join(', ')})</span>
+                          ) : (
+                            <span className="text-slate-400 italic">(none)</span>
+                          )}
+                        </span>
+                      );
+                    })
+                  )}
+                </div>
               </div>
-              <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-                {grades.map((gr) => {
-                  const secs = gradeSections[gr] || [];
-                  return (
-                    <span key={gr} className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 text-[10px] font-semibold px-2 py-0.5 rounded border border-slate-200">
-                      <GraduationCap className="w-2.5 h-2.5 text-indigo-500" />
-                      {gr} {secs.length > 0 ? (
-                        <span className="text-blue-700 font-bold">({secs.join(', ')})</span>
-                      ) : (
-                        <span className="text-slate-400 italic">(none)</span>
-                      )}
-                    </span>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );
@@ -1386,7 +1665,7 @@ export default function TeachersPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filtered.map((teacher) => {
                 const initials = teacher.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
-                const gradesStr = gradesDisplay(teacher.grades, teacher.sections);
+                const gradesStr = gradesDisplay(teacher.grades, teacher.sections, teacher.subjects, teacher.subject);
                 const subjs = subjectsDisplay(teacher.subjects, teacher.subject);
                 const scheduleCount = teacher.schedules?.length || teacher._count?.schedules || 0;
                 const isInactive = teacher.role === 'inactive';
@@ -1630,14 +1909,7 @@ export default function TeachersPage() {
                       <button
                         key={subj}
                         type="button"
-                        onClick={() => {
-                          setForm((prev) => ({
-                            ...prev,
-                            selectedSubjects: isSelected
-                              ? prev.selectedSubjects.filter((s) => s !== subj)
-                              : [...prev.selectedSubjects, subj],
-                          }));
-                        }}
+                        onClick={() => handleToggleFormSubject(subj)}
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                           isSelected
                             ? 'bg-blue-600 text-white shadow-xs'
@@ -1652,150 +1924,230 @@ export default function TeachersPage() {
               </div>
             </div>
 
-            {/* Grades Selection (Chips with Quick Presets) */}
-            <div className="space-y-2 border-t border-slate-100 pt-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <div>
-                  <Label className="text-xs font-bold text-slate-900">Grades Assigned</Label>
-                  <p className="text-[11px] text-slate-500">Pick specific grades or use quick range presets.</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-1">
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-blue-700" onClick={() => setGradePreset('all')}>All 1-12</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('primary')}>Gr 1-5</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('middle')}>Gr 6-8</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('secondary')}>Gr 9-10</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('senior')}>Gr 11-12</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-rose-600" onClick={() => setGradePreset('clear')}>Clear</Button>
-                </div>
+            {/* Subject-wise Grade & Section Allocation */}
+            {form.selectedSubjects.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-4 text-center">
+                <p className="text-xs text-slate-500 font-medium">
+                  Please select at least one subject above to configure grade and section mappings.
+                </p>
               </div>
+            ) : (() => {
+              const curSubj = form.selectedSubjects.includes(addActiveSubject)
+                ? addActiveSubject
+                : form.selectedSubjects[0];
+              const curData = form.subjectMapping[curSubj] || { grades: [], sections: {} };
+              const curGrades = curData.grades || [];
 
-              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
-                {schoolGrades.map((grade) => {
-                  const isSelected = form.selectedGrades.includes(grade);
-                  return (
-                    <button
-                      key={grade}
-                      type="button"
-                      onClick={() => handleToggleFormGrade(grade)}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                        isSelected
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3 h-3" />}
-                      {grade}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Grade-wise Sections Selector */}
-            <div className="space-y-3 border-t border-slate-100 pt-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <div>
-                  <Label className="text-xs font-bold text-slate-900">Sections Assigned (Grade-wise)</Label>
-                  <p className="text-[11px] text-slate-500">
-                    Configure distinct sections for each assigned grade (e.g. Grade 1: A, B &bull; Grade 2: A only).
-                  </p>
-                </div>
-                {form.selectedGrades.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSelectAllFormSectionsEverywhere}
-                      className="text-[10px] text-blue-600 font-bold hover:underline"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleClearAllFormSectionsEverywhere}
-                      className="text-[10px] text-slate-500 font-bold hover:underline"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {form.selectedGrades.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-3 text-center">
-                  <p className="text-xs text-slate-500">
-                    Please select one or more <strong>Grades Assigned</strong> above to configure their sections.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
-                  {form.selectedGrades.map((grade) => {
-                    const availableSecs = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
-                    const assignedSecs = form.gradeSections[grade] || [];
-                    return (
-                      <div
-                        key={grade}
-                        className="rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 space-y-2"
+              return (
+                <div className="space-y-3 border-t border-slate-100 pt-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <Label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                        Subject-wise Grade &amp; Section Allocation
+                      </Label>
+                      <p className="text-[11px] text-slate-500">
+                        Configure grades &amp; sections specifically for each subject taught.
+                      </p>
+                    </div>
+                    {form.selectedSubjects.length > 1 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleCopyFormMappingToOtherSubjects(curSubj)}
+                        className="h-7 px-2.5 text-[11px] font-bold border-blue-200 text-blue-700 bg-blue-50/60 hover:bg-blue-100 shrink-0"
+                        title="Copy this subject's grade & section settings to all other selected subjects"
                       >
-                        <div className="flex items-center justify-between border-b border-slate-200/60 pb-1.5">
-                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                            <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
-                            {grade} Sections
+                        <Copy className="w-3 h-3 mr-1" />
+                        Copy to Other Subjects
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Subject Tabs */}
+                  <div className="flex flex-wrap gap-1.5 p-1.5 bg-slate-100/90 rounded-xl border border-slate-200">
+                    {form.selectedSubjects.map((s) => {
+                      const isActive = curSubj === s;
+                      const sData = form.subjectMapping[s] || { grades: [], sections: {} };
+                      const grCount = sData.grades?.length || 0;
+                      const secCount = Object.values(sData.sections || {}).reduce((acc, secs) => acc + (secs?.length || 0), 0);
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setAddActiveSubject(s)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            isActive
+                              ? 'bg-white text-blue-900 shadow-sm border border-blue-200'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                        >
+                          <span>{s}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                            isActive ? 'bg-blue-100 text-blue-700' : 'bg-slate-200/80 text-slate-600'
+                          }`}>
+                            {grCount} Gr &bull; {secCount} Sec
                           </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Active Subject Configuration Container */}
+                  <div className="rounded-xl border border-blue-200/70 bg-gradient-to-b from-blue-50/25 to-slate-50/25 p-3 space-y-3">
+                    {/* Grades for Active Subject */}
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <div>
+                          <Label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                            Grades for <span className="text-blue-700 underline underline-offset-2">{curSubj}</span>
+                          </Label>
+                          <p className="text-[11px] text-slate-500">Pick which grades this teacher instructs for {curSubj}.</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-blue-700 font-bold" onClick={() => setGradePreset('all', false, curSubj)}>All 1-12</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('primary', false, curSubj)}>Gr 1-5</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('middle', false, curSubj)}>Gr 6-8</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('secondary', false, curSubj)}>Gr 9-10</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('senior', false, curSubj)}>Gr 11-12</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-rose-600 font-bold" onClick={() => setGradePreset('clear', false, curSubj)}>Clear</Button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 p-2 bg-white rounded-xl border border-slate-200">
+                        {schoolGrades.map((grade) => {
+                          const isSelected = curGrades.includes(grade);
+                          return (
+                            <button
+                              key={grade}
+                              type="button"
+                              onClick={() => handleToggleFormGradeForSubject(curSubj, grade)}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white shadow-xs'
+                                  : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-3 h-3" />}
+                              {grade}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Sections for Active Subject */}
+                    <div className="space-y-2 border-t border-slate-200/80 pt-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <div>
+                          <Label className="text-xs font-bold text-slate-900">
+                            Sections for <span className="text-blue-700">{curSubj}</span> (Grade-wise)
+                          </Label>
+                          <p className="text-[11px] text-slate-500">
+                            Assign exact sections for each grade in {curSubj}.
+                          </p>
+                        </div>
+                        {curGrades.length > 0 && (
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => handleSelectAllFormSectionsForGrade(grade)}
+                              onClick={() => handleSelectAllFormSectionsEverywhere(curSubj)}
                               className="text-[10px] text-blue-600 font-bold hover:underline"
                             >
                               Select All
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleClearFormSectionsForGrade(grade)}
+                              onClick={() => handleClearAllFormSectionsEverywhere(curSubj)}
                               className="text-[10px] text-slate-500 font-bold hover:underline"
                             >
                               Clear
                             </button>
                           </div>
-                        </div>
+                        )}
+                      </div>
 
-                        <div className="flex flex-wrap gap-1.5">
-                          {availableSecs.map((sec) => {
-                            const isChecked = assignedSecs.includes(sec);
+                      {curGrades.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-slate-200 bg-white/60 p-3 text-center">
+                          <p className="text-xs text-slate-500">
+                            Please select one or more <strong>Grades</strong> above for {curSubj} to configure sections.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                          {curGrades.map((grade) => {
+                            const availableSecs = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
+                            const assignedSecs = curData.sections?.[grade] || [];
                             return (
-                              <label
-                                key={sec}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
-                                  isChecked
-                                    ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-2xs'
-                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                                }`}
+                              <div
+                                key={grade}
+                                className="rounded-xl border border-slate-200 bg-white p-2.5 space-y-2 shadow-2xs"
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => handleToggleFormSection(grade, sec)}
-                                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-                                />
-                                Section {sec}
-                              </label>
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                    <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                                    {grade} Sections
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectAllFormSectionsForGrade(curSubj, grade)}
+                                      className="text-[10px] text-blue-600 font-bold hover:underline"
+                                    >
+                                      Select All
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleClearFormSectionsForGrade(curSubj, grade)}
+                                      className="text-[10px] text-slate-500 font-bold hover:underline"
+                                    >
+                                      Clear
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap gap-1.5">
+                                  {availableSecs.map((sec) => {
+                                    const isChecked = assignedSecs.includes(sec);
+                                    return (
+                                      <label
+                                        key={sec}
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
+                                          isChecked
+                                            ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-2xs'
+                                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={() => handleToggleFormSectionForSubject(curSubj, grade, sec)}
+                                          className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                                        />
+                                        Section {sec}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             );
                           })}
                         </div>
-                      </div>
-                    );
-                  })}
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Real-Time Mapping Preview */}
             <div className="pt-2">
               {renderMappingPreview(
                 form.name,
                 form.selectedSubjects,
-                form.selectedGrades,
-                form.gradeSections
+                form.subjectMapping
               )}
             </div>
           </div>
@@ -1910,14 +2262,7 @@ export default function TeachersPage() {
                       <button
                         key={subj}
                         type="button"
-                        onClick={() => {
-                          setEditForm((prev) => ({
-                            ...prev,
-                            selectedSubjects: isSelected
-                              ? prev.selectedSubjects.filter((s) => s !== subj)
-                              : [...prev.selectedSubjects, subj],
-                          }));
-                        }}
+                        onClick={() => handleToggleEditSubject(subj)}
                         className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
                           isSelected
                             ? 'bg-blue-600 text-white shadow-xs'
@@ -1932,142 +2277,223 @@ export default function TeachersPage() {
               </div>
             </div>
 
-            {/* Grades Selection */}
-            <div className="space-y-2 border-t border-slate-100 pt-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <div>
-                  <Label className="text-xs font-bold text-slate-900">Grades Assigned</Label>
-                  <p className="text-[11px] text-slate-500">Pick grades or quick presets.</p>
-                </div>
-                <div className="flex flex-wrap items-center gap-1">
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-blue-700" onClick={() => setGradePreset('all', true)}>All 1-12</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('primary', true)}>Gr 1-5</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('middle', true)}>Gr 6-8</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('secondary', true)}>Gr 9-10</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('senior', true)}>Gr 11-12</Button>
-                  <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-rose-600" onClick={() => setGradePreset('clear', true)}>Clear</Button>
-                </div>
+            {/* Subject-wise Grade & Section Allocation */}
+            {editForm.selectedSubjects.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50/70 p-4 text-center">
+                <p className="text-xs text-slate-500 font-medium">
+                  Please select at least one subject above to configure grade and section mappings.
+                </p>
               </div>
+            ) : (() => {
+              const curSubj = editForm.selectedSubjects.includes(editActiveSubject)
+                ? editActiveSubject
+                : editForm.selectedSubjects[0];
+              const curData = editForm.subjectMapping[curSubj] || { grades: [], sections: {} };
+              const curGrades = curData.grades || [];
 
-              <div className="flex flex-wrap gap-1.5 p-2 bg-slate-50 rounded-xl border border-slate-200">
-                {schoolGrades.map((grade) => {
-                  const isSelected = editForm.selectedGrades.includes(grade);
-                  return (
-                    <button
-                      key={grade}
-                      type="button"
-                      onClick={() => handleToggleEditGrade(grade)}
-                      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
-                        isSelected
-                          ? 'bg-indigo-600 text-white shadow-xs'
-                          : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                      }`}
-                    >
-                      {isSelected && <Check className="w-3 h-3" />}
-                      {grade}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Grade-wise Sections Selector */}
-            <div className="space-y-3 border-t border-slate-100 pt-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <div>
-                  <Label className="text-xs font-bold text-slate-900">Sections Assigned (Grade-wise)</Label>
-                  <p className="text-[11px] text-slate-500">
-                    Configure distinct sections for each assigned grade (e.g. Grade 1: A, B &bull; Grade 2: A only).
-                  </p>
-                </div>
-                {editForm.selectedGrades.length > 0 && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleSelectAllEditSectionsEverywhere}
-                      className="text-[10px] text-blue-600 font-bold hover:underline"
-                    >
-                      Select All
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleClearAllEditSectionsEverywhere}
-                      className="text-[10px] text-slate-500 font-bold hover:underline"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {editForm.selectedGrades.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 p-3 text-center">
-                  <p className="text-xs text-slate-500">
-                    Please select one or more <strong>Grades Assigned</strong> above to configure their sections.
-                  </p>
-                </div>
-              ) : (
-                <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
-                  {editForm.selectedGrades.map((grade) => {
-                    const availableSecs = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
-                    const assignedSecs = editForm.gradeSections[grade] || [];
-                    return (
-                      <div
-                        key={grade}
-                        className="rounded-xl border border-slate-200 bg-slate-50/60 p-2.5 space-y-2"
+              return (
+                <div className="space-y-3 border-t border-slate-100 pt-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <Label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 text-blue-600" />
+                        Subject-wise Grade &amp; Section Allocation
+                      </Label>
+                      <p className="text-[11px] text-slate-500">
+                        Configure grades &amp; sections specifically for each subject taught.
+                      </p>
+                    </div>
+                    {editForm.selectedSubjects.length > 1 && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleCopyEditMappingToOtherSubjects(curSubj)}
+                        className="h-7 px-2.5 text-[11px] font-bold border-blue-200 text-blue-700 bg-blue-50/60 hover:bg-blue-100 shrink-0"
+                        title="Copy this subject's grade & section settings to all other selected subjects"
                       >
-                        <div className="flex items-center justify-between border-b border-slate-200/60 pb-1.5">
-                          <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                            <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
-                            {grade} Sections
+                        <Copy className="w-3 h-3 mr-1" />
+                        Copy to Other Subjects
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Subject Tabs */}
+                  <div className="flex flex-wrap gap-1.5 p-1.5 bg-slate-100/90 rounded-xl border border-slate-200">
+                    {editForm.selectedSubjects.map((s) => {
+                      const isActive = curSubj === s;
+                      const sData = editForm.subjectMapping[s] || { grades: [], sections: {} };
+                      const grCount = sData.grades?.length || 0;
+                      const secCount = Object.values(sData.sections || {}).reduce((acc, secs) => acc + (secs?.length || 0), 0);
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setEditActiveSubject(s)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                            isActive
+                              ? 'bg-white text-blue-900 shadow-sm border border-blue-200'
+                              : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                          }`}
+                        >
+                          <span>{s}</span>
+                          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                            isActive ? 'bg-blue-100 text-blue-700' : 'bg-slate-200/80 text-slate-600'
+                          }`}>
+                            {grCount} Gr &bull; {secCount} Sec
                           </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Active Subject Configuration Container */}
+                  <div className="rounded-xl border border-blue-200/70 bg-gradient-to-b from-blue-50/25 to-slate-50/25 p-3 space-y-3">
+                    {/* Grades for Active Subject */}
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <div>
+                          <Label className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                            <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                            Grades for <span className="text-blue-700 underline underline-offset-2">{curSubj}</span>
+                          </Label>
+                          <p className="text-[11px] text-slate-500">Pick which grades this teacher instructs for {curSubj}.</p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-blue-700 font-bold" onClick={() => setGradePreset('all', true, curSubj)}>All 1-12</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('primary', true, curSubj)}>Gr 1-5</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('middle', true, curSubj)}>Gr 6-8</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('secondary', true, curSubj)}>Gr 9-10</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-slate-600" onClick={() => setGradePreset('senior', true, curSubj)}>Gr 11-12</Button>
+                          <Button type="button" size="sm" variant="ghost" className="h-6 text-[10px] px-2 text-rose-600 font-bold" onClick={() => setGradePreset('clear', true, curSubj)}>Clear</Button>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-1.5 p-2 bg-white rounded-xl border border-slate-200">
+                        {schoolGrades.map((grade) => {
+                          const isSelected = curGrades.includes(grade);
+                          return (
+                            <button
+                              key={grade}
+                              type="button"
+                              onClick={() => handleToggleEditGradeForSubject(curSubj, grade)}
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white shadow-xs'
+                                  : 'bg-slate-50 text-slate-700 border border-slate-200 hover:bg-slate-100'
+                              }`}
+                            >
+                              {isSelected && <Check className="w-3 h-3" />}
+                              {grade}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Sections for Active Subject */}
+                    <div className="space-y-2 border-t border-slate-200/80 pt-2.5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                        <div>
+                          <Label className="text-xs font-bold text-slate-900">
+                            Sections for <span className="text-blue-700">{curSubj}</span> (Grade-wise)
+                          </Label>
+                          <p className="text-[11px] text-slate-500">
+                            Assign exact sections for each grade in {curSubj}.
+                          </p>
+                        </div>
+                        {curGrades.length > 0 && (
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => handleSelectAllEditSectionsForGrade(grade)}
+                              onClick={() => handleSelectAllEditSectionsEverywhere(curSubj)}
                               className="text-[10px] text-blue-600 font-bold hover:underline"
                             >
                               Select All
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleClearEditSectionsForGrade(grade)}
+                              onClick={() => handleClearAllEditSectionsEverywhere(curSubj)}
                               className="text-[10px] text-slate-500 font-bold hover:underline"
                             >
                               Clear
                             </button>
                           </div>
-                        </div>
+                        )}
+                      </div>
 
-                        <div className="flex flex-wrap gap-1.5">
-                          {availableSecs.map((sec) => {
-                            const isChecked = assignedSecs.includes(sec);
+                      {curGrades.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-slate-200 bg-white/60 p-3 text-center">
+                          <p className="text-xs text-slate-500">
+                            Please select one or more <strong>Grades</strong> above for {curSubj} to configure sections.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                          {curGrades.map((grade) => {
+                            const availableSecs = gradeSectionsMap[grade] || DEFAULT_SECTIONS;
+                            const assignedSecs = curData.sections?.[grade] || [];
                             return (
-                              <label
-                                key={sec}
-                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
-                                  isChecked
-                                    ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-2xs'
-                                    : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
-                                }`}
+                              <div
+                                key={grade}
+                                className="rounded-xl border border-slate-200 bg-white p-2.5 space-y-2 shadow-2xs"
                               >
-                                <input
-                                  type="checkbox"
-                                  checked={isChecked}
-                                  onChange={() => handleToggleEditSection(grade, sec)}
-                                  className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-                                />
-                                Section {sec}
-                              </label>
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                                  <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                    <GraduationCap className="w-3.5 h-3.5 text-indigo-600" />
+                                    {grade} Sections
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectAllEditSectionsForGrade(curSubj, grade)}
+                                      className="text-[10px] text-blue-600 font-bold hover:underline"
+                                    >
+                                      Select All
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleClearEditSectionsForGrade(curSubj, grade)}
+                                      className="text-[10px] text-slate-500 font-bold hover:underline"
+                                    >
+                                      Clear
+                                    </button>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-wrap gap-1.5">
+                                  {availableSecs.map((sec) => {
+                                    const isChecked = assignedSecs.includes(sec);
+                                    return (
+                                      <label
+                                        key={sec}
+                                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-xs font-bold cursor-pointer transition-all ${
+                                          isChecked
+                                            ? 'bg-blue-50 border-blue-300 text-blue-900 shadow-2xs'
+                                            : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100'
+                                        }`}
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isChecked}
+                                          onChange={() => handleToggleEditSectionForSubject(curSubj, grade, sec)}
+                                          className="rounded text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                                        />
+                                        Section {sec}
+                                      </label>
+                                    );
+                                  })}
+                                </div>
+                              </div>
                             );
                           })}
                         </div>
-                      </div>
-                    );
-                  })}
+                      )}
+                    </div>
+                  </div>
                 </div>
-              )}
-            </div>
+              );
+            })()}
 
             {/* Status & Role */}
             <div className="border-t border-slate-100 pt-3">
@@ -2092,8 +2518,7 @@ export default function TeachersPage() {
               {renderMappingPreview(
                 editForm.name,
                 editForm.selectedSubjects,
-                editForm.selectedGrades,
-                editForm.gradeSections
+                editForm.subjectMapping
               )}
             </div>
           </div>
@@ -2412,6 +2837,14 @@ export default function TeachersPage() {
                   </Button>
                 </div>
               </DialogHeader>
+
+              {/* Subject & Section Qualifications */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs">
+                <span className="font-bold text-slate-700">Teaching Qualifications: </span>
+                <span className="text-slate-600 font-medium">
+                  {gradesDisplay(viewTeacher.grades, viewTeacher.sections, viewTeacher.subjects, viewTeacher.subject)}
+                </span>
+              </div>
 
               {/* Individual Teacher Weekly Schedule Table */}
               <div className="space-y-2">

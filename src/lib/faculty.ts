@@ -317,25 +317,33 @@ export function readList(value: unknown): string[] {
   return parseList(text);
 }
 
+export type SubjectGradeMapping = Record<string, {
+  grades: string[];
+  sections: Record<string, string[]>;
+}>;
+
 /**
- * Check if a teacher's assigned sections include a specific (grade, section).
+ * Check if a teacher's assigned sections include a specific (grade, section, subject?).
  *
  * Supports:
- * 1. Grade-specific section entries: "Grade 1:A", "Grade 2:B"
- * 2. Unscoped generic section entries: "A", "B" (applies to all of teacher's grades)
- * 3. JSON grade-map object: { "Grade 1": ["A", "B"], "Grade 2": ["A"] }
- * 4. Empty/null sections: teacher is not restricted by section, can teach all sections.
+ * 1. Subject-and-grade-specific entries: "Subject::Grade:Section" (e.g. "Mathematics::Grade 9:A")
+ * 2. Grade-specific section entries: "Grade 1:A", "Grade 2:B" (applies to all subjects)
+ * 3. Unscoped generic section entries: "A", "B" (applies to all grades of teacher)
+ * 4. JSON grade-map object: { "Grade 1": ["A", "B"], "Grade 2": ["A"] }
+ * 5. Empty/null sections: teacher is not restricted by section, can teach all sections.
  */
 export function teacherTeachesSection(
   rawSections: unknown,
   grade: string,
-  section: string
+  section: string,
+  subject?: string
 ): boolean {
   if (!rawSections) return true;
 
   const targetGrade = grade.trim().toLowerCase();
   const targetGradeNum = targetGrade.replace(/[^0-9]/g, '');
   const targetSec = section.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+  const targetSubject = subject ? subject.trim().toLowerCase() : undefined;
 
   // 1. If it's a JSON object format directly
   if (typeof rawSections === 'object' && !Array.isArray(rawSections)) {
@@ -355,12 +363,49 @@ export function teacherTeachesSection(
   const list = readList(rawSections);
   if (list.length === 0) return true;
 
+  let hasSubjectScopedEntries = false;
+  let hasSubjectEntriesForTargetSubject = false;
+  let hasSubjectGradeEntriesForTarget = false;
+
   let hasGradeSpecificEntriesForThisGrade = false;
   let hasAnyGradeSpecificEntries = false;
 
   for (const item of list) {
     const trimmed = String(item).trim();
-    if (trimmed.includes(':')) {
+    if (trimmed.includes('::')) {
+      hasSubjectScopedEntries = true;
+      const [subjPart, rest] = trimmed.split('::');
+      const cleanSubj = subjPart.trim().toLowerCase();
+      const isSubjMatch =
+        targetSubject &&
+        (cleanSubj === targetSubject || cleanSubj.replace(/\s+/g, '') === targetSubject.replace(/\s+/g, ''));
+
+      if (isSubjMatch) {
+        hasSubjectEntriesForTargetSubject = true;
+        if (rest && rest.includes(':')) {
+          const [gPart, sPart] = rest.split(':');
+          const cleanG = gPart.trim().toLowerCase();
+          const gNum = cleanG.replace(/[^0-9]/g, '');
+          if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum)) {
+            hasSubjectGradeEntriesForTarget = true;
+            const cleanS = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+            if (cleanS === targetSec) return true;
+          }
+        }
+      } else if (!targetSubject) {
+        // If no subject was specified, check if teacher teaches this grade & section in ANY subject
+        if (rest && rest.includes(':')) {
+          const [gPart, sPart] = rest.split(':');
+          const cleanG = gPart.trim().toLowerCase();
+          const gNum = cleanG.replace(/[^0-9]/g, '');
+          if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum)) {
+            const cleanS = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+            if (cleanS === targetSec) return true;
+          }
+        }
+      }
+    } else if (trimmed.includes(':')) {
+      // Legacy Grade-specific entry: "Grade:Section"
       hasAnyGradeSpecificEntries = true;
       const [gPart, sPart] = trimmed.split(':');
       const cleanG = gPart.trim().toLowerCase();
@@ -377,12 +422,22 @@ export function teacherTeachesSection(
     }
   }
 
-  // If there were grade-specific restrictions for this grade and none matched:
+  // If subject was provided and teacher has subject-scoped entries:
+  if (targetSubject && hasSubjectScopedEntries) {
+    if (hasSubjectGradeEntriesForTarget) {
+      return false; // specified section did not match
+    }
+    if (hasSubjectEntriesForTargetSubject) {
+      return false; // teacher has this subject, but not for this grade
+    }
+    // teacher has subject-scoped entries for other subjects, but not for targetSubject
+    return false;
+  }
+
   if (hasGradeSpecificEntriesForThisGrade) {
     return false;
   }
 
-  // If there were grade-specific entries for other grades, but none configured for this grade:
   if (hasAnyGradeSpecificEntries) {
     return false;
   }
@@ -391,7 +446,167 @@ export function teacherTeachesSection(
 }
 
 /**
- * Parse raw teacher sections into a per-grade map { [grade]: string[] }.
+ * Parse raw teacher sections into a per-subject-and-grade map.
+ */
+export function parseSubjectGradeSectionsMap(
+  rawSections: unknown,
+  subjects: string[],
+  fallbackGrades: string[] = [],
+  defaultSectionsMap?: Record<string, string[]>
+): SubjectGradeMapping {
+  const result: SubjectGradeMapping = {};
+
+  for (const subj of subjects) {
+    result[subj] = {
+      grades: [],
+      sections: {},
+    };
+  }
+
+  if (subjects.length === 0) {
+    return result;
+  }
+
+  const list = readList(rawSections);
+  let hasAnySubjectScoped = false;
+  let hasAnyGradeScoped = false;
+
+  for (const item of list) {
+    const trimmed = String(item).trim();
+    if (!trimmed) continue;
+
+    if (trimmed.includes('::')) {
+      hasAnySubjectScoped = true;
+      const [subjPart, rest] = trimmed.split('::');
+      const cleanSubj = subjPart.trim();
+      const targetSubj = subjects.find(
+        (s) => s.toLowerCase() === cleanSubj.toLowerCase() || s.replace(/\s+/g, '') === cleanSubj.replace(/\s+/g, '')
+      );
+      if (targetSubj && rest && rest.includes(':')) {
+        const [gPart, sPart] = rest.split(':');
+        const cleanG = gPart.trim();
+        const cleanS = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+        if (!result[targetSubj].grades.includes(cleanG)) {
+          result[targetSubj].grades.push(cleanG);
+        }
+        if (!result[targetSubj].sections[cleanG]) {
+          result[targetSubj].sections[cleanG] = [];
+        }
+        if (cleanS && !result[targetSubj].sections[cleanG].includes(cleanS)) {
+          result[targetSubj].sections[cleanG].push(cleanS);
+        }
+      }
+    } else if (trimmed.includes(':')) {
+      hasAnyGradeScoped = true;
+      const [gPart, sPart] = trimmed.split(':');
+      const cleanG = gPart.trim();
+      const cleanS = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
+      for (const subj of subjects) {
+        if (!result[subj].grades.includes(cleanG)) {
+          result[subj].grades.push(cleanG);
+        }
+        if (!result[subj].sections[cleanG]) {
+          result[subj].sections[cleanG] = [];
+        }
+        if (cleanS && !result[subj].sections[cleanG].includes(cleanS)) {
+          result[subj].sections[cleanG].push(cleanS);
+        }
+      }
+    }
+  }
+
+  // If no subject-scoped or grade-scoped entries found, initialize with fallbackGrades
+  if (!hasAnySubjectScoped && !hasAnyGradeScoped) {
+    const unscopedSecs = list
+      .map((s) => s.trim().toUpperCase().replace(/^SECTION\s*/i, ''))
+      .filter((s) => s && !s.includes(':'));
+
+    const effectiveGrades = fallbackGrades.length > 0 ? fallbackGrades : ['Grade 1'];
+    for (const subj of subjects) {
+      result[subj].grades = [...effectiveGrades];
+      for (const g of effectiveGrades) {
+        const defaultSecs = defaultSectionsMap?.[g] || ['A'];
+        result[subj].sections[g] = unscopedSecs.length > 0 ? [...unscopedSecs] : [...defaultSecs];
+      }
+    }
+  }
+
+  // Sort grades and default missing sections for all configured grades
+  for (const subj of subjects) {
+    result[subj].grades.sort((a, b) => {
+      const numA = parseInt(a.replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(b.replace(/\D/g, ''), 10) || 0;
+      if (numA !== numB) return numA - numB;
+      return a.localeCompare(b);
+    });
+    for (const g of result[subj].grades) {
+      if (!result[subj].sections[g] || result[subj].sections[g].length === 0) {
+        result[subj].sections[g] = defaultSectionsMap?.[g] ? [...defaultSectionsMap[g]] : ['A'];
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Serialize a per-subject-and-grade mapping into array of "Subject::Grade:Section" strings.
+ */
+export function serializeSubjectGradeSectionsMap(mapping: SubjectGradeMapping): string[] {
+  const result: string[] = [];
+  for (const [subj, data] of Object.entries(mapping)) {
+    const cleanSubj = subj.trim();
+    if (!cleanSubj || !data || !Array.isArray(data.grades)) continue;
+    for (const grade of data.grades) {
+      const cleanGrade = grade.trim();
+      const secs = data.sections[grade] || [];
+      for (const sec of secs) {
+        const cleanSec = String(sec).trim().toUpperCase().replace(/^SECTION\s*/i, '');
+        if (cleanSec) {
+          result.push(`${cleanSubj}::${cleanGrade}:${cleanSec}`);
+        }
+      }
+    }
+  }
+  return result;
+}
+
+/**
+ * Cleanly format teacher qualifications (subject-wise grades & sections) for UI cards and summaries.
+ */
+export function formatTeacherQualifications(
+  gradesJson?: string,
+  sectionsJson?: string,
+  subjectsJson?: string,
+  defaultSubj?: string
+): string {
+  const subs = readList(subjectsJson || defaultSubj);
+  const grs = readList(gradesJson);
+  if (grs.length === 0) return 'All Grades';
+  if (!sectionsJson) return grs.join(', ');
+
+  const map = parseSubjectGradeSectionsMap(sectionsJson, subs.length > 0 ? subs : ['General'], grs);
+  const parts: string[] = [];
+
+  for (const [subj, data] of Object.entries(map)) {
+    if (!data.grades || data.grades.length === 0) continue;
+    const gradeParts = data.grades.map((g) => {
+      const secs = data.sections[g];
+      return secs && secs.length > 0 ? `${g} (${secs.join(', ')})` : g;
+    });
+    if (subs.length > 1) {
+      parts.push(`${subj}: ${gradeParts.join(', ')}`);
+    } else {
+      parts.push(gradeParts.join(', '));
+    }
+  }
+
+  if (parts.length > 0) return parts.join(' • ');
+  return grs.join(', ');
+}
+
+/**
+ * Parse raw teacher sections into a per-grade map { [grade]: string[] } (legacy/unscoped view).
  */
 export function parseGradeSectionsMap(
   rawSections: unknown,
@@ -410,7 +625,7 @@ export function parseGradeSectionsMap(
     return result;
   }
 
-  // 1. If it's a JSON object or stringified JSON object
+  // 1. If it's a JSON object
   let parsedObj: Record<string, unknown> | null = null;
   if (typeof rawSections === 'object' && !Array.isArray(rawSections)) {
     parsedObj = rawSections as Record<string, unknown>;
@@ -442,9 +657,14 @@ export function parseGradeSectionsMap(
   const list = readList(rawSections);
   let hasAnyScoped = false;
   for (const item of list) {
-    if (item.includes(':')) {
+    let cleanItem = String(item).trim();
+    // If it has Subject::Grade:Section, strip Subject:: for grade-level parsing
+    if (cleanItem.includes('::')) {
+      cleanItem = cleanItem.split('::')[1] || '';
+    }
+    if (cleanItem.includes(':')) {
       hasAnyScoped = true;
-      const [gPart, sPart] = item.split(':');
+      const [gPart, sPart] = cleanItem.split(':');
       const cleanG = gPart.trim();
       const cleanGNum = cleanG.replace(/\D/g, '');
       const sec = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
@@ -459,7 +679,6 @@ export function parseGradeSectionsMap(
   }
 
   if (!hasAnyScoped && list.length > 0) {
-    // Legacy unscoped sections (e.g. ['A', 'B']) applies to all grades
     const cleanSecs = list.map((s) => s.trim().toUpperCase().replace(/^SECTION\s*/i, '')).filter(Boolean);
     for (const g of grades) {
       result[g] = [...cleanSecs];

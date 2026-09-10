@@ -53,11 +53,11 @@ function matchesGrade(teacherGrades: string[], targetGrade: string): boolean {
   });
 }
 
-function matchesSection(teacherSections: unknown, targetSection: string, targetGrade?: string): boolean {
+function matchesSection(teacherSections: unknown, targetSection: string, targetGrade?: string, targetSubject?: string): boolean {
   if (targetGrade) {
-    return teacherTeachesSection(teacherSections, targetGrade, targetSection);
+    return teacherTeachesSection(teacherSections, targetGrade, targetSection, targetSubject);
   }
-  return teacherTeachesSection(teacherSections, '', targetSection);
+  return teacherTeachesSection(teacherSections, '', targetSection, targetSubject);
 }
 
 export async function GET(request: Request, ctx: Ctx) {
@@ -97,7 +97,7 @@ export async function GET(request: Request, ctx: Ctx) {
     const conflict = busyHere.get(t.id) || null;
     const qualifiedSubject = matchesSubject(subjects, slot.subject);
     const qualifiedGrade = matchesGrade(grades, slot.grade);
-    const qualifiedSection = matchesSection(sections, slot.section);
+    const qualifiedSection = matchesSection(sections, slot.section, slot.grade, slot.subject);
     const fullyQualified = qualifiedSubject && qualifiedGrade && qualifiedSection;
     const inactive = t.role === 'inactive';
     return {
@@ -236,7 +236,7 @@ export async function POST(request: Request, ctx: Ctx) {
 
     const qualifiedSubject = matchesSubject(subjects, slot.subject);
     const qualifiedGrade = matchesGrade(grades, slot.grade);
-    const qualifiedSection = matchesSection(teacher.sections, slot.section, slot.grade);
+    const qualifiedSection = matchesSection(teacher.sections, slot.section, slot.grade, slot.subject);
 
     if (!qualifiedSubject || !qualifiedGrade || !qualifiedSection) {
       const issues: string[] = [];

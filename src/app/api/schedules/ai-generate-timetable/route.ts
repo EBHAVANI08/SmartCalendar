@@ -85,16 +85,16 @@ function teachesGrade(teacher: TeacherInfo, grade: string): boolean {
  * they can ONLY teach those sections.
  * If sections field is empty/unset, they teach all sections of their assigned grades.
  */
-function teachesSection(teacher: TeacherInfo, section: string, grade?: string): boolean {
+function teachesSection(teacher: TeacherInfo, section: string, grade?: string, subject?: string): boolean {
   if (grade) {
-    return teacherTeachesSection(teacher.sections, grade, section);
+    return teacherTeachesSection(teacher.sections, grade, section, subject);
   }
-  return teacherTeachesSection(teacher.sections, '', section);
+  return teacherTeachesSection(teacher.sections, '', section, subject);
 }
 
 /** Strictly eligible for this (subject, grade, section) triplet from Faculty Directory */
 function isTeacherEligibleForSlot(teacher: TeacherInfo, subject: string, grade: string, section: string): boolean {
-  return teachesSubject(teacher, subject) && teachesGrade(teacher, grade) && teachesSection(teacher, section, grade);
+  return teachesSubject(teacher, subject) && teachesGrade(teacher, grade) && teachesSection(teacher, section, grade, subject);
 }
 
 interface GeneratedSchedule {
@@ -300,7 +300,7 @@ export async function POST(request: Request) {
     // ONLY include teachers whose Faculty Directory configuration explicitly includes targetGrade and targetSection
     const teacherInfo: TeacherInfo[] = allTeachers
       .map(toTeacherInfo)
-      .filter((t) => teachesGrade(t, targetGrade) && teachesSection(t, targetSection));
+      .filter((t) => teachesGrade(t, targetGrade) && teachesSection(t, targetSection, targetGrade));
 
     // Subjects and their scheduling rules come from this school's own
     // grade configuration. The hardcoded CBSE map is only a fallback for a
@@ -432,7 +432,7 @@ export async function POST(request: Request) {
     ): { score: number; matchLabel: string } => {
       const isSubjectQualified = teachesSubject(teacher, subject);
       const isGradeQualified = teachesGrade(teacher, grade);
-      const isSectionQualified = teachesSection(teacher, targetSection);
+      const isSectionQualified = teachesSection(teacher, targetSection, grade, subject);
 
       const dayWorkload = getTeacherDayCount(teacher.id, day);
       const totalWorkload = getTeacherTotalLoad(teacher.id);
