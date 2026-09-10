@@ -8,7 +8,7 @@ import {
   LayoutDashboard, CalendarDays, Users, RefreshCw, BarChart3,
   BookOpen, Building2, GraduationCap, FileText, Settings,
   Fingerprint, ClipboardList, Brain, ChevronLeft, ChevronRight,
-  LogOut, Sparkles, Zap, X, User, History, SlidersHorizontal } from 'lucide-react';
+  LogOut, Sparkles, Zap, X, User, History, SlidersHorizontal, UserCheck } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { hasModule, resolveModules } from '@/lib/access';
@@ -34,6 +34,7 @@ const navSections = [
       { href: '/leaves', label: 'Leave Management', icon: ClipboardList, badge: null, module: 'leaves' },
       { href: '/substitutions', label: 'Substitutions', icon: RefreshCw, badge: null, module: 'substitutions' },
       { href: '/attendance', label: 'Biometric Attendance', icon: Fingerprint, badge: null, module: 'attendance' },
+      { href: '/teacher-attendance', label: 'Teacher Attendance', icon: UserCheck, badge: null, module: 'attendance' },
     ]
   },
   {

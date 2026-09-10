@@ -233,6 +233,7 @@ export const PAGE_CAPABILITY: Record<string, Capability> = {
   '/leaves': 'leave.apply.own',
   '/teachers': 'faculty.read',
   '/attendance': 'attendance.read',
+  '/teacher-attendance': 'attendance.read',
   '/subjects': 'subject.read',
   '/day-config': 'school.dayconfig.read',
   '/rooms': 'rooms.read',

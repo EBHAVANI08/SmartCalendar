@@ -155,6 +155,7 @@ export const config = {
     '/leaves/:path*',
     '/teachers/:path*',
     '/attendance/:path*',
+    '/teacher-attendance/:path*',
     '/subjects/:path*',
     '/day-config/:path*',
     '/rooms/:path*',

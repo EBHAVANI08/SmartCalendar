@@ -394,3 +394,106 @@ export async function assignSubstitute(options: {
 
   return { ok: true, manualOverride: overrideApplied };
 }
+
+/**
+ * Create pending Substitutions for an absent teacher on a specific date.
+ * Idempotent: existing substitutions are left alone.
+ */
+export async function syncSubstitutionsForAttendanceAbsence(options: {
+  teacherId: string;
+  date: string;
+  reason?: string;
+  source?: 'attendance' | 'manual';
+}) {
+  const { teacherId, date, reason = 'Marked absent in Attendance', source = 'attendance' } = options;
+  const teacher = await db.teacher.findUnique({
+    where: { id: teacherId },
+    select: { id: true, name: true, schoolId: true },
+  });
+  if (!teacher) return { created: 0, existing: 0, slotsCount: 0 };
+
+  const day = weekdayOf(date);
+  if (!day) return { created: 0, existing: 0, slotsCount: 0 };
+
+  const schoolId = teacher.schoolId;
+  const operationalFilter = schoolId ? await operationalScheduleFilter(schoolId) : {};
+
+  const schedules = await db.schedule.findMany({
+    where: {
+      ...operationalFilter,
+      teacherId,
+      day,
+    },
+    select: {
+      id: true,
+      period: true,
+      grade: true,
+      section: true,
+      subject: true,
+      startTime: true,
+      endTime: true,
+    },
+    orderBy: { period: 'asc' },
+  });
+
+  let created = 0;
+  let existing = 0;
+
+  for (const slot of schedules) {
+    const already = await db.substitution.findFirst({
+      where: {
+        date,
+        period: slot.period,
+        absentTeacherId: teacherId,
+        grade: slot.grade,
+        section: slot.section,
+      },
+      select: { id: true },
+    });
+
+    if (already) {
+      existing++;
+      continue;
+    }
+
+    await db.substitution.create({
+      data: {
+        schoolId,
+        date,
+        period: slot.period,
+        absentTeacherId: teacherId,
+        grade: slot.grade,
+        section: slot.section,
+        subject: slot.subject,
+        reason,
+        source,
+        status: 'pending',
+        scheduleId: slot.id,
+      },
+    });
+    created++;
+  }
+
+  return { created, existing, slotsCount: schedules.length };
+}
+
+/**
+ * When an absent teacher is marked Present, remove any unassigned pending
+ * substitutions created by attendance/manual marking.
+ */
+export async function removeSubstitutionsForAttendancePresence(options: {
+  teacherId: string;
+  date: string;
+}) {
+  const { teacherId, date } = options;
+  const deleted = await db.substitution.deleteMany({
+    where: {
+      absentTeacherId: teacherId,
+      date,
+      source: { in: ['attendance', 'manual'] },
+      status: 'pending',
+      substituteId: null,
+    },
+  });
+  return { deletedCount: deleted.count };
+}
