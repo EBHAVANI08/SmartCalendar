@@ -591,9 +591,9 @@ export default function AcademicCalendarPage() {
       </Card>
 
       {/* ── Main Layout: Calendar Grid + Upcoming Sidebar ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Monthly Calendar Grid (3 Cols) */}
-        <div className="lg:col-span-3 space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-4 2xl:grid-cols-5 gap-6">
+        {/* Monthly Calendar Grid */}
+        <div className="lg:col-span-3 2xl:col-span-4 space-y-3">
           <Card className="border-slate-200 shadow-sm overflow-hidden bg-white">
             {/* Day Header Row */}
             <div className="grid grid-cols-7 border-b border-slate-200 bg-slate-50 text-center py-2.5 text-xs font-bold text-slate-600 uppercase tracking-wider">
@@ -682,7 +682,7 @@ export default function AcademicCalendarPage() {
         </div>
 
         {/* Upcoming Milestones Sidebar (1 Col) */}
-        <div className="space-y-4">
+        <div className="lg:col-span-1 2xl:col-span-1 space-y-4">
           <Card className="border-slate-200 shadow-sm bg-white">
             <CardHeader className="p-4 pb-2.5 border-b border-slate-100">
               <CardTitle className="text-sm font-bold text-slate-800 flex items-center justify-between">

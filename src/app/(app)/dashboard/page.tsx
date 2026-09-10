@@ -176,6 +176,7 @@ function QuickActions() {
     { label: 'Timetable Studio', icon: CalendarDays, href: '/timetable', color: 'text-blue-700 bg-blue-50 border-blue-200' },
     { label: 'Manage Substitutions', icon: RefreshCw, href: '/substitutions', color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
     { label: 'Faculty Directory', icon: Users, href: '/teachers', color: 'text-blue-700 bg-blue-50 border-blue-200' },
+    { label: 'Academic Calendar', icon: CalendarDays, href: '/calendar', color: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
     { label: 'Analytics & BI', icon: BarChart3, href: '/analytics', color: 'text-indigo-700 bg-indigo-50 border-indigo-200' },
     { label: 'Biometric Attendance', icon: Fingerprint, href: '/attendance', color: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
   ];

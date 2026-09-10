@@ -204,7 +204,7 @@ export function AppShell({ children }: AppShellProps) {
           </div>
         )}
         <main className="flex-1 overflow-y-auto bg-slate-50/80 mesh-bg">
-          <div className="max-w-[1600px] mx-auto p-3 sm:p-6 min-h-full">
+          <div className="w-full p-3 sm:p-5 md:p-6 min-h-full">
             {children}
           </div>
         </main>

@@ -1638,8 +1638,8 @@ export default function TeachersPage() {
 
           {/* Teacher Cards Grid */}
           {loading ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
+              {Array.from({ length: 10 }).map((_, i) => (
                 <Card key={i} className="border-slate-200 animate-pulse">
                   <CardContent className="p-5">
                     <div className="flex items-center gap-3 mb-4">
@@ -1662,7 +1662,7 @@ export default function TeachersPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-4">
               {filtered.map((teacher) => {
                 const initials = teacher.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
                 const gradesStr = gradesDisplay(teacher.grades, teacher.sections, teacher.subjects, teacher.subject);
