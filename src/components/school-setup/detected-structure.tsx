@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Check, Info, Layers, Loader2, Plus, Trash2, X } from 'lucide-react';
+import { AlertTriangle, Check, Info, Layers, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -88,6 +88,19 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
   const [newGradeName, setNewGradeName] = useState('');
   const [newGradeInitialSection, setNewGradeInitialSection] = useState('A');
   const [isAddingGrade, setIsAddingGrade] = useState(false);
+
+  // Edit / Rename Grade dialog state
+  const [editGradeTarget, setEditGradeTarget] = useState<string | null>(null);
+  const [editGradeNewName, setEditGradeNewName] = useState('');
+  const [isRenamingGrade, setIsRenamingGrade] = useState(false);
+
+  // Delete Grade dialog state
+  const [deleteGradeTarget, setDeleteGradeTarget] = useState<{
+    grade: string;
+    sectionsCount: number;
+    periodsCount: number;
+  } | null>(null);
+  const [isDeletingGrade, setIsDeletingGrade] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -245,6 +258,98 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
     }
   };
 
+  /** Handle editing/renaming a grade */
+  const handleStartEditGrade = (grade: string) => {
+    setEditGradeTarget(grade);
+    setEditGradeNewName(grade);
+  };
+
+  const handleRenameGrade = async () => {
+    if (!editGradeTarget) return;
+    const newName = editGradeNewName.trim();
+    if (!newName) {
+      toast({ title: 'Grade name is required', variant: 'destructive' });
+      return;
+    }
+    if (newName === editGradeTarget) {
+      setEditGradeTarget(null);
+      return;
+    }
+
+    setIsRenamingGrade(true);
+    try {
+      const res = await fetch('/api/school/detected-structure', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldGrade: editGradeTarget, newGrade: newName }),
+      });
+      const result = await res.json().catch(() => null);
+      if (res.ok && result?.success) {
+        toast({
+          title: 'Grade Renamed',
+          description: `Renamed "${editGradeTarget}" to "${newName}" successfully.`,
+        });
+        setEditGradeTarget(null);
+        await load();
+        onAdopted?.();
+      } else {
+        toast({
+          title: 'Failed to rename grade',
+          description: result?.error || 'Something went wrong',
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsRenamingGrade(false);
+    }
+  };
+
+  /** Handle deleting an entire grade */
+  const handleDeleteGrade = async () => {
+    if (!deleteGradeTarget) return;
+    setIsDeletingGrade(true);
+    try {
+      const res = await fetch('/api/school/detected-structure', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          grade: deleteGradeTarget.grade,
+          deleteEntireGrade: true,
+        }),
+      });
+      const result = await res.json().catch(() => null);
+      if (res.ok && result?.success) {
+        toast({
+          title: 'Grade Deleted',
+          description: `Grade "${deleteGradeTarget.grade}" and all associated sections were deleted.`,
+        });
+        setDeleteGradeTarget(null);
+        await load();
+        onAdopted?.();
+      } else {
+        toast({
+          title: 'Failed to delete grade',
+          description: result?.error || 'Something went wrong',
+          variant: 'destructive',
+        });
+      }
+    } catch (err) {
+      toast({
+        title: 'Error',
+        description: String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeletingGrade(false);
+    }
+  };
+
   /** Create a GradeSubjectConfig for each chosen pair. Nothing implicit. */
   const adopt = async () => {
     if (!picked.size || !data) return;
@@ -353,8 +458,18 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
                   className="rounded-xl border border-slate-200 p-3 bg-white hover:border-slate-300 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-100">
-                    <span className="text-xs font-bold text-slate-900">{g.grade}</span>
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-xs font-bold text-slate-900 truncate">{g.grade}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditGrade(g.grade)}
+                        className="text-slate-400 hover:text-blue-600 p-0.5 rounded hover:bg-blue-50 transition-colors"
+                        title={`Edit ${g.grade} name`}
+                      >
+                        <Pencil className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
                       <Badge
                         variant="outline"
                         className={`text-[9px] px-1.5 py-0 ${
@@ -375,6 +490,20 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
                         <Plus className="w-3 h-3 mr-0.5" />
                         Section
                       </Button>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setDeleteGradeTarget({
+                            grade: g.grade,
+                            sectionsCount: g.sections.length,
+                            periodsCount: g.totalPeriods,
+                          })
+                        }
+                        className="text-slate-400 hover:text-red-600 p-1 rounded hover:bg-red-50 transition-colors"
+                        title={`Delete ${g.grade}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </div>
                   </div>
 
@@ -556,6 +685,117 @@ export function DetectedStructure({ onAdopted }: { onAdopted?: () => void }) {
             >
               {isAddingGrade ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
               {isAddingGrade ? 'Creating…' : 'Create Grade'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit / Rename Grade Dialog */}
+      <Dialog open={!!editGradeTarget} onOpenChange={(open) => { if (!open) setEditGradeTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+              <Pencil className="w-5 h-5 text-blue-600" />
+              Edit Grade Name
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600">
+              Rename <strong>{editGradeTarget}</strong>. This updates all sections, scheduled timetable periods, subject requirements, and teacher assignments.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div>
+              <Label className="text-xs font-semibold text-slate-700">Grade Name</Label>
+              <Input
+                placeholder="e.g. Grade 10, Class 10"
+                value={editGradeNewName}
+                onChange={(e) => setEditGradeNewName(e.target.value)}
+                className="text-xs mt-1"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleRenameGrade();
+                  } else if (e.key === 'Escape') {
+                    setEditGradeTarget(null);
+                  }
+                }}
+              />
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => setEditGradeTarget(null)}
+              disabled={isRenamingGrade}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={handleRenameGrade}
+              disabled={isRenamingGrade || !editGradeNewName.trim()}
+            >
+              {isRenamingGrade ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              {isRenamingGrade ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Grade Confirmation Dialog */}
+      <Dialog open={!!deleteGradeTarget} onOpenChange={(open) => { if (!open) setDeleteGradeTarget(null); }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold text-red-600 flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+              Delete Grade {deleteGradeTarget?.grade}?
+            </DialogTitle>
+            <DialogDescription className="text-xs text-slate-600 pt-1">
+              Are you sure you want to permanently delete <strong>{deleteGradeTarget?.grade}</strong>?
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-900 space-y-1.5">
+            <p className="font-bold flex items-center gap-1.5">
+              <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+              Warning: Permanent Deletion
+            </p>
+            <p className="text-[11px] text-red-800 leading-relaxed">
+              This will remove all <strong>{deleteGradeTarget?.sectionsCount ?? 0} section(s)</strong>
+              {deleteGradeTarget && deleteGradeTarget.periodsCount > 0 && (
+                <> and <strong>{deleteGradeTarget.periodsCount} scheduled period(s)</strong></>
+              )} along with any subject configurations and substitutions assigned to {deleteGradeTarget?.grade}.
+            </p>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0 mt-3">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => setDeleteGradeTarget(null)}
+              disabled={isDeletingGrade}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="text-xs gap-1.5 bg-red-600 hover:bg-red-700 text-white"
+              onClick={handleDeleteGrade}
+              disabled={isDeletingGrade}
+            >
+              {isDeletingGrade ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+              {isDeletingGrade ? 'Deleting Grade…' : 'Delete Grade'}
             </Button>
           </DialogFooter>
         </DialogContent>

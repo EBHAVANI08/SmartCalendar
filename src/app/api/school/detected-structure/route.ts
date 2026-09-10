@@ -6,6 +6,7 @@ import { requireCapability } from '@/lib/authz';
 import { getDayConfig } from '@/lib/timetable-config';
 import { periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
 import { ensureAcademicYear } from '@/lib/timetable-lifecycle';
+import { readList } from '@/lib/faculty';
 import { NextResponse } from 'next/server';
 
 /**
@@ -216,7 +217,113 @@ export async function POST(request: Request) {
 }
 
 /**
- * Delete a section from a grade.
+ * Rename a grade across all related collections (ClassSection, Schedule, GradeSubjectConfig, Substitution, Teacher.grades).
+ */
+export async function PATCH(request: Request) {
+  const denied = requireCapability(request, 'school.settings.write');
+  if (denied) return denied;
+
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) {
+    return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
+    const oldGrade = (body.oldGrade || '').trim();
+    const newGrade = (body.newGrade || '').trim();
+
+    if (!oldGrade || !newGrade) {
+      return NextResponse.json({ error: 'Both oldGrade and newGrade are required.' }, { status: 400 });
+    }
+
+    if (oldGrade === newGrade) {
+      return NextResponse.json({ success: true, message: 'Grade name unchanged.' });
+    }
+
+    // Check if newGrade already exists in classSection or schedule under this school
+    if (oldGrade.toLowerCase() !== newGrade.toLowerCase()) {
+      const existingGrade = await db.classSection.findFirst({
+        where: { schoolId, grade: newGrade },
+      });
+      const existingSchedule = await db.schedule.findFirst({
+        where: { schoolId, grade: newGrade },
+      });
+      if (existingGrade || existingSchedule) {
+        return NextResponse.json(
+          { error: `Grade "${newGrade}" already exists. Please choose a different name.` },
+          { status: 409 }
+        );
+      }
+    }
+
+    // 1. Update ClassSection rows
+    const sections = await db.classSection.findMany({
+      where: { schoolId, grade: oldGrade },
+    });
+    for (const s of sections) {
+      const newCode = `${newGrade.replace(/\s+/g, '')}-${s.section}`;
+      await db.classSection.update({
+        where: { id: s.id },
+        data: { grade: newGrade, code: newCode },
+      });
+    }
+
+    // 2. Update Schedule rows
+    const scheduleUpdate = await db.schedule.updateMany({
+      where: { schoolId, grade: oldGrade },
+      data: { grade: newGrade },
+    });
+
+    // 3. Update GradeSubjectConfig rows
+    const subjectConfigUpdate = await db.gradeSubjectConfig.updateMany({
+      where: { schoolId, grade: oldGrade },
+      data: { grade: newGrade },
+    });
+
+    // 4. Update Substitution rows
+    const substitutionUpdate = await db.substitution.updateMany({
+      where: { schoolId, grade: oldGrade },
+      data: { grade: newGrade },
+    });
+
+    // 5. Update Teacher grades JSON
+    const teachers = await db.teacher.findMany({
+      where: { schoolId },
+      select: { id: true, grades: true },
+    });
+    let teacherUpdatedCount = 0;
+    for (const t of teachers) {
+      const gList = readList(t.grades);
+      if (gList.includes(oldGrade)) {
+        const updatedList = Array.from(new Set(gList.map((g) => (g === oldGrade ? newGrade : g))));
+        await db.teacher.update({
+          where: { id: t.id },
+          data: { grades: JSON.stringify(updatedList) },
+        });
+        teacherUpdatedCount++;
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Grade renamed from "${oldGrade}" to "${newGrade}" successfully.`,
+      oldGrade,
+      newGrade,
+      updatedSections: sections.length,
+      updatedSchedules: scheduleUpdate.count,
+      updatedSubjectConfigs: subjectConfigUpdate.count,
+      updatedSubstitutions: substitutionUpdate.count,
+      updatedTeachers: teacherUpdatedCount,
+    });
+  } catch (error) {
+    console.error('Error renaming grade:', error);
+    return NextResponse.json({ error: 'Failed to rename grade: ' + String(error) }, { status: 500 });
+  }
+}
+
+/**
+ * Delete an entire grade (with all its sections & schedules) or a single section.
  */
 export async function DELETE(request: Request) {
   const denied = requireCapability(request, 'school.settings.write');
@@ -231,18 +338,76 @@ export async function DELETE(request: Request) {
     const { searchParams } = new URL(request.url);
     let grade = searchParams.get('grade') || '';
     let section = searchParams.get('section') || '';
+    let deleteEntireGrade =
+      searchParams.get('deleteEntireGrade') === 'true' || searchParams.get('entireGrade') === 'true';
 
-    if (!grade || !section) {
+    if (!grade) {
       const body = await request.json().catch(() => ({}));
       grade = grade || (body.grade || '');
       section = section || (body.section || '');
+      if (body.deleteEntireGrade || body.entireGrade) {
+        deleteEntireGrade = true;
+      }
     }
 
     grade = grade.trim();
-    section = section.replace(/^SECTION\s*/i, '').trim().toUpperCase();
+    if (!grade) {
+      return NextResponse.json({ error: 'Grade name is required to delete.' }, { status: 400 });
+    }
 
-    if (!grade || !section) {
-      return NextResponse.json({ error: 'Grade and Section are required to delete.' }, { status: 400 });
+    // If deleting the entire grade
+    if (deleteEntireGrade || section === '*' || !section) {
+      // 1. Delete ClassSection records
+      const csDeleted = await db.classSection.deleteMany({
+        where: { schoolId, grade },
+      });
+
+      // 2. Delete Schedule records
+      const schedulesDeleted = await db.schedule.deleteMany({
+        where: { schoolId, grade },
+      });
+
+      // 3. Delete GradeSubjectConfig records
+      const configsDeleted = await db.gradeSubjectConfig.deleteMany({
+        where: { schoolId, grade },
+      });
+
+      // 4. Delete Substitution records
+      const substitutionsDeleted = await db.substitution.deleteMany({
+        where: { schoolId, grade },
+      });
+
+      // 5. Remove grade from Teacher.grades
+      const teachers = await db.teacher.findMany({
+        where: { schoolId },
+        select: { id: true, grades: true },
+      });
+      for (const t of teachers) {
+        const gList = readList(t.grades);
+        if (gList.includes(grade)) {
+          const updatedList = gList.filter((g) => g !== grade);
+          await db.teacher.update({
+            where: { id: t.id },
+            data: { grades: JSON.stringify(updatedList) },
+          });
+        }
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Grade "${grade}" and all associated sections and schedules were deleted successfully.`,
+        grade,
+        deletedSections: csDeleted.count,
+        deletedSchedules: schedulesDeleted.count,
+        deletedConfigs: configsDeleted.count,
+        deletedSubstitutions: substitutionsDeleted.count,
+      });
+    }
+
+    // Otherwise, single section deletion
+    section = section.replace(/^SECTION\s*/i, '').trim().toUpperCase();
+    if (!section) {
+      return NextResponse.json({ error: 'Section name is required to delete single section.' }, { status: 400 });
     }
 
     // 1. Delete matching classSection records
@@ -264,8 +429,8 @@ export async function DELETE(request: Request) {
       deletedSections: csDeleted.count,
     });
   } catch (error) {
-    console.error('Error deleting section:', error);
-    return NextResponse.json({ error: 'Failed to delete section: ' + String(error) }, { status: 500 });
+    console.error('Error deleting section/grade:', error);
+    return NextResponse.json({ error: 'Failed to delete: ' + String(error) }, { status: 500 });
   }
 }
 
