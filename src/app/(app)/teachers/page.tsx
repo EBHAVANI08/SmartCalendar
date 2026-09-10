@@ -196,6 +196,7 @@ export default function TeachersPage() {
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [bulkUploading, setBulkUploading] = useState(false);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
 
   // Fetch School Setup Curriculum (Subjects, Grades, Sections)
   const fetchSchoolSetupData = useCallback(async () => {
@@ -784,7 +785,10 @@ export default function TeachersPage() {
         }),
       });
       if (r.ok) {
-        toast({ title: 'Faculty Added', description: `${form.name} has been added to the faculty directory.` });
+        toast({
+          title: 'Faculty Added',
+          description: `${form.name} added. A password setup email has been dispatched to ${form.email}.`,
+        });
         setAddOpen(false);
         setForm({
           name: '',
@@ -1119,7 +1123,7 @@ export default function TeachersPage() {
       });
       const d = await r.json();
       if (r.ok && d.success) {
-        toast({ title: 'Faculty Bulk Upload Complete', description: d.message || 'Faculty list created in directory.' });
+        toast({ title: 'Faculty Bulk Upload Complete', description: d.message || 'Faculty list created & password setup emails dispatched.' });
         setBulkOpen(false);
         setBulkFile(null);
         fetchTeachers();
@@ -1137,6 +1141,39 @@ export default function TeachersPage() {
       refreshCounts();
     } finally {
       setBulkUploading(false);
+    }
+  };
+
+  const handleSendSetupEmail = async (teacher: Teacher, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSendingEmailId(teacher.id);
+    try {
+      const res = await fetch('/api/teachers/send-setup-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ teacherId: teacher.id }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({
+          title: 'Password Setup Email Sent',
+          description: data.message || `Invitation email sent to ${teacher.email}.`,
+        });
+      } else {
+        toast({
+          title: 'Delivery Notice',
+          description: data.error || 'Could not send setup email.',
+          variant: 'destructive',
+        });
+      }
+    } catch {
+      toast({
+        title: 'Error',
+        description: 'Failed to send setup email.',
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingEmailId(null);
     }
   };
 
@@ -1763,21 +1800,33 @@ export default function TeachersPage() {
                       </div>
 
                       {/* Principal Quick Actions */}
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5" onClick={(e) => e.stopPropagation()}>
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={(e) => handleOpenEdit(teacher, e)}
-                          className="h-7 px-2.5 text-[11px] font-bold border-slate-200 text-slate-700 hover:text-blue-700 hover:border-blue-300 hover:bg-blue-50 flex-1"
+                          className="h-7 px-2 text-[11px] font-bold border-slate-200 text-slate-700 hover:text-blue-700 hover:border-blue-300 hover:bg-blue-50 flex-1"
                         >
-                          <Edit3 className="w-3 h-3 mr-1 text-blue-600" /> Edit Info
+                          <Edit3 className="w-3 h-3 mr-1 text-blue-600" /> Edit
+                        </Button>
+
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          title={`Send password setup email to ${teacher.email}`}
+                          disabled={sendingEmailId === teacher.id}
+                          onClick={(e) => handleSendSetupEmail(teacher, e)}
+                          className="h-7 px-2 text-[11px] font-bold border-indigo-200 bg-indigo-50/60 text-indigo-800 hover:bg-indigo-100 hover:border-indigo-300 shrink-0"
+                        >
+                          <Mail className="w-3 h-3 mr-1 text-indigo-600" />
+                          {sendingEmailId === teacher.id ? 'Sending…' : 'Invite'}
                         </Button>
 
                         <Button
                           size="sm"
                           variant="outline"
                           onClick={(e) => handleToggleStatus(teacher, e)}
-                          className={`h-7 px-2.5 text-[11px] font-bold border flex-1 ${
+                          className={`h-7 px-2 text-[11px] font-bold border flex-1 ${
                             isInactive
                               ? 'border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                               : 'border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 hover:border-rose-300'
@@ -2523,15 +2572,31 @@ export default function TeachersPage() {
             </div>
           </div>
 
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+          <DialogFooter className="gap-2 sm:justify-between items-center">
             <Button
-              onClick={handleSaveEdit}
-              disabled={saving}
-              className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white font-bold"
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={sendingEmailId === editForm.id}
+              onClick={() => {
+                const cur = teachers.find((t) => t.id === editForm.id);
+                if (cur) handleSendSetupEmail(cur);
+              }}
+              className="text-xs font-bold border-indigo-200 bg-indigo-50/50 text-indigo-700 hover:bg-indigo-100"
             >
-              {saving ? 'Saving...' : 'Save Changes'}
+              <Mail className="w-3.5 h-3.5 mr-1.5 text-indigo-600" />
+              {sendingEmailId === editForm.id ? 'Sending Link...' : 'Resend Password Setup Email'}
             </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+              <Button
+                onClick={handleSaveEdit}
+                disabled={saving}
+                className="bg-gradient-to-r from-blue-700 via-indigo-800 to-slate-900 text-white font-bold"
+              >
+                {saving ? 'Saving...' : 'Save Changes'}
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2712,7 +2777,7 @@ export default function TeachersPage() {
           </DialogHeader>
           <div className="space-y-4 py-2">
             <p className="text-xs text-slate-500 leading-relaxed">
-              Upload an Excel (`.xlsx`, `.csv`) or text document with teacher Name, Email, Subject, and Grades to populate the Faculty Directory.
+              Upload an Excel (`.xlsx`, `.csv`) file with Teacher Name, Email, Subjects, Grades, and Sections to populate the Faculty Directory with subject-wise mappings.
             </p>
 
             <div className="space-y-3">
@@ -2748,7 +2813,7 @@ export default function TeachersPage() {
                   ) : (
                     <div>
                       <p className="text-xs font-bold text-blue-950">Click to select file or drag & drop</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Supports CSV/Excel with Name, Email, Subject</p>
+                      <p className="text-[11px] text-slate-500 mt-0.5">Supports CSV/Excel with Name, Email, Subjects, Grades & Sections</p>
                     </div>
                   )}
                 </label>

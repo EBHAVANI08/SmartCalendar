@@ -12,6 +12,7 @@ import {
 import { NextResponse } from 'next/server';
 import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 import { requireCapability } from '@/lib/authz';
+import { sendTeacherPasswordSetupEmail } from '@/lib/mailer';
 
 export async function GET(request: Request) {
   const denied = requireCapability(request, 'faculty.read');
@@ -131,7 +132,34 @@ export async function POST(request: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, teacher });
+    // Automatically send password setup email to the teacher
+    const school = await db.school.findUnique({
+      where: { id: schoolId },
+      select: { name: true },
+    });
+
+    const origin = new URL(request.url).origin;
+    let emailResult: any = null;
+    if (record.email && !record.email.endsWith('@faculty.local')) {
+      emailResult = await sendTeacherPasswordSetupEmail({
+        teacherId: teacher.id,
+        teacherName: teacher.name,
+        teacherEmail: teacher.email,
+        schoolName: school?.name || 'School',
+        subjects: record.subjects,
+        requestOrigin: origin,
+      }).catch((err) => {
+        console.error('Failed to send setup email on teacher create:', err);
+        return null;
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      teacher,
+      emailSent: Boolean(emailResult?.success),
+      setupUrl: emailResult?.setupUrl,
+    });
   } catch (error) {
     console.error('Error creating teacher:', error);
     return NextResponse.json({ error: 'Failed to create teacher' }, { status: 500 });

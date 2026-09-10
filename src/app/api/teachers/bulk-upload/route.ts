@@ -16,6 +16,7 @@ import {
 import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { requireCapability } from '@/lib/authz';
+import { sendTeacherPasswordSetupEmail } from '@/lib/mailer';
 
 /**
  * Faculty bulk import.
@@ -295,6 +296,13 @@ export async function POST(request: Request) {
     let created = 0;
     let updated = 0;
 
+    const school = await db.school.findUnique({
+      where: { id: schoolId },
+      select: { name: true },
+    });
+    const schoolName = school?.name || 'School';
+    const origin = new URL(request.url).origin;
+
     for (const item of toCreate) {
       const { record } = item;
       // A login email is required by the schema; derive a stable one only when
@@ -303,7 +311,7 @@ export async function POST(request: Request) {
         record.email ||
         `${normalizeName(record.name).replace(/\s+/g, '.')}.${Date.now().toString(36)}@faculty.local`;
 
-      await db.teacher.create({
+      const newTeacher = await db.teacher.create({
         data: {
           schoolId,
           name: record.name,
@@ -318,6 +326,20 @@ export async function POST(request: Request) {
         },
       });
       created++;
+
+      // Automatically dispatch password setup email for real teacher emails
+      if (record.email && !record.email.endsWith('@faculty.local')) {
+        sendTeacherPasswordSetupEmail({
+          teacherId: newTeacher.id,
+          teacherName: newTeacher.name,
+          teacherEmail: newTeacher.email,
+          schoolName,
+          subjects: record.subjects,
+          requestOrigin: origin,
+        }).catch((err) => {
+          console.error(`Failed to send setup email for ${record.name}:`, err);
+        });
+      }
     }
 
     for (const item of toUpdate) {

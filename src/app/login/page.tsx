@@ -7,14 +7,13 @@ import Image from 'next/image';
 import {
   Brain, RefreshCw, ShieldCheck, BookOpen,
   Mail, Lock, Eye, EyeOff, CheckCircle2, AlertCircle,
-  ChevronRight, CalendarDays, ArrowRight
+  ChevronRight, CalendarDays, ArrowRight, KeyRound
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 
 export default function LoginPage() {
@@ -27,9 +26,6 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [forgotOpen, setForgotOpen] = useState(false);
-  const [forgotEmail, setForgotEmail] = useState('');
-  const [forgotSubmitted, setForgotSubmitted] = useState(false);
   // Load saved credentials if any
   useEffect(() => {
     try {
@@ -273,13 +269,13 @@ export default function LoginPage() {
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label className="text-slate-700 text-xs font-semibold">Password</Label>
-                    <button
-                      type="button"
-                      onClick={() => { setForgotEmail(email); setForgotOpen(true); }}
-                      className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline transition-colors font-medium"
+                    <Link
+                      href={email ? `/reset-password?email=${encodeURIComponent(email)}` : '/reset-password'}
+                      className="text-[11px] text-blue-600 hover:text-blue-700 hover:underline transition-colors font-medium flex items-center gap-1"
                     >
+                      <KeyRound className="w-3 h-3 inline text-blue-500" />
                       Forgot password?
-                    </button>
+                    </Link>
                   </div>
                   <div className="relative">
                     <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
@@ -349,9 +345,16 @@ export default function LoginPage() {
           </Card>
 
           {/* Footer Direct Links */}
-          <div className="flex items-center justify-center gap-4 text-xs text-slate-500">
-            <Link href="/" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 font-semibold transition-colors py-1.5 px-3 rounded-xl bg-white border border-slate-200 shadow-xs">
-              <span>Back to Home Website</span>
+          <div className="flex items-center justify-center gap-3 text-xs text-slate-500">
+            <Link
+              href={email ? `/reset-password?email=${encodeURIComponent(email)}` : '/reset-password'}
+              className="inline-flex items-center gap-1.5 text-slate-600 hover:text-blue-600 font-medium transition-colors py-1.5 px-3 rounded-xl bg-white border border-slate-200 shadow-xs"
+            >
+              <KeyRound className="w-3.5 h-3.5 text-blue-600" />
+              <span>Reset Password (via OTP)</span>
+            </Link>
+            <Link href="/" className="inline-flex items-center gap-1 text-slate-600 hover:text-slate-900 font-medium transition-colors py-1.5 px-3 rounded-xl bg-white border border-slate-200 shadow-xs">
+              <span>Back to Home</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </Link>
           </div>
@@ -361,71 +364,6 @@ export default function LoginPage() {
           </p>
         </div>
       </div>
-
-      {/* ── Forgot Password Dialog Modal ── */}
-      <Dialog open={forgotOpen} onOpenChange={setForgotOpen}>
-        <DialogContent className="max-w-md bg-white border-slate-200 text-slate-900 shadow-2xl">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900">
-              <Lock className="w-5 h-5 text-blue-600" />
-              Reset Account Access
-            </DialogTitle>
-            <DialogDescription className="text-slate-500 text-xs">
-              Enter your registered work email to receive password reset instructions or reach your school tenant administrator.
-            </DialogDescription>
-          </DialogHeader>
-          
-          {forgotSubmitted ? (
-            <div className="py-6 text-center space-y-3">
-              <div className="w-12 h-12 rounded-full bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-6 h-6" />
-              </div>
-              <p className="text-sm font-bold text-slate-900">Reset Request Logged</p>
-              <p className="text-xs text-slate-500 max-w-xs mx-auto">
-                If <span className="text-blue-600 font-semibold">{forgotEmail}</span> matches a registered school or faculty account, instructions have been dispatched.
-              </p>
-              <Button
-                variant="outline"
-                className="mt-2 text-xs border-slate-300 bg-white hover:bg-slate-50 text-slate-800"
-                onClick={() => { setForgotOpen(false); setForgotSubmitted(false); }}
-              >
-                Return to Sign In
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-4 py-2">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-slate-700 font-semibold">Registered Email Address</Label>
-                <Input
-                  type="email"
-                  value={forgotEmail}
-                  onChange={(e) => setForgotEmail(e.target.value)}
-                  placeholder="name@school.edu"
-                  className="bg-white border-slate-300 text-slate-900 h-10 text-sm focus:border-blue-600"
-                  required
-                />
-              </div>
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] text-slate-600 space-y-1">
-                <p className="font-semibold text-slate-800">💡 Note for Faculty:</p>
-                <p>If you are a teacher, your School Administrator can also reset your credentials directly from the <strong>Faculty Directory</strong>.</p>
-              </div>
-              <DialogFooter className="flex gap-2">
-                <Button variant="outline" className="border-slate-300 text-slate-700 hover:bg-slate-50 text-xs" onClick={() => setForgotOpen(false)}>
-                  Cancel
-                </Button>
-                <Button
-                  className="bg-gradient-to-r from-blue-600 via-indigo-700 to-slate-900 hover:from-blue-700 hover:to-slate-950 text-white text-xs font-bold shadow-md shadow-blue-500/20"
-                  onClick={() => {
-                    if (forgotEmail) setForgotSubmitted(true);
-                  }}
-                >
-                  Send Reset Link
-                </Button>
-              </DialogFooter>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

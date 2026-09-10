@@ -104,16 +104,16 @@ export function createTimetableTemplate(): Buffer {
 }
 
 export function createTeacherAllotmentTemplate(format: 'xlsx' | 'csv' = 'xlsx'): Buffer | string {
-  const teacherHeaders = ['Employee ID', 'Teacher Name', 'Email', 'Primary Subject', 'Eligible Grades', 'Phone', 'Max Daily Periods'];
+  const teacherHeaders = ['Employee ID', 'Teacher Name', 'Email', 'Phone', 'Subjects', 'Grades', 'Sections'];
   const teacherSampleData = [
-    ['EMP001', 'Mr. Rajesh Sharma', 'rajesh.sharma@school.edu', 'Mathematics', 'Grade 1, Grade 2, Grade 3, Grade 4, Grade 5', '+91 98765 43210', 6],
-    ['EMP002', 'Ms. Priya Verma', 'priya.verma@school.edu', 'English', 'Grade 1, Grade 2, Grade 3, Grade 4, Grade 5', '+91 98765 43211', 6],
-    ['EMP003', 'Dr. Ananya Sen', 'ananya.sen@school.edu', 'Science', 'Grade 6, Grade 7, Grade 8', '+91 98765 43212', 6],
-    ['EMP004', 'Mr. Vikram Rao', 'vikram.rao@school.edu', 'Social Science', 'Grade 6, Grade 7, Grade 8', '+91 98765 43213', 6],
-    ['EMP005', 'Ms. Neha Gupta', 'neha.gupta@school.edu', 'Hindi', 'Grade 9, Grade 10, Grade 11, Grade 12', '+91 98765 43214', 6],
-    ['EMP006', 'Mr. Amit Patel', 'amit.patel@school.edu', 'Physical Education', 'Grade 1 to Grade 12', '+91 98765 43215', 6],
-    ['EMP007', 'Mr. Suresh Kumar', 'suresh.kumar@school.edu', 'Computer Science', 'Grade 6 to Grade 12', '+91 98765 43216', 6],
-    ['EMP008', 'Ms. Meenakshi Iyer', 'meenakshi.iyer@school.edu', 'Art & Music', 'Grade 1 to Grade 8', '+91 98765 43217', 6],
+    ['EMP001', 'Mr. Rajesh Sharma', 'rajesh.sharma@school.edu', '+91 98765 43210', 'Mathematics', 'Grade 9, Grade 10', 'A, B'],
+    ['EMP002', 'Ms. Priya Verma', 'priya.verma@school.edu', '+91 98765 43211', 'English, Social Studies', 'Grade 6, Grade 7, Grade 8', 'English: Grade 6 (A, B); Social Studies: Grade 7 (A), Grade 8 (B)'],
+    ['EMP003', 'Dr. Ananya Sen', 'ananya.sen@school.edu', '+91 98765 43212', 'Science, Biology', 'Grade 9, Grade 10, Grade 11', 'Science: Grade 9 (A, B); Biology: Grade 11 (A)'],
+    ['EMP004', 'Mr. Vikram Rao', 'vikram.rao@school.edu', '+91 98765 43213', 'Physics, Chemistry', 'Grade 11, Grade 12', 'Physics: Grade 11 (A, B); Chemistry: Grade 12 (A)'],
+    ['EMP005', 'Ms. Neha Gupta', 'neha.gupta@school.edu', '+91 98765 43214', 'Hindi', 'Grade 1, Grade 2, Grade 3', 'Grade 1 (A, B); Grade 2 (A); Grade 3 (A, B)'],
+    ['EMP006', 'Mr. Amit Patel', 'amit.patel@school.edu', '+91 98765 43215', 'Physical Education', 'Grade 1 to Grade 12', 'A, B'],
+    ['EMP007', 'Mr. Suresh Kumar', 'suresh.kumar@school.edu', '+91 98765 43216', 'Computer Science, Artificial Intelligence', 'Grade 8, Grade 9, Grade 10', 'Computer Science: Grade 8 (A), Grade 9 (A, B); Artificial Intelligence: Grade 10 (A)'],
+    ['EMP008', 'Ms. Meenakshi Iyer', 'meenakshi.iyer@school.edu', '+91 98765 43217', 'Art & Music', 'Grade 1 to Grade 5', 'A, B'],
   ];
 
   if (format === 'csv') {
@@ -130,13 +130,13 @@ export function createTeacherAllotmentTemplate(format: 'xlsx' | 'csv' = 'xlsx'):
   sheet['!cols'] = [
     { wch: 15 },
     { wch: 24 },
+    { wch: 32 },
+    { wch: 18 },
+    { wch: 35 },
     { wch: 30 },
-    { wch: 22 },
-    { wch: 48 },
-    { wch: 18 },
-    { wch: 18 },
+    { wch: 65 },
   ];
-  XLSX.utils.book_append_sheet(workbook, sheet, 'Teacher Allotments');
+  XLSX.utils.book_append_sheet(workbook, sheet, 'Teacher Faculty Directory');
   return XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
 }
 

@@ -101,6 +101,25 @@ export function normalizeGrade(value: unknown): string | null {
   return /^[A-Za-z][A-Za-z\s.-]{1,24}$/.test(cleaned) ? cleaned : null;
 }
 
+/** Expand grade ranges like "Grade 1 to Grade 5", "Grade 6 to 12", "1-5" into individual grades. */
+export function expandGradeRange(value: unknown): string[] | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const match = raw.match(/^(?:grade|class|std\.?|standard)?\s*(\d{1,2})\s*(?:to|-)\s*(?:grade|class|std\.?|standard)?\s*(\d{1,2})$/i);
+  if (match) {
+    const start = parseInt(match[1], 10);
+    const end = parseInt(match[2], 10);
+    if (start <= end && start >= 1 && end <= 12) {
+      const grades: string[] = [];
+      for (let i = start; i <= end; i++) {
+        grades.push(`Grade ${i}`);
+      }
+      return grades;
+    }
+  }
+  return null;
+}
+
 /** Identity key for "is this the same person?" within one school. */
 export function normalizeName(value: unknown): string {
   return String(value ?? '')
@@ -125,6 +144,113 @@ export interface ValidationResult {
   ok: boolean;
   record?: FacultyRecord;
   issues: RowIssue[];
+}
+
+/**
+ * Parse any teacher sections input string (human formatted, bracketed, colon separated, or raw list)
+ * into a normalized list of section strings suitable for storage and parsing.
+ *
+ * Supported formats:
+ * - Simple: "A, B" -> ["A", "B"]
+ * - Grade-wise: "Grade 1 (A, B); Grade 2 (A)" or "Grade 1: A, B; Grade 2: A" -> ["Grade 1:A", "Grade 1:B", "Grade 2:A"]
+ * - Subject-wise: "Mathematics: Grade 9 (A, B); Science: Grade 10 (A, C)" -> ["Mathematics::Grade 9:A", "Mathematics::Grade 9:B", "Science::Grade 10:A", "Science::Grade 10:C"]
+ * - Serialized: "Mathematics::Grade 9:A, Mathematics::Grade 9:B" -> unchanged
+ */
+export function parseSectionsInput(raw: unknown, subjects: string[] = [], fallbackGrades: string[] = []): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) return raw.map((s) => String(s).trim()).filter(Boolean);
+  const str = String(raw).trim();
+  if (!str) return [];
+
+  // If JSON array string
+  if (str.startsWith('[') && str.endsWith(']')) {
+    try {
+      const arr = JSON.parse(str);
+      if (Array.isArray(arr)) {
+        return arr.map((s) => String(s).trim()).filter(Boolean);
+      }
+    } catch {}
+  }
+
+  // If already serialized with '::'
+  if (str.includes('::')) {
+    return str
+      .split(/[;,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  const result: string[] = [];
+  const cleanSubjects = subjects && subjects.length > 0 ? subjects : ['General'];
+  const semicolonBlocks = str.split(/[;\n]+/).map((s) => s.trim()).filter(Boolean);
+
+  let parsedAnyStructured = false;
+
+  for (const block of semicolonBlocks) {
+    let targetSubj: string | null = null;
+    let content = block;
+
+    for (const subj of cleanSubjects) {
+      const escaped = subj.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const prefixRegex = new RegExp('^' + escaped + '\\s*:\\s*', 'i');
+      if (prefixRegex.test(content)) {
+        targetSubj = subj;
+        content = content.replace(prefixRegex, '').trim();
+        break;
+      }
+    }
+
+    const gradeBracketRegex = /(?:(Grade\s*\d{1,2}|Class\s*\d{1,2}|[A-Za-z0-9\s.-]+?)\s*\(([^)]+)\))/gi;
+    let m: RegExpExecArray | null;
+    let foundInBlock = false;
+    while ((m = gradeBracketRegex.exec(content)) !== null) {
+      foundInBlock = true;
+      parsedAnyStructured = true;
+      const rawG = m[1].trim();
+      const gNorm = normalizeGrade(rawG) || rawG.replace(/^(grade|class|std\.?|standard)\s*/i, 'Grade ');
+      const secs = m[2]
+        .split(/[;,]+/)
+        .map((s) => s.trim().toUpperCase().replace(/^SECTION\s*/i, ''))
+        .filter(Boolean);
+      for (const sec of secs) {
+        if (targetSubj) {
+          result.push(`${targetSubj}::${gNorm}:${sec}`);
+        } else {
+          result.push(`${gNorm}:${sec}`);
+        }
+      }
+    }
+    if (foundInBlock) {
+      continue;
+    }
+
+    const colonMatch = content.match(/^(Grade\s*\d{1,2}|Class\s*\d{1,2})\s*:\s*([A-Za-z0-9,\s]+)$/i);
+    if (colonMatch) {
+      parsedAnyStructured = true;
+      const gNorm = normalizeGrade(colonMatch[1]) || colonMatch[1].trim().replace(/^(grade|class|std\.?|standard)\s*/i, 'Grade ');
+      const secs = colonMatch[2]
+        .split(/[;,]+/)
+        .map((s) => s.trim().toUpperCase().replace(/^SECTION\s*/i, ''))
+        .filter(Boolean);
+      for (const sec of secs) {
+        if (targetSubj) {
+          result.push(`${targetSubj}::${gNorm}:${sec}`);
+        } else {
+          result.push(`${gNorm}:${sec}`);
+        }
+      }
+      continue;
+    }
+  }
+
+  if (!parsedAnyStructured) {
+    return str
+      .split(/[;,]+/)
+      .map((s) => s.trim().toUpperCase().replace(/^SECTION\s*/i, ''))
+      .filter(Boolean);
+  }
+
+  return result;
 }
 
 /**
@@ -210,12 +336,17 @@ export function validateFacultyRow(
   // -- Grades --
   const grades: string[] = [];
   for (const candidate of parseList(raw.grades)) {
+    const range = expandGradeRange(candidate);
+    if (range) {
+      grades.push(...range);
+      continue;
+    }
     const normalized = normalizeGrade(candidate);
     if (normalized) grades.push(normalized);
     else push('grades', 'GRADE_INVALID', `"${candidate}" is not a recognisable grade.`, candidate);
   }
 
-  const sections = parseList(raw.sections);
+  const sections = parseSectionsInput(raw.sections, subjects, grades);
 
   if (issues.length) return { ok: false, issues };
 
@@ -227,9 +358,9 @@ export function validateFacultyRow(
       email,
       employeeId,
       phone: String(raw.phone ?? '').trim() || null,
-      subjects: [...new Set(subjects)],
-      grades: [...new Set(grades)],
-      sections: [...new Set(sections)],
+      subjects: Array.from(new Set(subjects)),
+      grades: Array.from(new Set(grades)),
+      sections: Array.from(new Set(sections)),
     },
   };
 }
@@ -467,7 +598,7 @@ export function parseSubjectGradeSectionsMap(
     return result;
   }
 
-  const list = readList(rawSections);
+  const list = parseSectionsInput(rawSections, subjects, fallbackGrades);
   let hasAnySubjectScoped = false;
   let hasAnyGradeScoped = false;
 

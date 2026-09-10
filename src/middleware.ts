@@ -27,6 +27,7 @@ const PUBLIC_API_ROUTES: { path: string; methods: string[] }[] = [
   { path: '/api/health', methods: ['GET'] },
   { path: '/api/website', methods: ['GET'] },
   { path: '/api/superadmin/login', methods: ['POST'] },
+  { path: '/api/timetable/import/template', methods: ['GET'] },
 ];
 
 /** Machine-to-machine callers that authenticate inside the handler itself. */
