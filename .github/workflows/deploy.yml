@@ -16,17 +16,18 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || '22' }}
+          port: ${{ secrets.VPS_PORT || 22 }}
           script: |
             set -e
             echo "🚀 Starting automated deployment on VPS..."
             cd /var/www/smart-calendar
             
             echo "📥 Pulling latest changes from main..."
-            git pull origin main
+            git fetch origin main
+            git reset --hard origin/main
             
             echo "📦 Installing dependencies..."
-            npm install
+            npm install --legacy-peer-deps
             
             echo "🔄 Generating Prisma client..."
             npx prisma generate
@@ -35,6 +36,6 @@ jobs:
             npm run build
             
             echo "♻️ Reloading PM2 process..."
-            pm2 reload smart-calendar || pm2 restart smart-calendar
+            pm2 reload smart-calendar || pm2 restart smart-calendar || pm2 start ecosystem.config.cjs
             
             echo "✅ Deployment completed successfully!"
