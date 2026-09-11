@@ -198,11 +198,11 @@ export async function sendTeacherPasswordSetupEmail(options: SendSetupEmailOptio
     };
   }
 
-  // Derive origin
+  // Derive origin — APP_URL always wins so emails never contain localhost
   const baseUrl =
-    requestOrigin ||
     process.env.APP_URL ||
     process.env.NEXTAUTH_URL ||
+    requestOrigin ||
     (process.env.NODE_ENV === 'development' ? 'http://localhost:3005' : 'https://smartcalender.learnx.school');
 
   const token = await generatePasswordSetupToken(teacherId, teacherEmail);
