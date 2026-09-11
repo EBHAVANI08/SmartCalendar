@@ -61,6 +61,32 @@ const MAX_ALLOWED_WEEKLY_PERIODS = 24;
 const ALL_STANDARD_GRADES = Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`);
 const DEFAULT_SECTIONS = ['A', 'B', 'C', 'D'];
 
+function TabButton({
+  id,
+  label,
+  active,
+  onClick,
+}: {
+  id: 'directory' | 'duplicates' | 'issues';
+  label: string;
+  active: boolean;
+  onClick: (id: 'directory' | 'duplicates' | 'issues') => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onClick(id)}
+      className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
+        active
+          ? 'bg-blue-600 text-white shadow-sm'
+          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
 const POPULAR_CURRICULUM_SUBJECTS = [
   'Mathematics',
   'Science',
@@ -692,6 +718,30 @@ export default function TeachersPage() {
     }
   }, []);
 
+  const refreshCounts = useCallback(async () => {
+    try {
+      const [dedupRes, leaveRes] = await Promise.all([
+        fetch('/api/teachers/dedup'),
+        fetch('/api/leaves?status=approved&limit=200'),
+      ]);
+
+      if (dedupRes.ok) {
+        const d = await dedupRes.json().catch(() => null);
+        setDupCount(Array.isArray(d?.groups) ? d.groups.length : 0);
+        setIssueCount(Array.isArray(d?.corrupt) ? d.corrupt.length : 0);
+      }
+
+      if (leaveRes.ok) {
+        const l = await leaveRes.json().catch(() => null);
+        const today = new Date().toISOString().slice(0, 10);
+        const ids = (l?.leaves ?? [])
+          .filter((x: { startDate: string; endDate: string }) => x.startDate <= today && x.endDate >= today)
+          .map((x: { teacherId: string }) => x.teacherId);
+        setOnLeaveToday([...new Set<string>(ids)]);
+      }
+    } catch {}
+  }, []);
+
   useEffect(() => {
     fetchTeachers();
     refreshCounts();
@@ -702,7 +752,7 @@ export default function TeachersPage() {
         setSchoolName(parsed.schoolName || parsed.user?.schoolName || '');
       }
     } catch {}
-  }, [fetchTeachers]);
+  }, [fetchTeachers, refreshCounts]);
 
   // Main Directory Filtering logic
   useEffect(() => {
@@ -896,7 +946,8 @@ export default function TeachersPage() {
         fetchTeachers();
         refreshCounts();
       } else {
-        toast({ title: 'Update Failed', description: 'Could not save profile changes.', variant: 'destructive' });
+        const d = await r.json().catch(() => ({}));
+        toast({ title: 'Update Failed', description: d.error || 'Could not save profile changes.', variant: 'destructive' });
       }
     } catch {
       toast({ title: 'Faculty Profile Updated', description: `Saved changes for ${editForm.name}.` });
@@ -980,29 +1031,6 @@ export default function TeachersPage() {
     }
   };
 
-  const refreshCounts = useCallback(async () => {
-    try {
-      const [dedupRes, leaveRes] = await Promise.all([
-        fetch('/api/teachers/dedup'),
-        fetch('/api/leaves?status=approved&limit=200'),
-      ]);
-
-      if (dedupRes.ok) {
-        const d = await dedupRes.json().catch(() => null);
-        setDupCount(Array.isArray(d?.groups) ? d.groups.length : 0);
-        setIssueCount(Array.isArray(d?.corrupt) ? d.corrupt.length : 0);
-      }
-
-      if (leaveRes.ok) {
-        const l = await leaveRes.json().catch(() => null);
-        const today = new Date().toISOString().slice(0, 10);
-        const ids = (l?.leaves ?? [])
-          .filter((x: { startDate: string; endDate: string }) => x.startDate <= today && x.endDate >= today)
-          .map((x: { teacherId: string }) => x.teacherId);
-        setOnLeaveToday([...new Set<string>(ids)]);
-      }
-    } catch {}
-  }, []);
 
   const toggleSelected = (id: string) =>
     setSelected((prev) => {
@@ -1258,20 +1286,6 @@ export default function TeachersPage() {
     const key = Object.keys(subjectColor).find((k) => subject.toLowerCase().includes(k.toLowerCase()));
     return key ? subjectColor[key] : 'bg-slate-100 text-slate-700 border-slate-200';
   };
-
-  const TabButton = ({ id, label }: { id: 'directory' | 'duplicates' | 'issues'; label: string }) => (
-    <button
-      type="button"
-      onClick={() => setTab(id)}
-      className={`px-4 py-2 text-sm font-semibold rounded-lg transition-colors ${
-        tab === id
-          ? 'bg-blue-600 text-white shadow-sm'
-          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-      }`}
-    >
-      {label}
-    </button>
-  );
 
   // Helper for quick Grade Presets
   const setGradePreset = (
@@ -1556,9 +1570,9 @@ export default function TeachersPage() {
 
       {/* Directory / duplicate review / data issues Tabs */}
       <div className="flex flex-wrap items-center gap-2">
-        <TabButton id="directory" label="Faculty Directory" />
-        <TabButton id="duplicates" label="Review Duplicate Faculty" />
-        <TabButton id="issues" label="Data Issues" />
+        <TabButton id="directory" label="Faculty Directory" active={tab === 'directory'} onClick={setTab} />
+        <TabButton id="duplicates" label="Review Duplicate Faculty" active={tab === 'duplicates'} onClick={setTab} />
+        <TabButton id="issues" label="Data Issues" active={tab === 'issues'} onClick={setTab} />
       </div>
 
       {tab === 'duplicates' && <DedupReview onChanged={fetchTeachers} />}
