@@ -709,7 +709,7 @@ export default function SubjectManagementPage() {
                           </Select>
                         </td>
 
-                        {/* Mapped Teachers */}
+                        {/* Assigned Faculty */}
                         <td className="py-3.5 px-3">
                           <div className="flex items-center gap-2">
                             {s.teachers.length === 0 ? (
@@ -717,7 +717,7 @@ export default function SubjectManagementPage() {
                                 <Ban className="w-3 h-3 mr-1" /> No Faculty
                               </Badge>
                             ) : (
-                              <div className="flex flex-wrap gap-1 max-w-[200px]">
+                              <div className="flex flex-wrap gap-1 max-w-[240px]">
                                 {s.teachers.map((t) => (
                                   <span
                                     key={t.id}
@@ -728,14 +728,6 @@ export default function SubjectManagementPage() {
                                 ))}
                               </div>
                             )}
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              className="h-7 px-2 text-[11px] font-bold text-blue-700 hover:bg-blue-50"
-                              onClick={() => setMapFor(s)}
-                            >
-                              <UserPlus className="w-3 h-3 mr-1" /> Map
-                            </Button>
                           </div>
                         </td>
 
