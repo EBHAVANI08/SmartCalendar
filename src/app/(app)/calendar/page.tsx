@@ -5,7 +5,7 @@ import {
   CalendarDays, Plus, ChevronLeft, ChevronRight,
   Clock, MapPin, Sparkles, Printer, Bookmark,
   Flag, Edit2, Trash2, Loader2, Calendar as CalendarIcon,
-  CheckCircle2, Info, RefreshCw, X
+  CheckCircle2, Info, RefreshCw, X, Copy
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -132,6 +132,9 @@ export default function AcademicCalendarPage() {
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
   ];
+
+  const [syncModalOpen, setSyncModalOpen] = useState(false);
+  const [copiedFeed, setCopiedFeed] = useState(false);
 
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 1, 1));
@@ -472,6 +475,16 @@ export default function AcademicCalendarPage() {
             className="gap-2 text-xs border-[#E2E8F0] text-[#0F2747] bg-white hover:bg-slate-50 font-bold h-9 shadow-xs px-3.5"
           >
             <Printer className="w-4 h-4 text-[#2563EB]" /> Print Calendar
+          </Button>
+
+          {/* Sync to External Calendar */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSyncModalOpen(true)}
+            className="gap-2 text-xs border-emerald-200 text-emerald-800 bg-emerald-50/60 hover:bg-emerald-100 font-bold h-9 shadow-xs px-3.5"
+          >
+            <CalendarIcon className="w-4 h-4 text-emerald-600" /> Sync with Google / Outlook
           </Button>
 
           {/* Add Event */}
@@ -1145,6 +1158,71 @@ export default function AcademicCalendarPage() {
 
           <DialogFooter>
             <Button onClick={() => setInfoModalOpen(false)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Live Calendar Sync Modal ── */}
+      <Dialog open={syncModalOpen} onOpenChange={setSyncModalOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-900 font-bold">
+              <CalendarIcon className="w-5 h-5 text-emerald-600" />
+              Subscribe in Google Calendar, Apple &amp; Outlook
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 py-2 text-xs">
+            <p className="text-slate-600 leading-relaxed">
+              Subscribe to this live RFC 5545 WebCal feed. All published academic timetables, gazetted holidays, and school milestones will sync automatically to your device.
+            </p>
+
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Live iCal Feed URL</span>
+              <div className="flex items-center gap-2">
+                <code className="text-[11px] font-mono bg-white px-2.5 py-1.5 rounded-lg border border-slate-200 text-emerald-800 flex-1 select-all truncate">
+                  {typeof window !== 'undefined' ? `${window.location.origin}/api/calendar/feed/live-ics` : '/api/calendar/feed/live-ics'}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8 text-xs gap-1 font-bold shrink-0"
+                  onClick={() => {
+                    const url = `${window.location.origin}/api/calendar/feed/live-ics`;
+                    navigator.clipboard.writeText(url);
+                    setCopiedFeed(true);
+                    setTimeout(() => setCopiedFeed(false), 2000);
+                    toast({ title: 'Feed URL Copied', description: 'Paste into Google Calendar or Apple Calendar.' });
+                  }}
+                >
+                  {copiedFeed ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedFeed ? 'Copied' : 'Copy'}
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-1 border-t border-slate-100">
+              <p className="font-bold text-slate-800">Quick Subscription Guides:</p>
+              <div className="space-y-1.5 text-[11px] text-slate-600">
+                <p>• <strong>Google Calendar:</strong> Go to Google Calendar &gt; Click <code>+</code> next to <em>Other Calendars</em> &gt; Choose <em>From URL</em> &gt; Paste the link.</p>
+                <p>• <strong>Apple Calendar / iPhone:</strong> Open Calendar &gt; <em>File &gt; New Calendar Subscription</em> &gt; Paste the link.</p>
+                <p>• <strong>Microsoft Outlook:</strong> Select <em>Add Calendar &gt; Subscribe from Web</em> &gt; Paste the link.</p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const icsUrl = typeof window !== 'undefined' ? `${window.location.origin}/api/calendar/feed/live-ics` : '/api/calendar/feed/live-ics';
+                window.open(`https://calendar.google.com/calendar/render?cid=${encodeURIComponent(icsUrl)}`, '_blank');
+              }}
+              className="gap-1.5 text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 font-bold text-xs"
+            >
+              <CalendarIcon className="w-3.5 h-3.5" /> Open in Google Calendar
+            </Button>
+            <Button onClick={() => setSyncModalOpen(false)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

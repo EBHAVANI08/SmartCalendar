@@ -4,6 +4,7 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { affectedPeriodsForLeave, syncSubstitutionsForLeave, type AffectedPeriod } from '@/lib/substitution-service';
 import { requireCapability } from '@/lib/authz';
 import { ownTeacherId } from '@/lib/teacher-scope';
+import { dispatchMessage } from '@/lib/notifications/messaging-service';
 
 /**
  * Leave applications.
@@ -63,6 +64,7 @@ export async function PATCH(req: NextRequest) {
   if (denied) return denied;
 
   try {
+    const schoolId = await getTenantSchoolId(req);
     const body = await req.json();
     const { id, status, approvedBy } = body;
 
@@ -73,6 +75,7 @@ export async function PATCH(req: NextRequest) {
     const updated = await db.leaveApplication.update({
       where: { id },
       data: { status, approvedBy: approvedBy || 'Admin' },
+      include: { teacher: true },
     });
 
     // Approving a leave immediately surfaces the periods that need cover in
@@ -82,10 +85,29 @@ export async function PATCH(req: NextRequest) {
       | { created: number; existing: number; affectedPeriods: number; affected: AffectedPeriod[] }
       | { error: string }
       | null = null;
+      
     if (status === 'approved') {
       try {
         const { created, existing, affected } = await syncSubstitutionsForLeave(id);
         substitutions = { created, existing, affectedPeriods: affected.length, affected };
+
+        // Dispatch notification to teacher
+        if (updated.teacher) {
+          await dispatchMessage({
+            recipientName: updated.teacher.name,
+            recipientPhone: updated.teacher.phone,
+            recipientEmail: updated.teacher.email,
+            teacherId: updated.teacher.id,
+            schoolId: schoolId || updated.teacher.schoolId,
+            channel: 'all',
+            template: 'leave_approved',
+            parameters: {
+              recipientName: updated.teacher.name,
+              startDate: updated.startDate,
+              endDate: updated.endDate,
+            },
+          }).catch((notifyErr) => console.warn('Leave approval notification error:', notifyErr));
+        }
       } catch (err) {
         console.error('[LEAVES] failed to sync substitutions', err);
         substitutions = { error: 'Leave saved, but affected periods could not be generated.' };

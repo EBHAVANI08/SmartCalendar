@@ -9,7 +9,7 @@ import {
   GraduationCap, Award, TrendingUp, MoreVertical, Upload,
   FileSpreadsheet, Sparkles, Printer, CalendarDays, CheckCircle2,
   Power, Check, Ban, Copy, ExternalLink, Flame, Gauge, AlertTriangle,
-  Layers, CheckSquare, Square, RefreshCw, ChevronRight, X
+  Layers, CheckSquare, Square, RefreshCw, ChevronRight, X, Loader2
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -140,9 +140,15 @@ function safeName(name?: string | null): string {
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const PERIOD_NUMS = [1, 2, 3, 4, 5, 6, 7, 8];
 
-const getTeacherScheduleSlot = (teacher: Teacher, day: string, period: number) => {
+const getTeacherScheduleSlot = (teacher: Teacher | null, day: string, period: number) => {
   if (teacher?.schedules && Array.isArray(teacher.schedules) && teacher.schedules.length > 0) {
-    const found = teacher.schedules.find((s) => s.day === day && s.period === period);
+    const targetDay = String(day).trim().toLowerCase();
+    const targetPeriod = Number(period);
+    const found = teacher.schedules.find((s) => {
+      const sDay = String(s.day || '').trim().toLowerCase();
+      const sPeriod = Number(s.period);
+      return sDay === targetDay && sPeriod === targetPeriod;
+    });
     if (found) return found;
   }
   return null;
@@ -169,9 +175,26 @@ export default function TeachersPage() {
   const [editOpen, setEditOpen] = useState(false);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [viewTeacher, setViewTeacher] = useState<Teacher | null>(null);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [overloadModalOpen, setOverloadModalOpen] = useState(false);
   const [overloadSearch, setOverloadSearch] = useState('');
   const [overloadOnlyToggle, setOverloadOnlyToggle] = useState(true);
+
+  // Automatically fetch schedules if viewTeacher is opened and has no populated schedules
+  useEffect(() => {
+    if (viewTeacher?.id && (!viewTeacher.schedules || viewTeacher.schedules.length === 0)) {
+      setLoadingSchedule(true);
+      fetch(`/api/schedules?teacherId=${encodeURIComponent(viewTeacher.id)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (Array.isArray(data) && data.length > 0) {
+            setViewTeacher((prev) => (prev && prev.id === viewTeacher.id ? { ...prev, schedules: data } : prev));
+          }
+        })
+        .catch(() => null)
+        .finally(() => setLoadingSchedule(false));
+    }
+  }, [viewTeacher?.id]);
 
   // Form State using Chips/Multi-Select with Per-Subject Mapping
   const [form, setForm] = useState({
@@ -2930,6 +2953,7 @@ export default function TeachersPage() {
                 <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide flex items-center gap-2">
                   <CalendarDays className="w-4 h-4 text-blue-600" />
                   Assigned Teaching Periods (P1 – P8)
+                  {loadingSchedule && <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600 ml-1" />}
                 </h4>
 
                 <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">

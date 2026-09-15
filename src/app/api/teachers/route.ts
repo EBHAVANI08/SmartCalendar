@@ -45,6 +45,80 @@ export async function GET(request: Request) {
       },
       orderBy: { name: 'asc' },
     });
+
+    // Check if any teachers have empty schedules and enrich them from all schedules or TimetableSlot
+    const teachersNeedingSchedules = teachers.filter((t) => !t.schedules || t.schedules.length === 0);
+    if (teachersNeedingSchedules.length > 0) {
+      const teacherIds = teachersNeedingSchedules.map((t) => t.id);
+      
+      const [allSchedules, allSlots, classes, subjects] = await Promise.all([
+        db.schedule.findMany({
+          where: { schoolId, teacherId: { in: teacherIds } },
+          orderBy: [{ day: 'asc' }, { period: 'asc' }],
+        }),
+        db.timetableSlot.findMany({
+          where: { schoolId, teacherId: { in: teacherIds } },
+          orderBy: [{ dayOfWeek: 'asc' }, { period: 'asc' }],
+        }),
+        db.classSection.findMany({ where: { schoolId } }),
+        db.subjectMaster.findMany({ where: { schoolId } }),
+      ]);
+
+      const classById = new Map(classes.map((c) => [c.id, c]));
+      const subjectById = new Map(subjects.map((s) => [s.id, s.name]));
+      const dayMap: Record<number, string> = {
+        1: 'Monday',
+        2: 'Tuesday',
+        3: 'Wednesday',
+        4: 'Thursday',
+        5: 'Friday',
+        6: 'Saturday',
+        7: 'Sunday',
+      };
+
+      const schedulesByTeacher = new Map<string, any[]>();
+      for (const s of allSchedules) {
+        if (!s.teacherId) continue;
+        if (!schedulesByTeacher.has(s.teacherId)) schedulesByTeacher.set(s.teacherId, []);
+        schedulesByTeacher.get(s.teacherId)!.push(s);
+      }
+
+      const slotsByTeacher = new Map<string, any[]>();
+      for (const slot of allSlots) {
+        if (!slot.teacherId) continue;
+        if (!slotsByTeacher.has(slot.teacherId)) slotsByTeacher.set(slot.teacherId, []);
+        const cls = classById.get(slot.classSectionId);
+        const subjName = (slot.subjectId && subjectById.get(slot.subjectId)) || slot.topic || 'Class';
+        slotsByTeacher.get(slot.teacherId)!.push({
+          id: slot.id,
+          grade: cls?.grade || 'Class',
+          section: cls?.section || '',
+          day: dayMap[slot.dayOfWeek] || 'Monday',
+          period: slot.period,
+          subject: subjName,
+          teacherId: slot.teacherId,
+          schoolId: slot.schoolId,
+          topic: slot.topic,
+          roomId: slot.roomId,
+          startTime: '08:00',
+          endTime: '08:45',
+          timetableVersionId: slot.timetableVersionId,
+        });
+      }
+
+      for (const teacher of teachers) {
+        if (!teacher.schedules || teacher.schedules.length === 0) {
+          const fallbackScheds = schedulesByTeacher.get(teacher.id);
+          const fallbackSlots = slotsByTeacher.get(teacher.id);
+          if (fallbackScheds && fallbackScheds.length > 0) {
+            (teacher as any).schedules = fallbackScheds;
+          } else if (fallbackSlots && fallbackSlots.length > 0) {
+            (teacher as any).schedules = fallbackSlots;
+          }
+        }
+      }
+    }
+
     return NextResponse.json(teachers);
   } catch (error) {
     console.error('Error fetching teachers:', error);

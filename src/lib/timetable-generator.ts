@@ -88,14 +88,38 @@ export async function generateCandidates(jobId: string) {
             const daily = teacherDaily.get(key(teacher.teacherId, time.dayOfWeek)) || 0;
             if (teacherBusy.has(key(teacher.teacherId, time.dayOfWeek, time.period)) || unavailable.has(key(teacher.teacherId, time.dayOfWeek, time.period))) continue;
             if (weekly >= (rule?.maxWeekly ?? 30) || daily >= (rule?.maxDaily ?? 6)) continue;
-            const periods = slots.filter((slot) => slot.teacherId === teacher.teacherId && slot.dayOfWeek === time.dayOfWeek).map((slot) => slot.period).concat(time.period).sort((a, b) => a - b);
+            const currentPeriods = slots
+              .filter((slot) => slot.teacherId === teacher.teacherId && slot.dayOfWeek === time.dayOfWeek)
+              .map((slot) => slot.period);
+            const periods = currentPeriods.concat(time.period).sort((a, b) => a - b);
             let run = 1; let longest = 1;
             for (let index = 1; index < periods.length; index++) { run = periods[index] === periods[index - 1] + 1 ? run + 1 : 1; longest = Math.max(longest, run); }
             if (longest > (rule?.maxConsecutive ?? 3)) continue;
+            
+            // Calculate teacher gap impact
+            const calcGaps = (plist: number[]) => {
+              if (plist.length <= 1) return 0;
+              return Math.max(0, Math.max(...plist) - Math.min(...plist) + 1 - plist.length);
+            };
+            const gapsBefore = calcGaps(currentPeriods);
+            const gapsAfter = calcGaps(periods);
+            const gapDelta = gapsAfter - gapsBefore;
+            // Strong penalty for creating isolated idle waiting periods; bonus for contiguous clustering
+            const gapScorePenalty = gapDelta > 0 ? -18 * gapDelta : (gapDelta < 0 ? 12 : 2);
+
             const roomPool = requirement.requiredRoomType ? rooms.filter((room) => normalized(room.type) === normalized(requirement.requiredRoomType)) : rooms.filter((room) => !classInfo?.campusId || !room.campusId || room.campusId === classInfo.campusId);
             const room = roomPool.find((item) => !roomBusy.has(key(item.id, time.dayOfWeek, time.period)) && !roomUnavailable.has(key(item.id, time.dayOfWeek, time.period)));
             if (requirement.requiredRoomType && !room) continue;
-            const score = (dailySubjectCount === 0 ? 30 : -40) + preferenceScore(requirement.preferredTime, time, maxPeriod) + (preferred.has(key(teacher.teacherId, time.dayOfWeek, time.period)) ? 12 : 0) - daily * 2 - weekly * .2 + ((time.dayOfWeek + alternative) % 6);
+            
+            // Score with gap penalty and balanced daily distribution
+            const score = (dailySubjectCount === 0 ? 30 : -40) 
+              + preferenceScore(requirement.preferredTime, time, maxPeriod) 
+              + (preferred.has(key(teacher.teacherId, time.dayOfWeek, time.period)) ? 12 : 0) 
+              + gapScorePenalty 
+              - daily * 3 
+              - weekly * .2 
+              + ((time.dayOfWeek + alternative) % 6);
+              
             if (!best || score > best.score) best = { time, teacherId: teacher.teacherId, roomId: room?.id || classInfo?.homeRoomId || null, score };
           }
         }

@@ -7,7 +7,8 @@ import {
   Settings, Building2, Sliders, ShieldCheck,
   Sparkles, Save, RefreshCw, AlertTriangle,
   CalendarClock, ArrowRight, Info, Check,
-  Layers, BookOpen, DoorOpen
+  Layers, BookOpen, DoorOpen, Fingerprint,
+  Send, MessageSquare, Copy, CheckCircle2, Calendar
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -86,7 +87,7 @@ function ReadOnlyRow({ label, value }: { label: string; value: React.ReactNode }
   );
 }
 
-export type SettingsTabId = 'profile' | 'timetable' | 'automation' | 'security';
+export type SettingsTabId = 'profile' | 'timetable' | 'automation' | 'integrations' | 'security';
 export type TimetableSubTabId = 'days' | 'structure' | 'subjects' | 'rooms' | 'summary';
 
 function SchoolSettingsContent({
@@ -103,6 +104,12 @@ function SchoolSettingsContent({
   const [activeTab, setActiveTab] = useState<SettingsTabId>('profile');
   const [timetableSubTab, setTimetableSubTab] = useState<TimetableSubTabId>('days');
 
+  // Test Notification state
+  const [testChannel, setTestChannel] = useState<'whatsapp' | 'sms' | 'email' | 'all'>('all');
+  const [testRecipient, setTestRecipient] = useState('');
+  const [testingNotification, setTestingNotification] = useState(false);
+  const [copiedFeed, setCopiedFeed] = useState(false);
+
   useEffect(() => {
     const t = searchParams.get('tab');
     const s = searchParams.get('sub');
@@ -114,7 +121,7 @@ function SchoolSettingsContent({
       if (s && ['days', 'structure', 'subjects', 'rooms', 'summary'].includes(s)) {
         setTimetableSubTab(s as TimetableSubTabId);
       }
-    } else if (t === 'profile' || t === 'automation' || t === 'security') {
+    } else if (t === 'profile' || t === 'automation' || t === 'integrations' || t === 'security') {
       setActiveTab(t as SettingsTabId);
     }
   }, [searchParams]);
@@ -176,6 +183,46 @@ function SchoolSettingsContent({
       load();
     }
   }, [activeTab, timetableSubTab, load]);
+
+  const handleTestDispatch = async () => {
+    setTestingNotification(true);
+    try {
+      const res = await fetch('/api/notifications/test-dispatch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          channel: testChannel,
+          phone: testRecipient.includes('@') ? undefined : testRecipient || undefined,
+          email: testRecipient.includes('@') ? testRecipient : undefined,
+          recipientName: 'Faculty Member',
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        toast({
+          title: 'Notification Dispatched',
+          description: `Dispatched across ${data.results?.length || 1} channel(s). Status logged in database.`,
+        });
+      } else {
+        toast({
+          title: 'Dispatch test failed',
+          description: data?.error || 'Error dispatching message',
+          variant: 'destructive',
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: 'Dispatch error',
+        description: err?.message || 'Network error',
+        variant: 'destructive',
+      });
+    } finally {
+      setTestingNotification(false);
+    }
+  };
+
+  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://smartcalender.learnx.school';
+  const feedUrl = `${originUrl}/api/calendar/feed/live-ics?schoolId=${profile?.id || 'school'}`;
 
   const dirty = Boolean(
     profile &&
@@ -283,6 +330,7 @@ function SchoolSettingsContent({
           { id: 'profile', label: 'Institutional Profile', icon: Building2, testId: 'school-setup-tab-profile' },
           { id: 'timetable', label: 'Timetable Structure', icon: Sliders, testId: 'school-setup-tab-timetable' },
           { id: 'automation', label: 'Plan & Automation', icon: Sparkles, testId: 'school-setup-tab-automation' },
+          { id: 'integrations', label: 'Hardware & Integrations', icon: Layers, testId: 'school-setup-tab-integrations' },
           { id: 'security', label: 'Tenant Isolation & Security', icon: ShieldCheck, testId: 'school-setup-tab-security' },
         ].map((tab) => {
           const Icon = tab.icon;
@@ -589,7 +637,180 @@ function SchoolSettingsContent({
         </Card>
       )}
 
-      {/* ── Tab 4: Security ── */}
+      {/* ── Tab: Hardware & Integrations ── */}
+      {activeTab === 'integrations' && (
+        <div className="space-y-6">
+          {/* Biometric Hardware Section */}
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="p-5 pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Fingerprint className="w-5 h-5 text-indigo-600" />
+                    Biometric Attendance Hardware (ADMS / eSSL / ZKTeco)
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500 mt-1">
+                    Connect on-premise physical fingerprint / face recognition machines directly to the school cloud.
+                  </CardDescription>
+                </div>
+                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px] uppercase">
+                  Active Listener
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-5 pt-2 space-y-4">
+              <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-slate-800">1. ADMS Server Push Endpoint (for Device ADMS / Cloud Server setting)</p>
+                  <div className="flex items-center gap-2">
+                    <code className="text-xs font-mono bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-blue-700 flex-1 select-all">
+                      {`${originUrl}/api/biometric/adms`}
+                    </code>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 text-xs gap-1"
+                      onClick={() => {
+                        navigator.clipboard.writeText(`${originUrl}/api/biometric/adms`);
+                        toast({ title: 'Copied', description: 'ADMS endpoint copied to clipboard.' });
+                      }}
+                    >
+                      <Copy className="w-3.5 h-3.5" /> Copy
+                    </Button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Enter your server IP / Domain in your ZKTeco or eSSL machine menu under <strong>Comm. &gt; Cloud Server / ADMS Server</strong>.
+                  </p>
+                </div>
+
+                <div className="space-y-1 pt-2 border-t border-slate-200">
+                  <p className="text-xs font-bold text-slate-800">2. JSON Webhook Endpoint (for Matrix / Cloud Controller bridges)</p>
+                  <code className="text-xs font-mono bg-white px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 block select-all">
+                    {`${originUrl}/api/biometric/device-webhook`}
+                  </code>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Multi-Channel Alerts Section */}
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="p-5 pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <MessageSquare className="w-5 h-5 text-blue-600" />
+                    Multi-Channel Notifications Gateway
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500 mt-1">
+                    Instant alerts to teachers for substitution assignments, approved leaves, and schedule changes via WhatsApp, SMS, and Email.
+                  </CardDescription>
+                </div>
+                <Badge className="bg-blue-100 text-blue-800 border-blue-300 font-bold text-[10px] uppercase">
+                  Multi-Gateway Ready
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-5 pt-2 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-white space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">WhatsApp Business API</span>
+                  <p className="text-xs font-bold text-slate-900">Meta Cloud API</p>
+                  <p className="text-[11px] text-slate-500">Official verified message delivery</p>
+                </div>
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-white space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">SMS Gateway</span>
+                  <p className="text-xs font-bold text-slate-900">Twilio REST API</p>
+                  <p className="text-[11px] text-slate-500">DLT registered enterprise SMS</p>
+                </div>
+                <div className="p-3.5 rounded-2xl border border-slate-200 bg-white space-y-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email Dispatcher</span>
+                  <p className="text-xs font-bold text-slate-900">Resend / SMTP</p>
+                  <p className="text-[11px] text-slate-500">HTML timetable &amp; leave notices</p>
+                </div>
+              </div>
+
+              {/* Interactive Test Panel */}
+              <div className="p-4 rounded-2xl border border-blue-100 bg-blue-50/50 space-y-3">
+                <p className="text-xs font-bold text-blue-950">Dispatch Test Notification</p>
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <Select value={testChannel} onValueChange={(val: any) => setTestChannel(val)}>
+                    <SelectTrigger className="w-full sm:w-40 bg-white h-9 text-xs">
+                      <SelectValue placeholder="Channel" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Channels</SelectItem>
+                      <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      <SelectItem value="sms">SMS</SelectItem>
+                      <SelectItem value="email">Email</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="Recipient phone or email (e.g. +919876543210)"
+                    value={testRecipient}
+                    onChange={(e) => setTestRecipient(e.target.value)}
+                    className="bg-white text-xs h-9"
+                  />
+                  <Button
+                    onClick={handleTestDispatch}
+                    disabled={testingNotification}
+                    className="bg-blue-700 hover:bg-blue-800 text-white text-xs h-9 shrink-0 gap-1.5 font-bold px-4"
+                  >
+                    {testingNotification ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                    Send Test Alert
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Live Calendar Subscription Section */}
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="p-5 pb-3">
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <Calendar className="w-5 h-5 text-emerald-600" />
+                    Live Calendar Feed (RFC 5545 WebCal)
+                  </CardTitle>
+                  <CardDescription className="text-xs text-slate-500 mt-1">
+                    Subscribe to live school timetables and events in Google Calendar, Apple Calendar, or Outlook.
+                  </CardDescription>
+                </div>
+                <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 font-bold text-[10px] uppercase">
+                  iCal Ready
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-5 pt-2 space-y-3">
+              <div className="flex items-center gap-2">
+                <code className="text-xs font-mono bg-slate-50 px-3 py-2 rounded-lg border border-slate-200 text-emerald-800 flex-1 select-all truncate">
+                  {feedUrl}
+                </code>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-9 text-xs gap-1 font-bold shrink-0"
+                  onClick={() => {
+                    navigator.clipboard.writeText(feedUrl);
+                    setCopiedFeed(true);
+                    setTimeout(() => setCopiedFeed(false), 2000);
+                    toast({ title: 'Feed URL Copied', description: 'Paste into Google Calendar or Apple Calendar.' });
+                  }}
+                >
+                  {copiedFeed ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedFeed ? 'Copied' : 'Copy Feed URL'}
+                </Button>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-relaxed">
+                In Google Calendar, click <strong>+ Other Calendars &gt; From URL</strong> and paste the link above. Updates made in Smart Calendar will sync automatically.
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* ── Tab 5: Security ── */}
       {activeTab === 'security' && (
         <Card className="border-slate-200 shadow-sm">
           <CardHeader className="p-5 pb-3">
