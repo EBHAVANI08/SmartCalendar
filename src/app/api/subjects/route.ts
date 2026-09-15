@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
-import { readList } from '@/lib/faculty';
+import { parseSubjectGradeSectionsMap, readList } from '@/lib/faculty';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
@@ -10,12 +10,59 @@ import { isKnownRoomType } from '@/lib/room-types';
 const PRIORITIES = ['Core', 'High', 'Normal', 'Low'];
 
 /**
+ * Check if a teacher is qualified / mapped to teach a given subject in a specific grade.
+ */
+function teacherTeachesSubjectForGrade(
+  teacher: {
+    id: string;
+    name: string;
+    subject?: string | null;
+    subjects?: string | null;
+    grades?: string | null;
+    sections?: string | null;
+  },
+  subjectName: string,
+  forGrade?: string | null
+): boolean {
+  const subs = readList(teacher.subjects ?? teacher.subject);
+  const grs = readList(teacher.grades);
+  const normSubj = subjectName.trim().toLowerCase();
+
+  const matchedSubj = subs.find(
+    (s) =>
+      s.trim().toLowerCase() === normSubj ||
+      s.replace(/\s+/g, '').toLowerCase() === normSubj.replace(/\s+/g, '')
+  );
+  if (!matchedSubj) return false;
+
+  if (!forGrade) return true;
+
+  const normForGrade = forGrade.replace(/^Grade\s*/i, '').trim().toLowerCase();
+
+  // Parse subject-specific grade mapping from sections
+  const mapping = parseSubjectGradeSectionsMap(teacher.sections, subs, grs);
+  const subjGrades = mapping[matchedSubj]?.grades || [];
+
+  if (subjGrades.length > 0) {
+    return subjGrades.some((g) => {
+      const normG = g.replace(/^Grade\s*/i, '').trim().toLowerCase();
+      return normG === normForGrade;
+    });
+  }
+
+  // If no subject-specific scoping, fall back to teacher's general grades
+  if (grs.length === 0) return true; // Qualified for all grades
+  return grs.some((g) => {
+    const normG = g.replace(/^Grade\s*/i, '').trim().toLowerCase();
+    return normG === normForGrade;
+  });
+}
+
+/**
  * Grade-wise subject management, scoped to one school.
  *
- * Subjects are tenant-specific: there is no global hardcoded list, so two
- * schools can run entirely different curricula. GradeSubjectConfig carries the
- * scheduling rules the generator reads - weekly periods, max per day, whether
- * consecutive periods are allowed, and priority.
+ * Automatically discovers subjects from Faculty Directory (active teachers)
+ * and timetable schedules so every subject configured in the school is accessible.
  */
 export async function GET(request: Request) {
   const schoolId = await getTenantSchoolId(request);
@@ -43,7 +90,7 @@ export async function GET(request: Request) {
     }),
     db.teacher.findMany({
       where: { schoolId, role: { not: 'inactive' } },
-      select: { id: true, name: true, subject: true, subjects: true, grades: true },
+      select: { id: true, name: true, subject: true, subjects: true, grades: true, sections: true },
     }),
     gradeVariants.length > 0
       ? db.schedule.findMany({
@@ -54,69 +101,126 @@ export async function GET(request: Request) {
       : Promise.resolve([]),
   ]);
 
-  // Active teachers actually mapped to each subject, and to that grade.
-  const mappedTeachers = (subjectName: string, forGrade: string) =>
+  // Active teachers accurately mapped to this subject and grade
+  const mappedTeachers = (subjectName: string, forGrade: string | null) =>
     teachers
-      .filter((t) =>
-        readList(t.subjects ?? t.subject).some((s) => s.toLowerCase() === subjectName.toLowerCase())
-      )
-      .filter((t) => {
-        const grades = readList(t.grades);
-        return !forGrade || grades.length === 0 || grades.some((g) => {
-          const normG = g.replace(/^Grade\s*/i, '').trim();
-          const normFor = forGrade.replace(/^Grade\s*/i, '').trim();
-          return normG === normFor;
-        });
-      })
+      .filter((t) => teacherTeachesSubjectForGrade(t, subjectName, forGrade))
       .map((t) => ({ id: t.id, name: t.name }));
 
-  let finalSubjects = configs.map((c) => ({
-    id: c.id,
-    grade: c.grade,
-    subjectName: c.subjectName,
-    weeklyPeriods: c.weeklyPeriods,
-    maxPeriodsPerDay: c.maxPeriodsPerDay,
-    allowConsecutive: c.allowConsecutive,
-    priority: c.priority,
-    requiredRoomType: c.requiredRoomType,
-    active: c.active,
-    teachers: mappedTeachers(c.subjectName, c.grade),
-  }));
+  // Collect configured subjects
+  const subjectMap = new Map<
+    string,
+    {
+      id: string;
+      grade: string;
+      subjectName: string;
+      weeklyPeriods: number;
+      maxPeriodsPerDay: number;
+      allowConsecutive: boolean;
+      priority: string;
+      requiredRoomType: string | null;
+      active: boolean;
+      isVirtual: boolean;
+      teachers: { id: string; name: string }[];
+    }
+  >();
 
-  // If no grade-specific config exists yet for this grade, synthesize subjects from:
-  // 1. Existing timetable schedule subjects for this grade
-  // 2. School subject catalogue
-  // 3. Teacher subjects
-  if (finalSubjects.length === 0 && gradeParam) {
-    const discoveredNames = new Set<string>();
-
-    (scheduleSubjects || []).forEach((s) => {
-      if (s.subject && s.subject.trim()) discoveredNames.add(s.subject.trim());
+  for (const c of configs) {
+    const key = c.subjectName.toLowerCase().trim();
+    subjectMap.set(key, {
+      id: c.id,
+      grade: c.grade,
+      subjectName: c.subjectName,
+      weeklyPeriods: c.weeklyPeriods,
+      maxPeriodsPerDay: c.maxPeriodsPerDay,
+      allowConsecutive: c.allowConsecutive,
+      priority: c.priority,
+      requiredRoomType: c.requiredRoomType,
+      active: c.active,
+      isVirtual: false,
+      teachers: mappedTeachers(c.subjectName, c.grade),
     });
-
-    catalogue.forEach((c) => {
-      if (c.name && c.active !== false) discoveredNames.add(c.name.trim());
-    });
-
-    teachers.forEach((t) => {
-      readList(t.subjects ?? t.subject).forEach((s) => {
-        if (s && s.trim()) discoveredNames.add(s.trim());
-      });
-    });
-
-    finalSubjects = Array.from(discoveredNames).map((name) => ({
-      id: `virtual-${name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
-      grade: gradeParam,
-      subjectName: name,
-      weeklyPeriods: 4,
-      maxPeriodsPerDay: 2,
-      allowConsecutive: false,
-      priority: 'Normal',
-      requiredRoomType: null,
-      active: true,
-      teachers: mappedTeachers(name, gradeParam),
-    }));
   }
+
+  // Discover and merge subjects taught by faculty for this grade (or all grades)
+  for (const t of teachers) {
+    const subs = readList(t.subjects ?? t.subject);
+    for (const sub of subs) {
+      const cleanSub = sub.trim();
+      if (!cleanSub) continue;
+      const key = cleanSub.toLowerCase();
+
+      if (!subjectMap.has(key)) {
+        if (!gradeParam || teacherTeachesSubjectForGrade(t, cleanSub, gradeParam)) {
+          const effectiveGrade = gradeParam || 'Grade 10';
+          subjectMap.set(key, {
+            id: `virtual-${effectiveGrade.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${key.replace(/[^a-z0-9]/g, '-')}`,
+            grade: effectiveGrade,
+            subjectName: cleanSub,
+            weeklyPeriods: 4,
+            maxPeriodsPerDay: 2,
+            allowConsecutive: false,
+            priority: 'Normal',
+            requiredRoomType: null,
+            active: true,
+            isVirtual: true,
+            teachers: mappedTeachers(cleanSub, gradeParam),
+          });
+        }
+      }
+    }
+  }
+
+  // Discover and merge historical schedule subjects for this grade
+  for (const s of scheduleSubjects || []) {
+    if (s.subject && s.subject.trim()) {
+      const cleanSub = s.subject.trim();
+      const key = cleanSub.toLowerCase();
+      if (!subjectMap.has(key)) {
+        const effectiveGrade = gradeParam || 'Grade 10';
+        subjectMap.set(key, {
+          id: `virtual-${effectiveGrade.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${key.replace(/[^a-z0-9]/g, '-')}`,
+          grade: effectiveGrade,
+          subjectName: cleanSub,
+          weeklyPeriods: 4,
+          maxPeriodsPerDay: 2,
+          allowConsecutive: false,
+          priority: 'Normal',
+          requiredRoomType: null,
+          active: true,
+          isVirtual: true,
+          teachers: mappedTeachers(cleanSub, gradeParam),
+        });
+      }
+    }
+  }
+
+  // If still empty and catalogue exists, populate catalogue items
+  if (subjectMap.size === 0 && gradeParam) {
+    for (const cat of catalogue) {
+      if (cat.name && cat.active !== false) {
+        const cleanSub = cat.name.trim();
+        const key = cleanSub.toLowerCase();
+        if (!subjectMap.has(key)) {
+          subjectMap.set(key, {
+            id: `virtual-${gradeParam.toLowerCase().replace(/[^a-z0-9]/g, '-')}-${key.replace(/[^a-z0-9]/g, '-')}`,
+            grade: gradeParam,
+            subjectName: cleanSub,
+            weeklyPeriods: 4,
+            maxPeriodsPerDay: 2,
+            allowConsecutive: false,
+            priority: 'Normal',
+            requiredRoomType: null,
+            active: true,
+            isVirtual: true,
+            teachers: mappedTeachers(cleanSub, gradeParam),
+          });
+        }
+      }
+    }
+  }
+
+  const finalSubjects = Array.from(subjectMap.values());
 
   return NextResponse.json({
     success: true,
@@ -240,21 +344,27 @@ export async function PUT(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const id = String(body.id ?? '');
-  if (!id) return NextResponse.json({ error: 'Subject config id is required.' }, { status: 400 });
+  const subjectName = String(body.subjectName ?? '').trim();
+  const grade = String(body.grade ?? '').trim();
 
-  const current = await db.gradeSubjectConfig.findFirst({ where: { id, schoolId } });
-  if (!current) {
-    return NextResponse.json({ error: 'Subject config not found in this school.' }, { status: 404 });
+  let current = id && !id.startsWith('virtual-')
+    ? await db.gradeSubjectConfig.findFirst({ where: { id, schoolId } })
+    : null;
+
+  if (!current && subjectName && grade) {
+    current = await db.gradeSubjectConfig.findFirst({
+      where: { schoolId, grade, subjectName }
+    });
   }
 
   const weeklyPeriods =
     body.weeklyPeriods !== undefined
       ? Math.min(20, Math.max(0, Number(body.weeklyPeriods)))
-      : current.weeklyPeriods;
+      : (current ? current.weeklyPeriods : 4);
   const maxPeriodsPerDay =
     body.maxPeriodsPerDay !== undefined
       ? Math.min(8, Math.max(1, Number(body.maxPeriodsPerDay)))
-      : current.maxPeriodsPerDay;
+      : (current ? current.maxPeriodsPerDay : 2);
 
   if (weeklyPeriods > 0 && maxPeriodsPerDay > weeklyPeriods) {
     return NextResponse.json(
@@ -263,8 +373,40 @@ export async function PUT(request: Request) {
     );
   }
 
+  // If the subject was virtual / discovered, upsert it into database
+  if (!current) {
+    if (!subjectName || !grade) {
+      return NextResponse.json({ error: 'Subject config not found in this school.' }, { status: 404 });
+    }
+
+    const code = subjectName.toUpperCase().replace(/[^A-Z0-9]+/g, '_').slice(0, 24);
+    await db.subjectMaster
+      .upsert({
+        where: { schoolId_name: { schoolId, name: subjectName } },
+        update: { active: true },
+        create: { schoolId, name: subjectName, code, category: 'academic' },
+      })
+      .catch(() => null);
+
+    const created = await db.gradeSubjectConfig.create({
+      data: {
+        schoolId,
+        grade,
+        subjectName,
+        weeklyPeriods,
+        maxPeriodsPerDay,
+        allowConsecutive: Boolean(body.allowConsecutive),
+        priority: body.priority && PRIORITIES.includes(body.priority) ? body.priority : 'Normal',
+        requiredRoomType: body.requiredRoomType && isKnownRoomType(body.requiredRoomType) ? body.requiredRoomType : null,
+        active: body.active !== false,
+      },
+    });
+
+    return NextResponse.json({ success: true, subject: created });
+  }
+
   const updated = await db.gradeSubjectConfig.update({
-    where: { id },
+    where: { id: current.id },
     data: {
       weeklyPeriods,
       maxPeriodsPerDay,
@@ -273,8 +415,6 @@ export async function PUT(request: Request) {
         : {}),
       ...(body.priority && PRIORITIES.includes(body.priority) ? { priority: body.priority } : {}),
       ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
-      // Rooms Stage 1: which kind of room this subject needs for this grade.
-      // Empty string clears the requirement; an unknown type is rejected.
       ...(body.requiredRoomType !== undefined
         ? { requiredRoomType: body.requiredRoomType && isKnownRoomType(body.requiredRoomType) ? body.requiredRoomType : null }
         : {}),
@@ -299,6 +439,10 @@ export async function DELETE(request: Request) {
     return NextResponse.json({ error: 'Subject config ID is required.' }, { status: 400 });
   }
 
+  if (id.startsWith('virtual-')) {
+    return NextResponse.json({ success: true, message: 'Subject dismissed.' });
+  }
+
   const existing = await db.gradeSubjectConfig.findFirst({ where: { id, schoolId } });
   if (!existing) {
     return NextResponse.json({ error: 'Subject config not found in this school.' }, { status: 404 });
@@ -307,4 +451,3 @@ export async function DELETE(request: Request) {
   await db.gradeSubjectConfig.delete({ where: { id } });
   return NextResponse.json({ success: true, message: `Removed ${existing.subjectName} from ${existing.grade}.` });
 }
-

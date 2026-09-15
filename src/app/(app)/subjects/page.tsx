@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   BookOpen, Plus, Users, AlertCircle, Layers, Save, Loader2, CheckCircle2, Ban,
   UserPlus, X, Trash2, Copy, Sparkles, Search, Check, Filter, DoorOpen, Clock,
-  ArrowRight, ShieldCheck, Zap
+  ArrowRight, ShieldCheck, Zap, RefreshCw
 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -87,11 +87,13 @@ export default function SubjectManagementPage() {
   const [copyOpen, setCopyOpen] = useState(false);
   const [creating, setCreating] = useState(false);
   const [selectedBoard, setSelectedBoard] = useState('CBSE');
+  const [syncingFaculty, setSyncingFaculty] = useState(false);
 
   // Teacher mapping state
   const [mapFor, setMapFor] = useState<SubjectConfig | null>(null);
   const [allTeachers, setAllTeachers] = useState<{ id: string; name: string; subjects: string[] }[]>([]);
   const [mapBusy, setMapBusy] = useState(false);
+  const [teacherSearch, setTeacherSearch] = useState('');
 
   // New Subject Draft with Multi-Grade selection
   const [selectedGrades, setSelectedGrades] = useState<string[]>(['Grade 10']);
@@ -147,6 +149,27 @@ export default function SubjectManagementPage() {
       .catch(() => setAllTeachers([]));
   }, [subjects]);
 
+  const syncFromFaculty = async () => {
+    setSyncingFaculty(true);
+    try {
+      const res = await fetch('/api/subjects/sync-faculty', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) {
+        toast({ title: 'Sync failed', description: data.error, variant: 'destructive' });
+        return;
+      }
+      toast({
+        title: 'Faculty Subjects Synchronized',
+        description: data.message,
+      });
+      await load();
+    } catch {
+      toast({ title: 'Sync request failed', variant: 'destructive' });
+    } finally {
+      setSyncingFaculty(false);
+    }
+  };
+
   const mapTeacher = async (teacherId: string, subjectName: string, remove: boolean) => {
     setMapBusy(true);
     try {
@@ -162,6 +185,22 @@ export default function SubjectManagementPage() {
       }
       toast({ title: 'Mapping updated', description: data.message });
       await load();
+      // Also update local mapFor if open
+      if (mapFor && mapFor.subjectName.toLowerCase() === subjectName.toLowerCase()) {
+        const teacherObj = allTeachers.find((t) => t.id === teacherId);
+        if (teacherObj) {
+          setMapFor((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  teachers: remove
+                    ? prev.teachers.filter((t) => t.id !== teacherId)
+                    : [...prev.teachers.filter((t) => t.id !== teacherId), { id: teacherObj.id, name: teacherObj.name }],
+                }
+              : null
+          );
+        }
+      }
     } finally {
       setMapBusy(false);
     }
@@ -173,7 +212,12 @@ export default function SubjectManagementPage() {
       const res = await fetch('/api/subjects', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: row.id, ...changes }),
+        body: JSON.stringify({
+          id: row.id,
+          subjectName: row.subjectName,
+          grade: row.grade || grade,
+          ...changes,
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -181,7 +225,14 @@ export default function SubjectManagementPage() {
         await load();
         return;
       }
-      setSubjects((prev) => prev.map((s) => (s.id === row.id ? { ...s, ...changes } : s)));
+      const savedConfig = data.subject;
+      setSubjects((prev) =>
+        prev.map((s) =>
+          s.id === row.id
+            ? { ...s, ...changes, id: savedConfig?.id || s.id }
+            : s
+        )
+      );
     } catch {
       toast({ title: 'Not saved', description: 'Request failed.', variant: 'destructive' });
     } finally {
@@ -400,6 +451,21 @@ export default function SubjectManagementPage() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={syncFromFaculty}
+            disabled={syncingFaculty}
+            className="text-xs gap-1.5 h-9 font-semibold text-blue-700 bg-blue-50/70 hover:bg-blue-100/80 border-blue-200"
+          >
+            {syncingFaculty ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-600" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+            )}
+            <span>Sync Faculty Subjects</span>
+          </Button>
+
           <Button
             variant="outline"
             size="sm"
@@ -711,13 +777,22 @@ export default function SubjectManagementPage() {
 
                         {/* Assigned Faculty */}
                         <td className="py-3.5 px-3">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap max-w-[260px]">
                             {s.teachers.length === 0 ? (
-                              <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200 text-[10px] font-bold">
-                                <Ban className="w-3 h-3 mr-1" /> No Faculty
-                              </Badge>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTeacherSearch('');
+                                  setMapFor(s);
+                                }}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[10px] font-bold transition-colors cursor-pointer"
+                                title="Click to assign faculty to this subject"
+                              >
+                                <Ban className="w-3 h-3 text-amber-600" />
+                                <span>Assign Faculty</span>
+                              </button>
                             ) : (
-                              <div className="flex flex-wrap gap-1 max-w-[240px]">
+                              <>
                                 {s.teachers.map((t) => (
                                   <span
                                     key={t.id}
@@ -726,7 +801,18 @@ export default function SubjectManagementPage() {
                                     {t.name}
                                   </span>
                                 ))}
-                              </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setTeacherSearch('');
+                                    setMapFor(s);
+                                  }}
+                                  className="px-1.5 py-0.5 rounded-md text-[10px] font-bold text-slate-500 hover:text-blue-700 hover:bg-blue-50 border border-dashed border-slate-300 transition-colors"
+                                  title="Add or change faculty for this subject"
+                                >
+                                  + Edit
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -1125,49 +1211,87 @@ export default function SubjectManagementPage() {
           </DialogHeader>
 
           {mapFor && (
-            <div className="space-y-2 pt-2">
-              {allTeachers.map((t) => {
-                const mapped = t.subjects.some(
-                  (x) => x.toLowerCase() === mapFor.subjectName.toLowerCase()
-                );
-                return (
-                  <div
-                    key={t.id}
-                    className="flex items-center justify-between gap-3 p-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50/80 transition-colors"
-                  >
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-slate-900">{t.name}</p>
-                      <p className="text-[11px] text-slate-500 truncate">
-                        Specializations: {t.subjects.join(', ') || 'None listed'}
-                      </p>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant={mapped ? 'outline' : 'default'}
-                      disabled={mapBusy}
-                      className={
-                        mapped
-                          ? 'border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold h-8'
-                          : 'bg-slate-900 text-white text-xs font-bold h-8'
-                      }
-                      onClick={() => mapTeacher(t.id, mapFor.subjectName, mapped)}
-                    >
-                      {mapBusy ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : mapped ? (
-                        <><X className="w-3.5 h-3.5 mr-1" /> Unmap</>
-                      ) : (
-                        <><UserPlus className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Map Faculty</>
-                      )}
-                    </Button>
-                  </div>
-                );
-              })}
-              {allTeachers.length === 0 && (
-                <p className="text-xs text-slate-500 py-8 text-center">
-                  No faculty records found. Add teachers in the Faculty Directory.
-                </p>
-              )}
+            <div className="space-y-3 pt-2">
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <Input
+                  placeholder="Search faculty by name or subject…"
+                  value={teacherSearch}
+                  onChange={(e) => setTeacherSearch(e.target.value)}
+                  className="h-8 pl-8 text-xs bg-slate-50 border-slate-200 rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                {allTeachers
+                  .filter((t) => {
+                    if (!teacherSearch) return true;
+                    const q = teacherSearch.toLowerCase();
+                    return (
+                      t.name.toLowerCase().includes(q) ||
+                      t.subjects.some((s) => s.toLowerCase().includes(q))
+                    );
+                  })
+                  .map((t) => {
+                    const isAssigned = mapFor.teachers.some((assigned) => assigned.id === t.id);
+                    const specializes = t.subjects.some(
+                      (x) => x.toLowerCase() === mapFor.subjectName.toLowerCase()
+                    );
+                    return (
+                      <div
+                        key={t.id}
+                        className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
+                          isAssigned
+                            ? 'border-blue-200 bg-blue-50/40'
+                            : 'border-slate-200 bg-white hover:bg-slate-50/80'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-xs font-bold text-slate-900">{t.name}</p>
+                            {specializes && (
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[9px] font-bold py-0 h-4">
+                                Specialization Match
+                              </Badge>
+                            )}
+                            {isAssigned && (
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] font-bold py-0 h-4">
+                                Assigned in {grade}
+                              </Badge>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                            Specializations: {t.subjects.join(', ') || 'None listed'}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={isAssigned ? 'outline' : 'default'}
+                          disabled={mapBusy}
+                          className={
+                            isAssigned
+                              ? 'border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold h-8 shrink-0'
+                              : 'bg-slate-900 text-white text-xs font-bold h-8 shrink-0'
+                          }
+                          onClick={() => mapTeacher(t.id, mapFor.subjectName, isAssigned)}
+                        >
+                          {mapBusy ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : isAssigned ? (
+                            <><X className="w-3.5 h-3.5 mr-1" /> Unassign</>
+                          ) : (
+                            <><UserPlus className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Assign to {grade}</>
+                          )}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                {allTeachers.length === 0 && (
+                  <p className="text-xs text-slate-500 py-8 text-center">
+                    No faculty records found. Add teachers in the Faculty Directory.
+                  </p>
+                )}
+              </div>
             </div>
           )}
 
