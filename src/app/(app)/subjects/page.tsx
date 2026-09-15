@@ -1193,36 +1193,38 @@ export default function SubjectManagementPage() {
 
       {/* ── Dialog: Subject → Teacher Mapping ── */}
       <Dialog open={!!mapFor} onOpenChange={(o) => { if (!o) setMapFor(null); }}>
-        <DialogContent className="max-w-lg max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+        <DialogContent className="sm:max-w-xl max-w-[95vw] w-full max-h-[85vh] flex flex-col p-0 overflow-hidden rounded-2xl border-slate-200 shadow-2xl">
+          <DialogHeader className="p-5 pb-3.5 border-b border-slate-100 shrink-0 text-left">
+            <div className="flex items-start gap-3 pr-6">
+              <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
                 <Users className="w-4 h-4" />
               </div>
-              <div>
-                <DialogTitle className="text-base font-bold text-slate-900">
+              <div className="min-w-0 flex-1">
+                <DialogTitle className="text-base font-black text-slate-900 truncate">
                   Assign Teachers for {mapFor?.subjectName}
                 </DialogTitle>
-                <DialogDescription className="text-xs text-slate-500">
-                  Mapping a teacher here updates their faculty record and enables the AI scheduler to allocate them for {grade}.
+                <DialogDescription className="text-xs text-slate-500 mt-0.5 leading-relaxed">
+                  Assign faculty for <span className="font-semibold text-slate-700">{grade}</span> to enable AI scheduling and substitution workflows.
                 </DialogDescription>
               </div>
             </div>
           </DialogHeader>
 
           {mapFor && (
-            <div className="space-y-3 pt-2">
+            <div className="p-5 pt-3 overflow-y-auto overflow-x-hidden flex-1 space-y-3">
+              {/* Search Bar */}
               <div className="relative">
                 <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <Input
-                  placeholder="Search faculty by name or subject…"
+                  placeholder="Search faculty by name or specialization…"
                   value={teacherSearch}
                   onChange={(e) => setTeacherSearch(e.target.value)}
-                  className="h-8 pl-8 text-xs bg-slate-50 border-slate-200 rounded-xl"
+                  className="h-9 pl-8 text-xs bg-slate-50 border-slate-200 rounded-xl w-full"
                 />
               </div>
 
-              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+              {/* Faculty List */}
+              <div className="space-y-2 overflow-x-hidden">
                 {allTeachers
                   .filter((t) => {
                     if (!teacherSearch) return true;
@@ -1240,38 +1242,39 @@ export default function SubjectManagementPage() {
                     return (
                       <div
                         key={t.id}
-                        className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-colors ${
+                        className={`flex items-center justify-between gap-3 p-3 rounded-xl border transition-all ${
                           isAssigned
-                            ? 'border-blue-200 bg-blue-50/40'
+                            ? 'border-blue-200 bg-blue-50/50 shadow-2xs'
                             : 'border-slate-200 bg-white hover:bg-slate-50/80'
                         }`}
                       >
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-xs font-bold text-slate-900">{t.name}</p>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-xs font-bold text-slate-900 truncate">{t.name}</p>
                             {specializes && (
-                              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[9px] font-bold py-0 h-4">
-                                Specialization Match
+                              <Badge className="bg-blue-100 text-blue-800 border-blue-200 text-[9px] font-bold py-0 h-4 shrink-0">
+                                Match
                               </Badge>
                             )}
                             {isAssigned && (
-                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] font-bold py-0 h-4">
+                              <Badge className="bg-emerald-100 text-emerald-800 border-emerald-200 text-[9px] font-bold py-0 h-4 shrink-0">
                                 Assigned in {grade}
                               </Badge>
                             )}
                           </div>
-                          <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                          <p className="text-[11px] text-slate-500 truncate mt-0.5 max-w-[280px] sm:max-w-[340px]">
                             Specializations: {t.subjects.join(', ') || 'None listed'}
                           </p>
                         </div>
+
                         <Button
                           size="sm"
                           variant={isAssigned ? 'outline' : 'default'}
                           disabled={mapBusy}
                           className={
                             isAssigned
-                              ? 'border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold h-8 shrink-0'
-                              : 'bg-slate-900 text-white text-xs font-bold h-8 shrink-0'
+                              ? 'border-rose-300 text-rose-700 hover:bg-rose-50 text-xs font-bold h-8 shrink-0 px-3'
+                              : 'bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold h-8 shrink-0 px-3 shadow-2xs'
                           }
                           onClick={() => mapTeacher(t.id, mapFor.subjectName, isAssigned)}
                         >
@@ -1280,12 +1283,13 @@ export default function SubjectManagementPage() {
                           ) : isAssigned ? (
                             <><X className="w-3.5 h-3.5 mr-1" /> Unassign</>
                           ) : (
-                            <><UserPlus className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Assign to {grade}</>
+                            <><UserPlus className="w-3.5 h-3.5 mr-1 text-emerald-400" /> Assign</>
                           )}
                         </Button>
                       </div>
                     );
                   })}
+
                 {allTeachers.length === 0 && (
                   <p className="text-xs text-slate-500 py-8 text-center">
                     No faculty records found. Add teachers in the Faculty Directory.
@@ -1295,8 +1299,11 @@ export default function SubjectManagementPage() {
             </div>
           )}
 
-          <DialogFooter className="pt-3 border-t border-slate-100">
-            <Button onClick={() => setMapFor(null)} className="font-bold">
+          <DialogFooter className="p-3.5 px-5 border-t border-slate-100 shrink-0 bg-slate-50/50 flex items-center justify-between">
+            <span className="text-[11px] text-slate-500 font-medium">
+              {mapFor?.teachers.length || 0} teacher(s) assigned to {mapFor?.subjectName} in {grade}
+            </span>
+            <Button onClick={() => setMapFor(null)} size="sm" className="font-bold bg-slate-900 hover:bg-slate-800 text-white px-4 h-8 text-xs">
               Done
             </Button>
           </DialogFooter>
