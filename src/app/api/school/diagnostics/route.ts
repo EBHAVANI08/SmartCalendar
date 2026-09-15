@@ -2,6 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { getDayConfig } from '@/lib/timetable-config';
+import { buildTeachingGrid, workingDayNames } from '@/lib/timetable-constraints';
 import { requireCapability } from '@/lib/authz';
 import { NextResponse } from 'next/server';
 
@@ -17,7 +19,6 @@ export async function GET(request: Request) {
   const [
     school,
     dayConfig,
-    dayRows,
     classSections,
     subjectConfigs,
     teachers,
@@ -29,8 +30,7 @@ export async function GET(request: Request) {
       where: { id: schoolId },
       select: { id: true, name: true, code: true, email: true, board: true, phone: true, address: true, contactName: true },
     }),
-    db.schoolDayPeriodConfig.findUnique({ where: { schoolId } }).catch(() => null),
-    db.schoolDayRow.findMany({ where: { schoolId } }).catch(() => []),
+    getDayConfig(schoolId).catch(() => null),
     db.classSection.findMany({ where: { schoolId }, select: { grade: true, section: true } }).catch(() => []),
     db.gradeSubjectConfig.findMany({
       where: { schoolId },
@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     }).catch(() => []),
     db.room.findMany({ where: { schoolId }, select: { id: true, name: true, type: true, capacity: true, active: true } }).catch(() => []),
     db.schedule.count({ where: { schoolId } }),
-    db.timetableVersion.findFirst({ where: { schoolId, status: 'published' }, select: { id: true, versionNumber: true } }).catch(() => null),
+    db.timetableVersion.findFirst({ where: { schoolId, status: 'published' }, select: { id: true } }).catch(() => null),
   ]);
 
   if (!school) {
@@ -90,7 +90,7 @@ export async function GET(request: Request) {
   }
 
   // Days & periods checks
-  if (!dayConfig) {
+  if (!dayConfig || !dayConfig.configured) {
     issues.push({
       type: 'error',
       title: 'Day & Period Schedule Not Configured',
@@ -146,7 +146,7 @@ export async function GET(request: Request) {
   if (school.name && school.board && school.phone && school.address) score += 20;
   else if (school.name) score += 10;
 
-  if (dayConfig) score += 20;
+  if (dayConfig?.configured) score += 20;
   if (distinctGrades.length > 0 && classSections.length > 0) score += 20;
   if (activeSubjects.length > 0) score += 15;
   if (activeTeachers.length > 0 && unmappedSubjects.length === 0) score += 15;
@@ -155,6 +155,9 @@ export async function GET(request: Request) {
   if (scheduleCount > 0) score += 5;
 
   score = Math.min(100, score);
+
+  const totalWeekly = dayConfig ? buildTeachingGrid(dayConfig).length : 0;
+  const workingDays = dayConfig ? workingDayNames(dayConfig).length : 0;
 
   return NextResponse.json({
     success: true,
@@ -165,8 +168,8 @@ export async function GET(request: Request) {
       subjectsCount: activeSubjects.length,
       facultyCount: activeTeachers.length,
       roomsCount: activeRooms.length,
-      workingDays: dayConfig?.workingDays ?? (dayRows.length > 0 ? dayRows.length : 0),
-      totalWeeklyPeriods: dayConfig ? (dayRows.reduce((a, b) => a + (b.periods || 0), 0) || (dayConfig.workingDays * 8)) : 0,
+      workingDays,
+      totalWeeklyPeriods: totalWeekly,
       unmappedSubjectsCount: unmappedSubjects.length,
       hasTimetable: scheduleCount > 0,
       hasPublishedTimetable: Boolean(publishedVersion),
