@@ -14,6 +14,9 @@ export async function POST(request: Request) {
   // Pinned to the caller's school. schoolId used to be resolved from client
   // input, so any signed-in user could act on another school's data.
     const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) {
+      return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    }
 
     // Get day of week
     const dateObj = new Date(detectDate + 'T00:00:00');
@@ -29,7 +32,7 @@ export async function POST(request: Request) {
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayDay = dayNames[yesterday.getDay()];
 
-    const tenantFilter = schoolId ? { teacher: { schoolId } } : {};
+    const tenantFilter = { teacher: { schoolId } };
 
     // 1. Get all affected records
     const [absentRecords, lateRecords, halfDayRecords] = await Promise.all([
@@ -55,24 +58,24 @@ export async function POST(request: Request) {
       db.leaveApplication.findMany({
         where: { teacherId: { in: affectedTeacherIds }, startDate: { lte: detectDate }, endDate: { gte: detectDate }, status: 'approved' },
       }),
-      db.schedule.findMany({ where: { teacherId: { in: affectedTeacherIds }, day: dayName }, orderBy: { period: 'asc' } }),
-      db.schedule.findMany({ where: { teacherId: { in: affectedTeacherIds }, day: yesterdayDay }, orderBy: { period: 'asc' } }),
+      db.schedule.findMany({ where: { schoolId, teacherId: { in: affectedTeacherIds }, day: dayName }, orderBy: { period: 'asc' } }),
+      db.schedule.findMany({ where: { schoolId, teacherId: { in: affectedTeacherIds }, day: yesterdayDay }, orderBy: { period: 'asc' } }),
       db.lessonPlan.findMany({ where: { teacherId: { in: affectedTeacherIds } } }),
       db.curriculumTopic.findMany({ where: { board: 'CBSE' }, take: 50, orderBy: { sequenceOrder: 'asc' } }),
     ]);
 
     // 3. Batch load existing substitutions to avoid duplicates
     const existingSubs = await db.substitution.findMany({
-      where: { date: detectDate, source: 'biometric' },
+      where: { schoolId, date: detectDate, source: 'biometric' },
     });
     const existingSubKeys = new Set(existingSubs.map(s => `${s.period}_${s.absentTeacherId}_${s.grade}_${s.section}`));
 
     // Reset any previously assigned biometric substitutions back to pending for re-assignment
-    // This allows the AI to re-evaluate and potentially find better substitutes
     const assignedSubs = existingSubs.filter(s => s.status === 'assigned');
     if (assignedSubs.length > 0) {
       await db.substitution.updateMany({
         where: {
+          schoolId,
           id: { in: assignedSubs.map(s => s.id) },
         },
         data: {

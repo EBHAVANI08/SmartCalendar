@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 
@@ -7,6 +8,11 @@ export async function POST(request: Request) {
   const denied = requireCapability(request, 'support.write');
   if (denied) return denied;
 
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) {
+    return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+  }
+
   try {
     const { type, referenceIds, grades, subjects } = await request.json();
 
@@ -14,8 +20,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'type and referenceIds[] are required' }, { status: 400 });
     }
 
-    // Find all teachers that match the grades and subjects
-    const allTeachers = await db.teacher.findMany();
+    // Find all teachers that match the grades and subjects within this tenant
+    const allTeachers = await db.teacher.findMany({
+      where: { schoolId, role: { not: 'inactive' } },
+    });
     const matchedTeachers: Array<{ id: string; name: string; subject: string; matchedGrades: string[]; matchedSubjects: string[] }> = [];
 
     for (const teacher of allTeachers) {

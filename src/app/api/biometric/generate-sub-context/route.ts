@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 
@@ -25,6 +26,11 @@ export async function POST(request: Request) {
   const denied = requireCapability(request, 'attendance.write');
   if (denied) return denied;
 
+  const schoolId = await getTenantSchoolId(request);
+  if (!schoolId) {
+    return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+  }
+
   try {
     let body: { substitutionId?: string };
     try {
@@ -41,8 +47,8 @@ export async function POST(request: Request) {
 
     let substitution;
     try {
-      substitution = await db.substitution.findUnique({
-        where: { id: substitutionId },
+      substitution = await db.substitution.findFirst({
+        where: { id: substitutionId, schoolId },
         include: {
           absentTeacher: true,
           substitute: true,
@@ -76,14 +82,14 @@ export async function POST(request: Request) {
     let teacherYesterdaySchedule: { period: number; grade: string; section: string; subject: string; topic: string | null; startTime: string; endTime: string }[] = [];
     try {
       teacherTodaySchedule = await db.schedule.findMany({
-        where: { teacherId: substitution.absentTeacherId, day: today },
+        where: { schoolId, teacherId: substitution.absentTeacherId, day: today },
         orderBy: { period: 'asc' },
       });
     } catch { /* schedule query might fail */ }
 
     try {
       teacherYesterdaySchedule = await db.schedule.findMany({
-        where: { teacherId: substitution.absentTeacherId, day: yesterdayDay },
+        where: { schoolId, teacherId: substitution.absentTeacherId, day: yesterdayDay },
         orderBy: { period: 'asc' },
       });
     } catch { /* schedule query might fail */ }
