@@ -20,7 +20,6 @@ import { useToast } from '@/hooks/use-toast';
 import { ROOM_TYPES } from '@/lib/room-types';
 import { BOARD_GRADE_SUBJECTS } from '@/lib/curriculum-data';
 
-const GRADES = Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`);
 const PRIORITIES = ['Core', 'High', 'Normal', 'Low'] as const;
 
 const PRIORITY_STYLE: Record<string, { bg: string; text: string; border: string }> = {
@@ -75,6 +74,7 @@ interface SubjectConfig {
 
 export default function SubjectManagementPage() {
   const { toast } = useToast();
+  const [gradesList, setGradesList] = useState<string[]>([]);
   const [grade, setGrade] = useState('Grade 10');
   const [subjects, setSubjects] = useState<SubjectConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +110,22 @@ export default function SubjectManagementPage() {
   const [targetCopyGrades, setTargetCopyGrades] = useState<string[]>([]);
   const [copying, setCopying] = useState(false);
 
+  // Load structure and grades on mount
+  useEffect(() => {
+    fetch('/api/school/detected-structure')
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.success && Array.isArray(d.grades) && d.grades.length > 0) {
+          const gNames: string[] = d.grades.map((gObj: any) => gObj.grade).filter(Boolean);
+          if (gNames.length > 0) {
+            setGradesList(gNames);
+            setGrade((current) => (gNames.includes(current) ? current : gNames[gNames.length - 1] || gNames[0]));
+          }
+        }
+      })
+      .catch(() => null);
+  }, []);
+
   // Load subjects for active grade
   const load = useCallback(async () => {
     setLoading(true);
@@ -117,12 +133,18 @@ export default function SubjectManagementPage() {
       const res = await fetch(`/api/subjects?grade=${encodeURIComponent(grade)}`);
       const data = await res.json();
       setSubjects(res.ok && data.success ? data.subjects : []);
+      if (res.ok && data.success && Array.isArray(data.availableGrades) && data.availableGrades.length > 0) {
+        setGradesList((prev) => (prev.length > 0 ? prev : data.availableGrades));
+        if (!data.availableGrades.includes(grade) && !gradesList.includes(grade)) {
+          setGrade(data.availableGrades[0]);
+        }
+      }
     } catch {
       setSubjects([]);
     } finally {
       setLoading(false);
     }
-  }, [grade]);
+  }, [grade, gradesList]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -261,6 +283,10 @@ export default function SubjectManagementPage() {
     }
   };
 
+  const effectiveGrades = gradesList.length > 0
+    ? gradesList
+    : ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'];
+
   // Grade selection shortcuts
   const toggleGrade = (g: string) => {
     setSelectedGrades((prev) =>
@@ -271,22 +297,34 @@ export default function SubjectManagementPage() {
   const selectGradeRange = (type: 'all' | 'current' | 'primary' | 'middle' | 'secondary' | 'senior') => {
     switch (type) {
       case 'all':
-        setSelectedGrades([...GRADES]);
+        setSelectedGrades([...effectiveGrades]);
         break;
       case 'current':
         setSelectedGrades([grade]);
         break;
       case 'primary':
-        setSelectedGrades(['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5']);
+        setSelectedGrades(effectiveGrades.filter((g) => {
+          const n = Number(g.replace(/\D/g, ''));
+          return n >= 1 && n <= 5;
+        }));
         break;
       case 'middle':
-        setSelectedGrades(['Grade 6', 'Grade 7', 'Grade 8']);
+        setSelectedGrades(effectiveGrades.filter((g) => {
+          const n = Number(g.replace(/\D/g, ''));
+          return n >= 6 && n <= 8;
+        }));
         break;
       case 'secondary':
-        setSelectedGrades(['Grade 9', 'Grade 10']);
+        setSelectedGrades(effectiveGrades.filter((g) => {
+          const n = Number(g.replace(/\D/g, ''));
+          return n >= 9 && n <= 10;
+        }));
         break;
       case 'senior':
-        setSelectedGrades(['Grade 11', 'Grade 12']);
+        setSelectedGrades(effectiveGrades.filter((g) => {
+          const n = Number(g.replace(/\D/g, ''));
+          return n >= 11 && n <= 12;
+        }));
         break;
     }
   };
@@ -358,7 +396,7 @@ export default function SubjectManagementPage() {
     setCreating(true);
     try {
       let totalCreated = 0;
-      for (const g of GRADES) {
+      for (const g of effectiveGrades) {
         const standardSubjects = boardData[g] || [];
         for (const subName of standardSubjects) {
           const matchedPreset = POPULAR_SUBJECT_PRESETS.find(
@@ -382,7 +420,7 @@ export default function SubjectManagementPage() {
       }
       toast({
         title: 'Curriculum presets imported',
-        description: `Imported standard ${selectedBoard} subjects across Grade 1 to 12.`,
+        description: `Imported standard ${selectedBoard} subjects across ${effectiveGrades.length} grade(s).`,
       });
       setImportPresetOpen(false);
       await load();
@@ -506,7 +544,7 @@ export default function SubjectManagementPage() {
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider px-2.5 shrink-0">
             Select Grade:
           </span>
-          {GRADES.map((g) => {
+          {effectiveGrades.map((g) => {
             const isActive = grade === g;
             return (
               <button
@@ -927,7 +965,7 @@ export default function SubjectManagementPage() {
 
               {/* Grade Checkbox Pills */}
               <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1.5 pt-1">
-                {GRADES.map((g) => {
+                {effectiveGrades.map((g) => {
                   const isChecked = selectedGrades.includes(g);
                   return (
                     <button
@@ -1151,7 +1189,7 @@ export default function SubjectManagementPage() {
           <div className="space-y-3 py-2">
             <Label className="text-xs font-bold text-slate-800">Select Target Grades to receive copy:</Label>
             <div className="grid grid-cols-3 gap-2">
-              {GRADES.filter((g) => g !== grade).map((g) => {
+              {effectiveGrades.filter((g) => g !== grade).map((g) => {
                 const isSelected = targetCopyGrades.includes(g);
                 return (
                   <button

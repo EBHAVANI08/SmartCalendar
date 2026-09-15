@@ -79,7 +79,7 @@ export async function GET(request: Request) {
       ])).filter(Boolean)
     : [];
 
-  const [catalogue, configs, teachers, scheduleSubjects] = await Promise.all([
+  const [catalogue, configs, teachers, scheduleSubjects, classSections, allConfigs, allSchedules] = await Promise.all([
     db.subjectMaster.findMany({ where: { schoolId }, orderBy: { name: 'asc' } }),
     db.gradeSubjectConfig.findMany({
       where: {
@@ -99,7 +99,42 @@ export async function GET(request: Request) {
           distinct: ['subject'],
         })
       : Promise.resolve([]),
+    db.classSection.findMany({
+      where: { schoolId, active: true },
+      select: { grade: true },
+      distinct: ['grade'],
+    }),
+    db.gradeSubjectConfig.findMany({
+      where: { schoolId },
+      select: { grade: true },
+      distinct: ['grade'],
+    }),
+    db.schedule.findMany({
+      where: { schoolId },
+      select: { grade: true },
+      distinct: ['grade'],
+    }),
   ]);
+
+  const gradeSet = new Set<string>();
+  for (const cs of classSections) {
+    if (cs.grade && cs.grade.trim()) gradeSet.add(cs.grade.trim());
+  }
+  if (gradeSet.size === 0) {
+    for (const c of allConfigs) {
+      if (c.grade && c.grade.trim()) gradeSet.add(c.grade.trim());
+    }
+    for (const s of allSchedules) {
+      if (s.grade && s.grade.trim()) gradeSet.add(s.grade.trim());
+    }
+  }
+  const availableGrades = gradeSet.size > 0
+    ? Array.from(gradeSet).sort((a, b) => {
+        const na = Number(a.replace(/\D/g, '')) || 0;
+        const nb = Number(b.replace(/\D/g, '')) || 0;
+        return na - nb || a.localeCompare(b);
+      })
+    : Array.from({ length: 10 }, (_, i) => `Grade ${i + 1}`);
 
   // Active teachers accurately mapped to this subject and grade
   const mappedTeachers = (subjectName: string, forGrade: string | null) =>
@@ -225,6 +260,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     success: true,
     grade: gradeParam || null,
+    availableGrades,
     catalogue: catalogue.map((s) => ({
       id: s.id,
       name: s.name,
