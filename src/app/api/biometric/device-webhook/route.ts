@@ -15,7 +15,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Payload must contain a non-empty "punches" array' }, { status: 400 });
     }
 
-    const results = [];
+    const results: any[] = [];
     let synced = 0;
 
     for (const punch of punches) {
