@@ -28,6 +28,58 @@ const SUBJECTS_BY_GRADE: Record<string, string[]> = {
 // Pedagogical constraints
 const CORE_SUBJECTS = ['Mathematics', 'English', 'Science', 'Physics', 'Chemistry', 'Social Science', 'EVS'];
 
+const SUBJECT_ALIASES: Record<string, string> = {
+  math: 'mathematics',
+  maths: 'mathematics',
+  mathematics: 'mathematics',
+  pe: 'physical education',
+  'p.e.': 'physical education',
+  'physical ed': 'physical education',
+  'physical education': 'physical education',
+  cs: 'computer science',
+  computer: 'computer science',
+  computers: 'computer science',
+  'computer science': 'computer science',
+  'information technology': 'information technology',
+  it: 'information technology',
+  evs: 'evs',
+  'e.v.s.': 'evs',
+  'environmental studies': 'evs',
+  'environmental science': 'evs',
+  sci: 'science',
+  science: 'science',
+  'social science': 'social science',
+  'social studies': 'social science',
+  sst: 'social science',
+  's.s.t.': 'social science',
+  eng: 'english',
+  english: 'english',
+  hindi: 'hindi',
+  sanskrit: 'sanskrit',
+  physics: 'physics',
+  chemistry: 'chemistry',
+  biology: 'biology',
+  bio: 'biology',
+  art: 'art',
+  'arts & craft': 'art',
+  music: 'music',
+  library: 'library / reading',
+  'library / reading': 'library / reading',
+  reading: 'library / reading',
+};
+
+function normalizeSubjectName(subj: string): string {
+  const clean = String(subj || '').trim().toLowerCase().replace(/[._-]/g, ' ').replace(/\s+/g, ' ');
+  return SUBJECT_ALIASES[clean] || clean;
+}
+
+function isSubjectMatch(teacherSubject: string, targetSubject: string): boolean {
+  if (!teacherSubject || !targetSubject) return false;
+  const tNorm = normalizeSubjectName(teacherSubject);
+  const tgtNorm = normalizeSubjectName(targetSubject);
+  return tNorm === tgtNorm || tNorm.replace(/\s+/g, '') === tgtNorm.replace(/\s+/g, '');
+}
+
 interface TeacherInfo {
   id: string;
   name: string;
@@ -38,17 +90,13 @@ interface TeacherInfo {
   existingScheduleCount: number;
 }
 
-/** Is this teacher qualified for the subject? (Case-insensitive) */
+/** Is this teacher qualified for the subject in Faculty Directory? */
 function teachesSubject(teacher: TeacherInfo, subject: string): boolean {
   if (!subject) return false;
-  const target = subject.trim().toLowerCase();
-  return teacher.subjects.some((s) => {
-    const clean = s.trim().toLowerCase();
-    return clean === target || clean.replace(/\s+/g, '') === target.replace(/\s+/g, '') || clean.includes(target) || target.includes(clean);
-  });
+  return teacher.subjects.some((s) => isSubjectMatch(s, subject));
 }
 
-/** Does this teacher teach this grade? (Matches Grade 10 vs 10 vs Grade 10th) */
+/** Does this teacher teach this grade? (Strict check against Faculty Directory) */
 function teachesGrade(teacher: TeacherInfo, grade: string): boolean {
   if (!teacher.grades || teacher.grades.length === 0) return true; // Unscoped teachers can teach all grades
   const target = grade.trim().toLowerCase();
@@ -63,12 +111,18 @@ function teachesGrade(teacher: TeacherInfo, grade: string): boolean {
   });
 }
 
-/** Does this teacher teach this section? */
-function teachesSection(teacher: TeacherInfo, section: string, grade?: string, subject?: string): boolean {
-  if (grade) {
-    return teacherTeachesSection(teacher.sections, grade, section, subject);
-  }
-  return teacherTeachesSection(teacher.sections, '', section, subject);
+/** Does this teacher teach this section? (Strict check against Faculty Directory) */
+function teachesSection(teacher: TeacherInfo, section: string, grade: string, subject?: string): boolean {
+  return teacherTeachesSection(teacher.sections, grade, section, subject);
+}
+
+/** Complete Faculty Directory qualification verification */
+function isTeacherQualifiedForSlot(teacher: TeacherInfo, grade: string, section: string, subject: string): boolean {
+  return (
+    teachesSubject(teacher, subject) &&
+    teachesGrade(teacher, grade) &&
+    teachesSection(teacher, section, grade, subject)
+  );
 }
 
 const DEFAULT_GRADES = [
@@ -130,8 +184,8 @@ interface GeneratedSchedule {
   day: string;
   period: number;
   subject: string;
-  teacherId: string;
-  teacherName: string;
+  teacherId: string | null;
+  teacherName: string | null;
   matchLabel: string;
   score: number;
   startTime: string;
@@ -467,7 +521,7 @@ export async function POST(request: Request) {
         }
       }
 
-      // 6. Assign Teachers for each slot (100% Guaranteed Full Coverage + ZERO Double-Booking)
+      // 6. Assign Teachers for each slot (Strict Faculty Directory Matching + ZERO Double-Booking)
       const classGenerated: GeneratedSchedule[] = [];
       const eligibleTeachers = allTeachers.filter(
         (t) => teachesGrade(t, targetGrade) && teachesSection(t, targetSection, targetGrade)
@@ -492,43 +546,41 @@ export async function POST(request: Request) {
         }
       }
 
-      // Slot-by-slot matching algorithm with strict zero double-booking & Faculty Directory qualification
+      // Slot-by-slot matching algorithm with STRICT Faculty Directory qualification & zero double-booking
       for (let i = 0; i < classSlots.length; i++) {
         const slot = classSlots[i];
         let subject = slot.subject;
         let assignedTeacher: TeacherInfo | null = null;
-        let matchLabel = 'Perfect Match';
+        let matchLabel = 'Faculty Directory Match';
 
-        // 1. Find candidate teachers who strictly match the subject in Faculty Directory and are FREE
-        const findFreeTeachersForSubject = (sub: string, d: string, p: number) => {
-          // Tier 1: Eligible teachers assigned to this grade & section who teach this subject
-          const gradeSectionTeachers = eligibleTeachers.filter(
-            (t) => teachesSubject(t, sub) && !isTeacherBusy(t.id, d, p) && getTeacherDayCount(t.id, d) < MAX_PERIODS_PER_TEACHER_DAY
+        // Helper: Find teachers strictly mapped to this Subject + Grade + Section in Faculty Directory and genuinely FREE
+        const findFreeQualifiedTeachers = (sub: string, d: string, p: number) => {
+          // Tier 1: Eligible teachers mapped to this grade & section who teach this subject
+          const tier1 = eligibleTeachers.filter(
+            (t) =>
+              isTeacherQualifiedForSlot(t, targetGrade, targetSection, sub) &&
+              !isTeacherBusy(t.id, d, p) &&
+              getTeacherDayCount(t.id, d) < MAX_PERIODS_PER_TEACHER_DAY
           );
-          if (gradeSectionTeachers.length > 0) {
-            return { teachers: gradeSectionTeachers, label: 'Perfect Match' };
+          if (tier1.length > 0) {
+            return { teachers: tier1, label: 'Faculty Directory Match' };
           }
 
-          // Tier 2: Teachers who teach this subject in this grade
-          const gradeTeachers = allTeachers.filter(
-            (t) => teachesSubject(t, sub) && teachesGrade(t, targetGrade) && !isTeacherBusy(t.id, d, p) && getTeacherDayCount(t.id, d) < MAX_PERIODS_PER_TEACHER_DAY
+          // Tier 2: Teachers mapped to this grade & subject in Faculty Directory
+          const tier2 = allTeachers.filter(
+            (t) =>
+              isTeacherQualifiedForSlot(t, targetGrade, targetSection, sub) &&
+              !isTeacherBusy(t.id, d, p) &&
+              getTeacherDayCount(t.id, d) < MAX_PERIODS_PER_TEACHER_DAY
           );
-          if (gradeTeachers.length > 0) {
-            return { teachers: gradeTeachers, label: 'Subject Specialist' };
-          }
-
-          // Tier 3: School-wide teachers qualified for this subject
-          const schoolTeachers = allTeachers.filter(
-            (t) => teachesSubject(t, sub) && !isTeacherBusy(t.id, d, p) && getTeacherDayCount(t.id, d) < MAX_PERIODS_PER_TEACHER_DAY
-          );
-          if (schoolTeachers.length > 0) {
-            return { teachers: schoolTeachers, label: 'Subject Faculty' };
+          if (tier2.length > 0) {
+            return { teachers: tier2, label: 'Subject Faculty' };
           }
 
           return { teachers: [], label: 'Unassigned' };
         };
 
-        const matchResult = findFreeTeachersForSubject(subject, slot.day, slot.period);
+        const matchResult = findFreeQualifiedTeachers(subject, slot.day, slot.period);
         if (matchResult.teachers.length > 0) {
           // Sort by least total load for balanced workload
           assignedTeacher = matchResult.teachers.sort(
@@ -536,16 +588,17 @@ export async function POST(request: Request) {
           )[0];
           matchLabel = matchResult.label;
         } else {
-          // 2. Intelligent Slot Swapping: If no qualified teacher is free in this slot,
-          // check if another upcoming subject has a free teacher here and this subject's teacher is free in that slot!
+          // Intelligent Slot Swapping:
+          // If the qualified teacher for `subject` is busy in this slot, check if another upcoming slot in the same class
+          // has a subject whose qualified teacher IS free here, and this subject's teacher IS free in that slot!
           let swapped = false;
           for (let j = i + 1; j < classSlots.length; j++) {
             const otherSlot = classSlots[j];
             const otherSub = otherSlot.subject;
             if (otherSub === subject) continue;
 
-            const otherMatchAtThisSlot = findFreeTeachersForSubject(otherSub, slot.day, slot.period);
-            const thisMatchAtOtherSlot = findFreeTeachersForSubject(subject, otherSlot.day, otherSlot.period);
+            const otherMatchAtThisSlot = findFreeQualifiedTeachers(otherSub, slot.day, slot.period);
+            const thisMatchAtOtherSlot = findFreeQualifiedTeachers(subject, otherSlot.day, otherSlot.period);
 
             if (otherMatchAtThisSlot.teachers.length > 0 && thisMatchAtOtherSlot.teachers.length > 0) {
               // Swap subjects between slot and otherSlot
@@ -562,11 +615,11 @@ export async function POST(request: Request) {
             }
           }
 
-          // 3. If swap was not possible, pick an alternate qualified subject from this grade's curriculum
+          // If swap was not possible, pick an alternate qualified subject from this grade's curriculum
           if (!swapped) {
             for (const altSub of subjectList) {
               if (altSub === subject) continue;
-              const altMatch = findFreeTeachersForSubject(altSub, slot.day, slot.period);
+              const altMatch = findFreeQualifiedTeachers(altSub, slot.day, slot.period);
               if (altMatch.teachers.length > 0) {
                 subject = altSub;
                 slot.subject = altSub;
@@ -578,29 +631,10 @@ export async function POST(request: Request) {
               }
             }
           }
-
-          // 4. If specialized academic teachers are all occupied at this exact moment across classes,
-          // find any faculty member who is GENUINELY FREE at (day, period)
-          if (!assignedTeacher) {
-            const anyFreeEligible = eligibleTeachers.filter((t) => !isTeacherBusy(t.id, slot.day, slot.period));
-            if (anyFreeEligible.length > 0) {
-              assignedTeacher = anyFreeEligible.sort(
-                (a, b) => (teacherTotalLoadMap.get(a.id) || 0) - (teacherTotalLoadMap.get(b.id) || 0)
-              )[0];
-              matchLabel = 'Class Faculty (Activity)';
-            } else {
-              const anyFreeInSchool = allTeachers.filter((t) => !isTeacherBusy(t.id, slot.day, slot.period));
-              if (anyFreeInSchool.length > 0) {
-                assignedTeacher = anyFreeInSchool.sort(
-                  (a, b) => (teacherTotalLoadMap.get(a.id) || 0) - (teacherTotalLoadMap.get(b.id) || 0)
-                )[0];
-                matchLabel = 'Faculty Allocation';
-              }
-            }
-          }
         }
 
-        // STRICT HARD CONSTRAINT: ONLY assign if teacher is NOT busy at this (day, period)!
+        // STRICT CONSTRAINT: NEVER assign an unqualified teacher.
+        // If a qualified teacher is available, mark them busy and assign.
         if (assignedTeacher && !isTeacherBusy(assignedTeacher.id, slot.day, slot.period)) {
           markTeacherBusy(assignedTeacher.id, slot.day, slot.period);
           classGenerated.push({
@@ -616,6 +650,21 @@ export async function POST(request: Request) {
             startTime: slot.timeSlot.start,
             endTime: slot.timeSlot.end,
           });
+        } else {
+          // If no faculty in Faculty Directory is mapped/free for this subject, keep period unassigned
+          classGenerated.push({
+            grade: targetGrade,
+            section: targetSection,
+            day: slot.day,
+            period: slot.period,
+            subject,
+            teacherId: null,
+            teacherName: 'Unassigned',
+            matchLabel: 'Faculty Required',
+            score: 50,
+            startTime: slot.timeSlot.start,
+            endTime: slot.timeSlot.end,
+          });
         }
       }
 
@@ -625,6 +674,7 @@ export async function POST(request: Request) {
     // ─── Step 7: Zero Clashes Verification Assertion ───
     const assignmentMap = new Map<string, string[]>();
     for (const sched of allGeneratedSchedules) {
+      if (!sched.teacherId) continue;
       const key = `${sched.teacherId}|${sched.day}|${sched.period}`;
       if (!assignmentMap.has(key)) assignmentMap.set(key, []);
       assignmentMap.get(key)!.push(`${sched.grade} ${sched.section}`);
@@ -640,6 +690,8 @@ export async function POST(request: Request) {
     }
 
     // ─── Step 8: If dry run, return results without writing to DB ───
+    const unassignedCount = allGeneratedSchedules.filter((s) => !s.teacherId).length;
+
     if (dryRun) {
       return NextResponse.json({
         success: true,
@@ -647,7 +699,7 @@ export async function POST(request: Request) {
         stats: {
           totalClasses: targetClasses.length,
           totalGenerated: allGeneratedSchedules.length,
-          unassigned: 0,
+          unassigned: unassignedCount,
           clashes: 0,
           periodsPerWeekPerClass: Object.values(totalWeeklyRequirementsMap)[0] || 45,
         },
@@ -699,6 +751,7 @@ export async function POST(request: Request) {
     }[] = [];
 
     for (const sched of allGeneratedSchedules) {
+      if (!sched.teacherId) continue;
       if (notifiedTeacherIds.has(sched.teacherId)) continue;
       notifiedTeacherIds.add(sched.teacherId);
 
