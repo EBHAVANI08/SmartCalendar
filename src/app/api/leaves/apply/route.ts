@@ -47,6 +47,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const targetStatus = body.status === 'approved' ? 'approved' : 'pending';
+
     const leave = await db.leaveApplication.create({
       data: {
         teacherId,
@@ -55,13 +57,48 @@ export async function POST(request: NextRequest) {
         endDate,
         reason: reason || 'Not specified',
         ...(periodList.length ? { coveringInfo: JSON.stringify({ periods: periodList }) } : {}),
-        status: body.status === 'pending' ? 'pending' : 'approved',
+        status: targetStatus,
+      },
+      include: {
+        teacher: true,
       },
     });
+
+    // If applied as approved (Admin direct create), immediately synchronize substitutions and attendance
+    if (targetStatus === 'approved') {
+      try {
+        const { syncSubstitutionsForLeave } = await import('@/lib/substitution-service');
+        const { affected } = await syncSubstitutionsForLeave(leave.id);
+        const dates = [...new Set(affected.map((a) => a.date))];
+        for (const d of dates) {
+          await db.biometricAttendance.upsert({
+            where: { date_teacherId: { date: d, teacherId } },
+            create: {
+              date: d,
+              teacherId,
+              status: 'on_leave',
+              syncSource: 'leave',
+              syncedAt: new Date(),
+            },
+            update: {
+              status: 'on_leave',
+              syncSource: 'leave',
+              syncedAt: new Date(),
+            },
+          });
+        }
+      } catch (syncErr) {
+        console.warn('Auto-sync substitutions for approved leave error:', syncErr);
+      }
+    }
 
     return NextResponse.json({
       success: true,
       data: leave,
+      message:
+        targetStatus === 'pending'
+          ? 'Leave request submitted successfully for Admin approval.'
+          : 'Leave created and approved. Substitution slots generated.',
     });
   } catch (error) {
     console.error('[LEAVES APPLY ERROR]', error);

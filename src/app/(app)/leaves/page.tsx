@@ -231,6 +231,14 @@ export default function LeaveManagementPage() {
                           </Button>
                         </>
                       )}
+                      {l.status === 'approved' && (
+                        <a
+                          href={`/substitutions?date=${l.startDate}`}
+                          className="text-xs font-bold text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-2.5 py-1.5 flex items-center gap-1 transition-colors"
+                        >
+                          Substitutions
+                        </a>
+                      )}
                       <Button size="sm" variant="ghost" onClick={() => setExpanded(open ? null : l.id)}>
                         {open ? <ChevronUp className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
                         Affected classes

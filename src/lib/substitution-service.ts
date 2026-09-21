@@ -93,13 +93,24 @@ export async function affectedPeriodsForLeave(leaveId: string): Promise<{
   if (!dates.length) return { leave, schoolId, affected: [] };
 
   const liveFilter = schoolId ? await operationalScheduleFilter(schoolId) : {};
-  const rows = await db.schedule.findMany({
+  let rows = await db.schedule.findMany({
     where: { teacherId: leave.teacherId, ...liveFilter },
     select: {
       id: true, grade: true, section: true, day: true, period: true,
       subject: true, startTime: true, endTime: true,
     },
   });
+
+  // Fallback: If no rows matched liveFilter, load any active schedules for this teacher in this school
+  if (rows.length === 0 && schoolId) {
+    rows = await db.schedule.findMany({
+      where: { schoolId, teacherId: leave.teacherId },
+      select: {
+        id: true, grade: true, section: true, day: true, period: true,
+        subject: true, startTime: true, endTime: true,
+      },
+    });
+  }
 
   const byDay = new Map<string, typeof rows>();
   for (const row of rows) {
@@ -143,6 +154,10 @@ export async function syncSubstitutionsForLeave(leaveId: string) {
   let created = 0;
   let existing = 0;
 
+  const leaveReasonText = leave.reason
+    ? `${leave.leaveType.replace(/_/g, ' ')} leave — ${leave.reason}`
+    : `${leave.leaveType.replace(/_/g, ' ')} leave`;
+
   for (const slot of affected) {
     const already = await db.substitution.findFirst({
       where: {
@@ -170,7 +185,7 @@ export async function syncSubstitutionsForLeave(leaveId: string) {
         grade: slot.grade,
         section: slot.section,
         subject: slot.subject,
-        reason: `${leave.leaveType} leave`,
+        reason: leaveReasonText,
         source: 'leave',
         status: 'pending',
         scheduleId: slot.scheduleId,

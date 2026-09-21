@@ -78,20 +78,50 @@ export async function PATCH(req: NextRequest) {
       include: { teacher: true },
     });
 
-    // Approving a leave immediately surfaces the periods that need cover in
-    // Substitution Management. The Admin never re-enters the absent teacher's
-    // timetable by hand. Idempotent, so re-approving creates no duplicates.
     let substitutions:
       | { created: number; existing: number; affectedPeriods: number; affected: AffectedPeriod[] }
       | { error: string }
       | null = null;
-      
+
     if (status === 'approved') {
       try {
         const { created, existing, affected } = await syncSubstitutionsForLeave(id);
         substitutions = { created, existing, affectedPeriods: affected.length, affected };
 
-        // Dispatch notification to teacher
+        // Mark attendance as on_leave across all dates in this leave range
+        const dates = [...new Set(affected.map((a) => a.date))];
+        for (const d of dates) {
+          await db.biometricAttendance.upsert({
+            where: { date_teacherId: { date: d, teacherId: updated.teacherId } },
+            create: {
+              date: d,
+              teacherId: updated.teacherId,
+              status: 'on_leave',
+              syncSource: 'leave',
+              syncedAt: new Date(),
+            },
+            update: {
+              status: 'on_leave',
+              syncSource: 'leave',
+              syncedAt: new Date(),
+            },
+          });
+        }
+
+        // Create teacher notification in portal
+        await db.teacherNotification.create({
+          data: {
+            teacherId: updated.teacherId,
+            type: 'leave_approved',
+            referenceId: `leave-${updated.id}`,
+            sentBy: approvedBy || 'Admin',
+            title: 'Leave Application Approved',
+            description: `Your ${updated.leaveType} leave application for ${updated.startDate} to ${updated.endDate} has been approved by ${approvedBy || 'Admin'}. ${affected.length} class periods have been covered for substitution.`,
+            isRead: false,
+          },
+        }).catch(() => null);
+
+        // Dispatch WhatsApp / Email / SMS alert to teacher
         if (updated.teacher) {
           await dispatchMessage({
             recipientName: updated.teacher.name,
@@ -112,6 +142,29 @@ export async function PATCH(req: NextRequest) {
         console.error('[LEAVES] failed to sync substitutions', err);
         substitutions = { error: 'Leave saved, but affected periods could not be generated.' };
       }
+    } else if (status === 'rejected') {
+      // Clean up any pending unassigned substitutions for this leave
+      await db.substitution.deleteMany({
+        where: {
+          leaveId: id,
+          absentTeacherId: updated.teacherId,
+          status: 'pending',
+          substituteId: null,
+        },
+      }).catch(() => null);
+
+      // Create teacher notification in portal
+      await db.teacherNotification.create({
+        data: {
+          teacherId: updated.teacherId,
+          type: 'leave_rejected',
+          referenceId: `leave-${updated.id}`,
+          sentBy: approvedBy || 'Admin',
+          title: 'Leave Application Rejected',
+          description: `Your ${updated.leaveType} leave application for ${updated.startDate} to ${updated.endDate} was not approved by ${approvedBy || 'Admin'}.`,
+          isRead: false,
+        },
+      }).catch(() => null);
     }
 
     return NextResponse.json({ success: true, leave: updated, substitutions });
