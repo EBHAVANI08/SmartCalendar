@@ -155,13 +155,14 @@ export async function POST(request: Request) {
     const fromGrade = body.fromGrade || body.startGrade || body.setup?.fromGrade || body.setup?.startGrade;
     const toGrade = body.toGrade || body.endGrade || body.setup?.toGrade || body.setup?.endGrade;
 
-    // Fetch all active class sections and existing distinct schedule sections in school
-    const [classSections, existingSchedules] = await Promise.all([
+    // Fetch all active class sections in school setup, existing distinct schedule sections, and subject configs
+    const [classSections, existingSchedules, gradeConfigs] = await Promise.all([
       db.classSection.findMany({ where: { schoolId, active: true }, select: { grade: true, section: true } }),
       db.schedule.findMany({ where: { schoolId }, select: { grade: true, section: true }, distinct: ['grade', 'section'] }),
+      db.gradeSubjectConfig.findMany({ where: { schoolId, active: true }, select: { grade: true }, distinct: ['grade'] }).catch(() => []),
     ]);
 
-    // Build map of available sections for each grade
+    // Build dynamic map of available sections for each grade from School Setup
     const sectionsByGradeMap = new Map<string, Set<string>>();
     for (const cs of classSections) {
       const g = cs.grade.trim();
@@ -175,11 +176,23 @@ export async function POST(request: Request) {
       if (!sectionsByGradeMap.has(g)) sectionsByGradeMap.set(g, new Set());
       sectionsByGradeMap.get(g)!.add(sec);
     }
+    for (const gc of gradeConfigs) {
+      const g = gc.grade.trim();
+      if (!sectionsByGradeMap.has(g)) {
+        sectionsByGradeMap.set(g, new Set(['A']));
+      }
+    }
 
-    const schoolGradesList = Array.from(new Set([
-      ...Array.from(sectionsByGradeMap.keys()),
-      ...DEFAULT_GRADES,
-    ]));
+    // Dynamic list of grades configured in this school setup
+    const dynamicSchoolGrades = Array.from(sectionsByGradeMap.keys()).sort((a, b) => {
+      const na = parseGradeNumber(a) ?? 999;
+      const nb = parseGradeNumber(b) ?? 999;
+      return na - nb || a.localeCompare(b);
+    });
+
+    const schoolGradesList = dynamicSchoolGrades.length > 0
+      ? dynamicSchoolGrades
+      : DEFAULT_GRADES;
 
     // Determine target classes (Grade Scope vs single class vs full school)
     let targetClasses: { grade: string; section: string }[] = [];

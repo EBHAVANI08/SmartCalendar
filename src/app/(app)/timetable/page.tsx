@@ -403,10 +403,28 @@ export default function TimetablePage() {
           const detectedGrades = d.grades.map((g: any) => g.grade);
           const sectionsMap: Record<string, string[]> = {};
           d.grades.forEach((g: any) => {
-            sectionsMap[g.grade] = (g.sections || []).map((s: any) => s.section);
+            const secs = (g.sections || []).map((s: any) => s.section).filter(Boolean);
+            sectionsMap[g.grade] = secs.length > 0 ? secs : ['A'];
           });
           setGradesList(detectedGrades);
           setSectionsByGrade(sectionsMap);
+
+          // Dynamically synchronize active selected grade & section with school setup
+          setSelectedGrade((prevGrade) => {
+            const activeGrade = detectedGrades.includes(prevGrade) ? prevGrade : detectedGrades[0];
+            setSelectedSection((prevSec) => {
+              const secs = sectionsMap[activeGrade] || ['A'];
+              return secs.includes(prevSec) ? prevSec : secs[0];
+            });
+            return activeGrade;
+          });
+
+          // Dynamically configure startGrade and endGrade for Timetable Creator Studio
+          setStudioSettings((prev) => ({
+            ...prev,
+            startGrade: detectedGrades.includes(prev.startGrade) ? prev.startGrade : detectedGrades[0],
+            endGrade: detectedGrades.includes(prev.endGrade) ? prev.endGrade : detectedGrades[detectedGrades.length - 1],
+          }));
         }
       }
     } catch {
@@ -1076,7 +1094,10 @@ export default function TimetablePage() {
               </span>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-[#64748B] font-semibold">Section:</span>
-                {(sectionsByGrade[selectedGrade] || ['A', 'B', 'C']).map((sec) => (
+                {(sectionsByGrade[selectedGrade] && sectionsByGrade[selectedGrade].length > 0
+                  ? sectionsByGrade[selectedGrade]
+                  : ['A']
+                ).map((sec) => (
                   <Button
                     key={sec}
                     size="sm"
@@ -1099,7 +1120,7 @@ export default function TimetablePage() {
                   variant={selectedGrade === g ? 'default' : 'ghost'}
                   onClick={() => {
                     setSelectedGrade(g);
-                    const validSecs = sectionsByGrade[g] || ['A', 'B'];
+                    const validSecs = sectionsByGrade[g] && sectionsByGrade[g].length > 0 ? sectionsByGrade[g] : ['A'];
                     if (!validSecs.includes(selectedSection)) {
                       setSelectedSection(validSecs[0]);
                     }
