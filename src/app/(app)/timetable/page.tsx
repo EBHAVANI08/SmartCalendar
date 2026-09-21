@@ -251,8 +251,8 @@ export default function TimetablePage() {
     lunchBreakAfter: '4',
     lunchBreakMins: '30',
     bulkAll: true,
-    startGrade: 'Grade 3',
-    endGrade: 'Grade 8',
+    startGrade: 'Grade 1',
+    endGrade: 'Grade 10',
     sectionsCount: '3',
     preventConsecutiveDouble: true,
     enableWedPtSports: true,
@@ -610,6 +610,10 @@ export default function TimetablePage() {
         return; // `finally` below resets the processing state
       }
 
+      const scopeLabel = studioSettings.startGrade === studioSettings.endGrade
+        ? `${studioSettings.startGrade} (All Sections)`
+        : `${studioSettings.startGrade} to ${studioSettings.endGrade} (All Sections)`;
+
       const r = await fetch('/api/schedules/ai-generate-timetable', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -618,6 +622,10 @@ export default function TimetablePage() {
           section: selectedSection,
           schoolId,
           bulkAll: studioSettings.bulkAll,
+          fromGrade: studioSettings.startGrade,
+          toGrade: studioSettings.endGrade,
+          startGrade: studioSettings.startGrade,
+          endGrade: studioSettings.endGrade,
           setup: {
             periodsPerDay: parseInt(studioSettings.totalPeriods, 10),
             workingDays: studioSettings.saturdayType === 'off' ? 5 : 6,
@@ -628,6 +636,8 @@ export default function TimetablePage() {
             endTime: studioSettings.endTime,
             startGrade: studioSettings.startGrade,
             endGrade: studioSettings.endGrade,
+            fromGrade: studioSettings.startGrade,
+            toGrade: studioSettings.endGrade,
             preventConsecutiveDouble: studioSettings.preventConsecutiveDouble,
             enableWedPtSports: studioSettings.enableWedPtSports,
             anchorClassTeacherP1: studioSettings.anchorClassTeacherP1,
@@ -640,10 +650,8 @@ export default function TimetablePage() {
       setGenResult(d);
       if (r.ok && d.success) {
         toast({
-          title: studioSettings.bulkAll ? 'School-Wide Bulk Master Timetable Approved!' : 'Master Timetable Generated!',
-          description: studioSettings.bulkAll
-            ? 'Generated clash-free master timetables for ALL classes directly from Faculty Directory & Workload Center! Teacher workloads updated.'
-            : `Created ${d.stats?.totalGenerated || 48} clash-free slots for ${selectedGrade} Section ${selectedSection} directly from Faculty Directory!`,
+          title: 'Master Timetable Generated & Published!',
+          description: `Generated ${d.stats?.totalGenerated || 'all'} clash-free periods for ${scopeLabel} directly from Faculty Directory!`,
         });
         setStudioOpen(false);
         setStudioStep(1);
@@ -1484,20 +1492,28 @@ export default function TimetablePage() {
                   <Building2 className="w-3.5 h-3.5 text-white/80" />
                   <span className="text-[11px] font-bold text-white uppercase tracking-wider">Target Class Grade Scope</span>
                 </div>
-                <div className="p-4 bg-slate-50 grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">From Grade</Label>
-                    <Select value={studioSettings.startGrade} onValueChange={(val) => setStudioSettings({ ...studioSettings, startGrade: val })}>
-                      <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
-                      <SelectContent>{gradesList.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
-                    </Select>
+                <div className="p-4 bg-slate-50 space-y-2.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-600">From Grade</Label>
+                      <Select value={studioSettings.startGrade} onValueChange={(val) => setStudioSettings({ ...studioSettings, startGrade: val })}>
+                        <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
+                        <SelectContent>{gradesList.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-[11px] font-semibold text-slate-600">To Grade</Label>
+                      <Select value={studioSettings.endGrade} onValueChange={(val) => setStudioSettings({ ...studioSettings, endGrade: val })}>
+                        <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
+                        <SelectContent>{gradesList.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <Label className="text-[11px] font-semibold text-slate-600">To Grade</Label>
-                    <Select value={studioSettings.endGrade} onValueChange={(val) => setStudioSettings({ ...studioSettings, endGrade: val })}>
-                      <SelectTrigger className="h-8 text-xs bg-white"><SelectValue /></SelectTrigger>
-                      <SelectContent>{gradesList.map((g) => <SelectItem key={g} value={g}>{g}</SelectItem>)}</SelectContent>
-                    </Select>
+                  <div className="p-2 bg-indigo-50/90 rounded-lg border border-indigo-200 flex items-center gap-2 text-[11px] text-indigo-900 font-medium">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                    <span>
+                      Target Timetable Scope: <strong className="text-indigo-950 font-bold">{studioSettings.startGrade === studioSettings.endGrade ? `${studioSettings.startGrade} (All Sections)` : `${studioSettings.startGrade} to ${studioSettings.endGrade} (All Sections)`}</strong>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -1768,12 +1784,12 @@ export default function TimetablePage() {
                 </div>
               </div>
 
-              {/* Scope Selector: Single Class vs Entire School */}
+              {/* Scope Selector: Single Class vs Target Grade Range */}
               <div className="p-3.5 bg-blue-50/80 rounded-xl border border-blue-200 space-y-2">
                 <div className="flex items-center justify-between">
                   <Label className="text-xs font-bold text-blue-950 flex items-center gap-2 cursor-pointer">
                     <Sparkles className="w-4 h-4 text-blue-700" />
-                    Bulk Approve &amp; Generate Entire School (Grades 1 to 12)
+                    Generate Target Grade Scope ({studioSettings.startGrade === studioSettings.endGrade ? `${studioSettings.startGrade}` : `${studioSettings.startGrade} to ${studioSettings.endGrade}`} · All Sections)
                   </Label>
                   <input
                     type="checkbox"
@@ -1784,7 +1800,7 @@ export default function TimetablePage() {
                 </div>
                 <p className="text-[11px] text-blue-800 leading-relaxed">
                   {studioSettings.bulkAll
-                    ? '⚡ Entire School Mode: Automatically assigns, balances teacher workload, and creates master timetables for ALL classes (Grades 1-12, Sections A-C) directly from the Faculty Directory.'
+                    ? `⚡ Grade Scope Mode: Automatically assigns, balances teacher workload, and creates clash-free master timetables for ALL sections of ${studioSettings.startGrade === studioSettings.endGrade ? studioSettings.startGrade : `${studioSettings.startGrade} to ${studioSettings.endGrade}`} directly from the Faculty Directory.`
                     : `Single Class Mode: Generates master timetable for ${selectedGrade} Section ${selectedSection} using its mapped Faculty Directory teachers.`}
                 </p>
               </div>
@@ -1816,7 +1832,7 @@ export default function TimetablePage() {
                   <div>• School Hours: <span className="font-bold">{studioSettings.startTime} - {studioSettings.endTime}</span></div>
                   <div>• Periods / Day: <span className="font-bold">{studioSettings.totalPeriods} Periods</span></div>
                   <div>• Saturday Rules: <span className="font-bold">{studioSettings.saturdayType}</span></div>
-                  <div>• Target Scope: <span className="font-bold">{studioSettings.bulkAll ? 'ALL Classes (Grades 1-12)' : `${selectedGrade} ${selectedSection}`}</span></div>
+                  <div>• Target Scope: <span className="font-bold">{studioSettings.bulkAll ? (studioSettings.startGrade === studioSettings.endGrade ? `${studioSettings.startGrade} (All Sections)` : `${studioSettings.startGrade} to ${studioSettings.endGrade} (All Sections)`) : `${selectedGrade} ${selectedSection}`}</span></div>
                   <div>• Faculty Synced: <span className="font-bold">{activeFaculty.length} Active Staff Members</span></div>
                   <div>• Directory Auto-Sync: <span className="font-bold text-emerald-700">Enabled</span></div>
                 </div>

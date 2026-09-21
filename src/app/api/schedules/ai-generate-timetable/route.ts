@@ -71,6 +71,59 @@ function teachesSection(teacher: TeacherInfo, section: string, grade?: string, s
   return teacherTeachesSection(teacher.sections, '', section, subject);
 }
 
+const DEFAULT_GRADES = [
+  'Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5',
+  'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10',
+  'Grade 11', 'Grade 12',
+];
+
+function parseGradeNumber(g: string): number | null {
+  const match = String(g || '').match(/\d+/);
+  return match ? parseInt(match[0], 10) : null;
+}
+
+function resolveGradeRange(from: string, to: string, schoolGrades: string[]): string[] {
+  const cleanFrom = String(from || '').trim();
+  const cleanTo = String(to || '').trim();
+
+  // If from and to are the same (e.g. Grade 5 to Grade 5), return just that single grade
+  if (cleanFrom.toLowerCase() === cleanTo.toLowerCase()) {
+    return [cleanFrom];
+  }
+
+  const fromNum = parseGradeNumber(cleanFrom);
+  const toNum = parseGradeNumber(cleanTo);
+
+  if (fromNum !== null && toNum !== null) {
+    const min = Math.min(fromNum, toNum);
+    const max = Math.max(fromNum, toNum);
+    const result: string[] = [];
+
+    for (let i = min; i <= max; i++) {
+      // Look for matching grade name in schoolGrades
+      const found = schoolGrades.find((g) => parseGradeNumber(g) === i);
+      if (found) {
+        if (!result.includes(found)) result.push(found);
+      } else {
+        const fallback = cleanFrom.toLowerCase().includes('grade') ? `Grade ${i}` : `Class ${i}`;
+        if (!result.includes(fallback)) result.push(fallback);
+      }
+    }
+    return result;
+  }
+
+  // If non-numeric, use index slicing in schoolGrades
+  const fromIdx = schoolGrades.indexOf(cleanFrom);
+  const toIdx = schoolGrades.indexOf(cleanTo);
+  if (fromIdx !== -1 && toIdx !== -1) {
+    const start = Math.min(fromIdx, toIdx);
+    const end = Math.max(fromIdx, toIdx);
+    return schoolGrades.slice(start, end + 1);
+  }
+
+  return [cleanFrom, cleanTo];
+}
+
 interface GeneratedSchedule {
   grade: string;
   section: string;
@@ -98,38 +151,86 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
     }
 
-    // Determine target classes (single class vs bulk all classes in school)
+    // Extract Grade Scope Parameters (fromGrade / toGrade)
+    const fromGrade = body.fromGrade || body.startGrade || body.setup?.fromGrade || body.setup?.startGrade;
+    const toGrade = body.toGrade || body.endGrade || body.setup?.toGrade || body.setup?.endGrade;
+
+    // Fetch all active class sections and existing distinct schedule sections in school
+    const [classSections, existingSchedules] = await Promise.all([
+      db.classSection.findMany({ where: { schoolId, active: true }, select: { grade: true, section: true } }),
+      db.schedule.findMany({ where: { schoolId }, select: { grade: true, section: true }, distinct: ['grade', 'section'] }),
+    ]);
+
+    // Build map of available sections for each grade
+    const sectionsByGradeMap = new Map<string, Set<string>>();
+    for (const cs of classSections) {
+      const g = cs.grade.trim();
+      const sec = cs.section.trim().toUpperCase();
+      if (!sectionsByGradeMap.has(g)) sectionsByGradeMap.set(g, new Set());
+      sectionsByGradeMap.get(g)!.add(sec);
+    }
+    for (const es of existingSchedules) {
+      const g = es.grade.trim();
+      const sec = es.section.trim().toUpperCase();
+      if (!sectionsByGradeMap.has(g)) sectionsByGradeMap.set(g, new Set());
+      sectionsByGradeMap.get(g)!.add(sec);
+    }
+
+    const schoolGradesList = Array.from(new Set([
+      ...Array.from(sectionsByGradeMap.keys()),
+      ...DEFAULT_GRADES,
+    ]));
+
+    // Determine target classes (Grade Scope vs single class vs full school)
     let targetClasses: { grade: string; section: string }[] = [];
 
-    if (bulkAll) {
-      // Find all active class sections in school
-      const [classSections, existingSchedules] = await Promise.all([
-        db.classSection.findMany({ where: { schoolId, active: true }, select: { grade: true, section: true } }),
-        db.schedule.findMany({ where: { schoolId }, select: { grade: true, section: true }, distinct: ['grade', 'section'] }),
-      ]);
-
+    if (fromGrade && toGrade) {
+      // 1. Grade Scope Mode: fromGrade to toGrade
+      // If fromGrade === toGrade (e.g. Grade 5 to Grade 5), generates for ALL sections of Grade 5
+      // If fromGrade is Grade 1 and toGrade is Grade 10, generates for all sections of Grades 1-10
+      const targetGrades = resolveGradeRange(String(fromGrade), String(toGrade), schoolGradesList);
       const seen = new Set<string>();
-      for (const cs of classSections) {
-        const key = `${cs.grade.trim()}|${cs.section.trim().toUpperCase()}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          targetClasses.push({ grade: cs.grade.trim(), section: cs.section.trim().toUpperCase() });
+
+      for (const tg of targetGrades) {
+        const sections = sectionsByGradeMap.get(tg);
+        if (sections && sections.size > 0) {
+          const sortedSecs = Array.from(sections).sort();
+          for (const s of sortedSecs) {
+            const key = `${tg}|${s}`;
+            if (!seen.has(key)) {
+              seen.add(key);
+              targetClasses.push({ grade: tg, section: s });
+            }
+          }
+        } else {
+          // If no section explicitly in DB yet, create Section A for this grade
+          const key = `${tg}|A`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            targetClasses.push({ grade: tg, section: 'A' });
+          }
         }
       }
-      for (const es of existingSchedules) {
-        const key = `${es.grade.trim()}|${es.section.trim().toUpperCase()}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          targetClasses.push({ grade: es.grade.trim(), section: es.section.trim().toUpperCase() });
+    } else if (bulkAll) {
+      // 2. Full school mode without explicit range
+      const seen = new Set<string>();
+      for (const [tg, sections] of sectionsByGradeMap.entries()) {
+        const sortedSecs = Array.from(sections).sort();
+        for (const s of sortedSecs) {
+          const key = `${tg}|${s}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            targetClasses.push({ grade: tg, section: s });
+          }
         }
       }
 
-      // If no sections in DB yet, fallback to default standard grades Grade 1 to 10 Section A
       if (targetClasses.length === 0) {
         const defaultGrades = ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'];
         targetClasses = defaultGrades.map((g) => ({ grade: g, section: 'A' }));
       }
     } else {
+      // 3. Single class mode
       if (!grade || !section) {
         return NextResponse.json({ error: 'School, grade, and section are required.' }, { status: 400 });
       }
