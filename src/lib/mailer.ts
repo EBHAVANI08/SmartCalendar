@@ -203,7 +203,7 @@ export async function sendTeacherPasswordSetupEmail(options: SendSetupEmailOptio
     process.env.APP_URL ||
     process.env.NEXTAUTH_URL ||
     requestOrigin ||
-    (process.env.NODE_ENV === 'development' ? 'http://localhost:3005' : 'https://smartcalender.learnx.school');
+    (process.env.NODE_ENV === 'development' ? 'http://localhost:3005' : 'https://smartcalendar.learnx.school');
 
   const token = await generatePasswordSetupToken(teacherId, teacherEmail);
   const setupUrl = `${baseUrl.replace(/\/+$/, '')}/setup-password?token=${encodeURIComponent(token)}`;
@@ -212,7 +212,7 @@ export async function sendTeacherPasswordSetupEmail(options: SendSetupEmailOptio
   const from =
     process.env.SMTP_FROM ||
     process.env.EMAIL_FROM ||
-    `"${schoolName}" <${process.env.SMTP_USER || 'noreply@smartcalender.learnx.school'}>`;
+    `"${schoolName}" <${process.env.SMTP_USER || 'noreply@smartcalendar.learnx.school'}>`;
 
   const subject = `Welcome to ${schoolName} - Set Up Your Teacher Account Password`;
   const html = buildPasswordSetupHtml({
@@ -278,7 +278,7 @@ export async function sendPasswordResetOtpEmail(options: {
   const from =
     process.env.SMTP_FROM ||
     process.env.EMAIL_FROM ||
-    `"${schoolName}" <${process.env.SMTP_USER || 'noreply@smartcalender.learnx.school'}>`;
+    `"${schoolName}" <${process.env.SMTP_USER || 'noreply@smartcalendar.learnx.school'}>`;
   const subject = `Your Password Reset OTP: ${otp} - ${schoolName}`;
 
   const html = `<!DOCTYPE html>

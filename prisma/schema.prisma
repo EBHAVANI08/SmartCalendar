@@ -114,6 +114,7 @@ model SchoolDayPeriodConfig {
   breakMinutes  Int      @default(15)
   lunchAfter    Int      @default(4)
   lunchMinutes  Int      @default(30)
+  gradeConfigs  String?  @default("{}") // JSON map: { [grade: string]: GradeDayConfig }
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }

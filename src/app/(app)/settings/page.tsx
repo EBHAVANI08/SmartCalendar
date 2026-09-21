@@ -249,7 +249,10 @@ function SchoolSettingsContent({
     }
   };
 
-  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://smartcalender.learnx.school';
+  const originUrl =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_APP_URL || 'https://smartcalendar.learnx.school');
   const feedUrl = `${originUrl}/api/calendar/feed/live-ics?schoolId=${profile?.id || 'school'}`;
 
   const dirty = Boolean(
