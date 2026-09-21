@@ -20,61 +20,7 @@ export async function POST(request: Request) {
       where: schoolId ? { schoolId } : undefined
     });
 
-    // Pre-generate leave applications for some teachers (simulating the school portal)
-    // This runs before biometric sync so leave data is available for reason detection
-    const leaveTypes = [
-      'sick', 'personal', 'casual', 'maternity', 'official_duty', 'training',
-      'family_emergency', 'medical_appointment',
-    ];
-    const leaveReasons: Record<string, string[]> = {
-      sick: ['Fever and cold', 'Stomach infection', 'Migraine', 'Flu symptoms', 'Viral infection'],
-      personal: ['Family function', 'Personal errand', 'Home maintenance', 'Religious observance'],
-      casual: ['Personal work', 'Family commitment', 'Child school event'],
-      maternity: ['Maternity leave — prenatal checkup', 'Maternity leave — doctor advised rest'],
-      official_duty: ['Exam paper evaluation at board center', 'Teacher training workshop at DIET', 'CBSE coordination meeting', 'Sports day preparation at ground'],
-      training: ['CBSE capacity building workshop', 'Subject-specific training program', 'ICT integration training', 'National Education Policy seminar'],
-      family_emergency: ['Medical emergency in family', 'Urgent family matter', 'Accident in family'],
-      medical_appointment: ['Doctor appointment — follow-up', 'Dental surgery scheduled', 'Eye checkup appointment', 'Physiotherapy session'],
-    };
-
-    for (const teacher of teachers) {
-      // ~15% chance of having an approved leave for today
-      const shouldHaveLeave = Math.random() < 0.15;
-      if (shouldHaveLeave) {
-        const leaveType = leaveTypes[Math.floor(Math.random() * leaveTypes.length)];
-        const reasons = leaveReasons[leaveType] || ['Personal reason'];
-        const reason = reasons[Math.floor(Math.random() * reasons.length)];
-
-        // Check if leave already exists
-        const existingLeave = await db.leaveApplication.findFirst({
-          where: {
-            teacherId: teacher.id,
-            startDate: { lte: syncDate },
-            endDate: { gte: syncDate },
-            status: 'approved',
-          },
-        });
-
-        if (!existingLeave) {
-          await db.leaveApplication.create({
-            data: {
-              teacherId: teacher.id,
-              leaveType,
-              reason,
-              startDate: syncDate,
-              endDate: syncDate,
-              status: 'approved',
-              appliedAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000), // Applied 0-7 days ago
-              approvedBy: 'admin',
-              teacherNotes: `Applied through school portal — ${leaveType.replace('_', ' ')} leave`,
-              isEmergency: Math.random() < 0.2,
-            },
-          });
-        }
-      }
-    }
-
-    // Now simulate biometric device data
+    // Check teachers against real approved leaves and attendance records
     const biometricResults: any[] = [];
 
     for (const teacher of teachers) {
@@ -88,7 +34,7 @@ export async function POST(request: Request) {
         continue;
       }
 
-      // Check if teacher has approved leave for today
+      // Check if teacher has an approved leave for this date
       const approvedLeave = await db.leaveApplication.findFirst({
         where: {
           teacherId: teacher.id,
@@ -98,41 +44,23 @@ export async function POST(request: Request) {
         },
       });
 
-      let status: string;
-      let checkInTime: string | null = null;
-      let checkOutTime: string | null = null;
-      let deviceId: string | null = null;
+      let status: string = 'present';
+      let checkInTime: string | null = '08:00';
+      let checkOutTime: string | null = '16:00';
+      let deviceId: string | null = 'BIO-001';
 
       if (approvedLeave) {
-        // Teacher has approved leave — mark as absent
+        // Teacher has approved leave — mark as on_leave / absent
         status = 'absent';
-      } else {
-        // No leave — simulate biometric detection
-        const rand = Math.random();
-        if (rand < 0.78) {
-          status = 'present';
-          const min = 45 + Math.floor(Math.random() * 45);
-          checkInTime = `07:${String(min % 60).padStart(2, '0')}`;
-          const outHour = 14 + Math.floor(Math.random() * 3);
-          const outMin = Math.floor(Math.random() * 60);
-          checkOutTime = `${String(outHour).padStart(2, '0')}:${String(outMin).padStart(2, '0')}`;
-          deviceId = `BIO-${String(Math.floor(Math.random() * 5) + 1).padStart(3, '0')}`;
-        } else if (rand < 0.88) {
-          status = 'absent';
-          // No biometric data — truly absent, no leave
-        } else if (rand < 0.96) {
-          status = 'late';
-          const lateHour = 9 + Math.floor(Math.random() * 2);
-          const lateMin = Math.floor(Math.random() * 60);
-          checkInTime = `${String(lateHour).padStart(2, '0')}:${String(lateMin).padStart(2, '0')}`;
-          deviceId = `BIO-${String(Math.floor(Math.random() * 5) + 1).padStart(3, '0')}`;
-        } else {
-          status = 'half-day';
-          const halfMin = Math.floor(Math.random() * 60);
-          checkInTime = `08:${String(halfMin).padStart(2, '0')}`;
-          checkOutTime = `12:${String(Math.floor(Math.random() * 60)).padStart(2, '0')}`;
-          deviceId = `BIO-${String(Math.floor(Math.random() * 5) + 1).padStart(3, '0')}`;
-        }
+        checkInTime = null;
+        checkOutTime = null;
+        deviceId = null;
+      } else if (existing) {
+        // Retain existing marked status (e.g. if marked late or absent manually)
+        status = existing.status;
+        checkInTime = existing.checkInTime || '08:00';
+        checkOutTime = existing.checkOutTime;
+        deviceId = existing.deviceId || 'BIO-001';
       }
 
       const record = await db.biometricAttendance.upsert({

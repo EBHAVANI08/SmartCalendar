@@ -44,10 +44,22 @@ export async function POST(request: Request) {
     const affectedTeachers = [...absentRecords, ...lateRecords, ...halfDayRecords];
 
     if (affectedTeachers.length === 0) {
+      // Clean up any stale unassigned pending substitutions for this date
+      await db.substitution.deleteMany({
+        where: {
+          schoolId,
+          date: detectDate,
+          status: 'pending',
+          substituteId: null,
+        },
+      });
+
       return NextResponse.json({
-        success: true, date: detectDate,
-        message: 'No absent teachers detected from biometric data',
-        absentTeachers: [], createdSubstitutions: 0,
+        success: true,
+        date: detectDate,
+        message: 'All teachers are present! No substitution slots required.',
+        absentTeachers: [],
+        createdSubstitutions: 0,
       });
     }
 

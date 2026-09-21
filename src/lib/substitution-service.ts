@@ -490,7 +490,6 @@ export async function removeSubstitutionsForAttendancePresence(options: {
     where: {
       absentTeacherId: teacherId,
       date,
-      source: { in: ['attendance', 'manual'] },
       status: 'pending',
       substituteId: null,
     },

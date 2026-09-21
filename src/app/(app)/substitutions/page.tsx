@@ -149,6 +149,24 @@ export default function SubstitutionsPage() {
     } finally { setAutoAssigning(false); }
   };
 
+  const handleClearAllPending = async () => {
+    if (!confirm(`Are you sure you want to clear all unassigned pending substitutions for ${selectedDate}?`)) return;
+    try {
+      const res = await fetch(`/api/substitutions?clearAll=true&date=${encodeURIComponent(selectedDate)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        toast({ title: 'Substitutions Cleared', description: data.message || 'Cleared pending substitution records.' });
+        fetchSubs();
+      } else {
+        toast({ title: 'Error', description: data.error || 'Failed to clear substitutions', variant: 'destructive' });
+      }
+    } catch {
+      toast({ title: 'Error', description: 'Network error clearing substitutions', variant: 'destructive' });
+    }
+  };
+
   const handleDeleteSub = async (subId: string) => {
     if (!confirm('Are you sure you want to remove this substitution entry?')) return;
     try {
@@ -274,6 +292,18 @@ export default function SubstitutionsPage() {
             <Fingerprint className={`w-4 h-4 text-emerald-600 ${syncingBiometric ? 'animate-pulse' : ''}`} />
             {syncingBiometric ? 'Scanning Biometrics...' : 'Sync Biometric Absentees'}
           </Button>
+
+          {counts.pending > 0 && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleClearAllPending}
+              className="gap-1.5 text-xs border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold h-9 shadow-xs px-3"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              Clear Stale ({counts.pending})
+            </Button>
+          )}
 
           <Button
             size="sm"

@@ -9,24 +9,53 @@ import { ownTeacherId } from '@/lib/teacher-scope';
 
 export async function GET(request: Request) {
   try {
-    // Substitution has no schoolId column, so the tenant boundary is the
-    // absent teacher's school. This used to fall through to `{}` when no
-    // tenant resolved, returning every school's cover list; it now fails
-    // closed for everyone except the platform owner.
     const schoolId = await getTenantSchoolId(request);
     const isOwner = request.headers.get('x-user-role') === 'superadmin';
     if (!schoolId && !isOwner) return NextResponse.json([]);
-    // Explicit tenant column, with the relation kept as defence in depth.
-    // A teacher sees only cover they are part of - either standing in, or the
-    // absent teacher being covered. Not the whole school's absence list.
+
+    const url = new URL(request.url);
+    const dateParam = url.searchParams.get('date');
+
+    // Auto-clean unassigned pending substitutions for teachers marked 'present' on this date
+    if (dateParam && schoolId) {
+      try {
+        const presentRecords = await db.biometricAttendance.findMany({
+          where: {
+            date: dateParam,
+            status: 'present',
+            teacher: { schoolId },
+          },
+          select: { teacherId: true },
+        });
+
+        if (presentRecords.length > 0) {
+          const presentTeacherIds = presentRecords.map((r) => r.teacherId);
+          await db.substitution.deleteMany({
+            where: {
+              schoolId,
+              date: dateParam,
+              absentTeacherId: { in: presentTeacherIds },
+              status: 'pending',
+              substituteId: null,
+            },
+          });
+        }
+      } catch (cleanErr) {
+        console.warn('Auto-cleanup of present teacher substitutions non-blocking error:', cleanErr);
+      }
+    }
+
     const mine = schoolId ? await ownTeacherId(request, schoolId) : null;
-    const where = schoolId
+    const where: any = schoolId
       ? {
           schoolId,
           absentTeacher: { schoolId },
+          ...(dateParam ? { date: dateParam } : {}),
           ...(mine ? { OR: [{ substituteId: mine }, { absentTeacherId: mine }] } : {}),
         }
-      : {};
+      : {
+          ...(dateParam ? { date: dateParam } : {}),
+        };
 
     const substitutions = await db.substitution.findMany({
       where,
@@ -34,7 +63,7 @@ export async function GET(request: Request) {
         absentTeacher: true,
         substitute: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ period: 'asc' }, { createdAt: 'desc' }],
     });
     return NextResponse.json(substitutions || []);
   } catch (error) {
@@ -244,6 +273,25 @@ export async function DELETE(request: Request) {
     if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
 
     const url = new URL(request.url);
+    const clearAll = url.searchParams.get('clearAll') === 'true';
+    const dateParam = url.searchParams.get('date');
+
+    if (clearAll && dateParam) {
+      const deleted = await db.substitution.deleteMany({
+        where: {
+          schoolId,
+          date: dateParam,
+          status: 'pending',
+          substituteId: null,
+        },
+      });
+      return NextResponse.json({
+        success: true,
+        message: `Cleared ${deleted.count} pending substitution records for ${dateParam}.`,
+        deletedCount: deleted.count,
+      });
+    }
+
     let id = url.searchParams.get('id');
     if (!id) {
       const body = await request.json().catch(() => ({}));
