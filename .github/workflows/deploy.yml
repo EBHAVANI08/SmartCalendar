@@ -20,6 +20,13 @@ jobs:
           script: |
             set -e
             echo "🚀 Starting automated deployment on VPS..."
+            
+            # Load environment & PATH for non-interactive SSH
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+            export PATH=$PATH:/usr/local/bin:/usr/bin:~/.nvm/versions/node/$(ls ~/.nvm/versions/node 2>/dev/null | tail -n 1)/bin
+            export NODE_OPTIONS="--max-old-space-size=2048"
+
             cd /var/www/smart-calendar
             
             echo "📥 Pulling latest changes from main..."
@@ -37,5 +44,6 @@ jobs:
             
             echo "♻️ Reloading PM2 process..."
             pm2 reload smart-calendar || pm2 restart smart-calendar || pm2 start ecosystem.config.cjs
+            pm2 save || true
             
             echo "✅ Deployment completed successfully!"
