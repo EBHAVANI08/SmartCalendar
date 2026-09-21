@@ -9,6 +9,8 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     name: Auto Deploy to Production
+    permissions:
+      contents: read
     steps:
       - name: Execute remote deployment commands over SSH
         uses: appleboy/ssh-action@v1.2.0
@@ -29,7 +31,8 @@ jobs:
 
             cd /var/www/smart-calendar
             
-            echo "📥 Pulling latest changes from main..."
+            echo "📥 Authenticating & pulling latest changes from main..."
+            git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
             git fetch origin main
             git reset --hard origin/main
             
