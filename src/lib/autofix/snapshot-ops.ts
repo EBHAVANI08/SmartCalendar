@@ -13,7 +13,7 @@ import type { Change, ModelName, Snapshot } from '@/lib/autofix/types';
  */
 export const WRITABLE_FIELDS: Record<ModelName, readonly string[]> = {
   gradeSubjectConfig: ['grade', 'subjectName', 'weeklyPeriods', 'maxPeriodsPerDay', 'priority', 'allowConsecutive', 'active', 'archivedAt'],
-  subjectMaster: ['name', 'active', 'archivedAt'],
+  subjectMaster: ['name', 'code', 'active', 'archivedAt'],
   classSection: ['grade', 'code', 'active', 'archivedAt'],
   teacher: ['subject', 'subjects', 'grades', 'sections'],
   schedule: ['grade', 'subject'],

@@ -265,8 +265,57 @@ test('undo restores every row, refuses when the rows changed since, and an undon
   const again = run({ ...state, suppressed: [fix.suppressKey] });
   assert.equal(rules(again).includes('over_capacity'), false);
   assert.ok(again.unfixable.some((u) => u.rule === 'over_capacity' && u.blocking && u.grade === 'Y'));
+  // Another automatic change to the rows does not re-open it...
+  again.after.subjectConfigs[1].subjectName = 'B2';
+  assert.equal(rules(run({ ...again.after, suppressed: [fix.suppressKey] })).includes('over_capacity'), false);
+  // ...but a quota the admin sets by hand does.
   again.after.subjectConfigs[0].weeklyPeriods = 25;
+  again.after.subjectConfigs[0].quotaEditedAt = '2030-02-01T00:00:00.000Z';
   assert.ok(rules(run({ ...again.after, suppressed: [fix.suppressKey] })).includes('over_capacity'));
+});
+
+/** Every database unique key, checked across live AND archived rows. */
+function assertUniqueKeys(s: Snapshot) {
+  const check = (label: string, keys: string[]) => {
+    const seen = new Set<string>();
+    for (const key of keys) {
+      assert.equal(seen.has(key), false, `${label} unique key repeated: ${key}`);
+      seen.add(key);
+    }
+  };
+  check('GradeSubjectConfig', s.subjectConfigs.map((c) => `${c.grade}|${c.subjectName}`));
+  check('SubjectMaster name', s.subjectMasters.map((m) => m.name));
+  check('SubjectMaster code', s.subjectMasters.map((m) => m.code));
+  check('ClassSection code', s.classSections.map((c) => `${c.academicYearId}|${c.code}`));
+}
+
+test('merges never leave two rows on one unique key (archived rows give up their names)', () => {
+  // The most-referenced spelling is untidy, so the survivor is renamed after the
+  // merge, onto the name an archived row used to have.
+  const s = snapshot({
+    subjectConfigs: [
+      config('G', 'Information  Technology', 4), config('G', 'Information Technology', 4, { active: false }),
+      config('H', 'information technology', 2), config('H', 'Information  Technology', 3),
+    ],
+    subjectMasters: [
+      { id: 'm1', name: 'Information Technology', code: 'IT', active: true, archivedAt: null },
+      { id: 'm2', name: 'INFORMATION TECHNOLOGY', code: 'IT2', active: true, archivedAt: null },
+    ],
+    classSections: [
+      { id: 's1', grade: 'Grade 1', section: 'A', code: 'Grade1-A', academicYearId: 'y', active: true, archivedAt: null },
+      { id: 's2', grade: 'Grade I', section: 'A', code: 'GradeI-A', academicYearId: 'y', active: true, archivedAt: null },
+    ],
+    scheduleCounts: { grades: { 'Grade 1': 5 }, subjects: { 'Information  Technology': 50 } },
+  });
+  const result = run(s);
+  assertUniqueKeys(result.after);
+  assert.deepEqual(live(result.after, 'G'), ['Information Technology']);
+  assert.deepEqual(live(result.after, 'H'), ['Information Technology']);
+  // Undoing every fix, newest first, restores the original names exactly.
+  const state = cloneSnapshot(s);
+  for (const fix of result.fixes) applyChanges(state, fix.changes);
+  for (const fix of [...result.fixes].reverse()) assert.equal(revertChanges(state, fix.changes).ok, true, fix.summary);
+  assert.deepEqual(state, s);
 });
 
 test('tier 3: auto-fix can never write credentials, roles or timetable assignments', () => {

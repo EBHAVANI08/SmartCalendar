@@ -16,6 +16,8 @@ export interface AutofixRun {
   suppressed: Fix[];
   /** AutoFixLog ids written (apply only). */
   logIds: string[];
+  /** Groups this run's AutoFixLog rows (apply only). */
+  runId: string | null;
 }
 
 export interface AutofixOptions {
@@ -45,10 +47,10 @@ export async function runAutofix(schoolId: string, options: AutofixOptions): Pro
   const rules = RULES.filter((rule) => tiers.includes(rule.tier) && (!options.rules || options.rules.includes(rule.id as RuleId)));
   const snapshot = await loadSnapshot(schoolId, { protectedConfigIds: options.protectedConfigIds });
   const result = runEngine(snapshot, { now: (options.now ?? new Date()).toISOString(), onlyGrade: options.onlyGrade }, rules);
-  const logIds = options.apply && result.fixes.length
+  const persisted = options.apply && result.fixes.length
     ? await persistFixes(schoolId, result.fixes, { trigger: options.trigger, actor: options.actor })
-    : [];
-  return { fixes: result.fixes, unfixable: result.unfixable, suppressed: result.suppressed, logIds };
+    : null;
+  return { fixes: result.fixes, unfixable: result.unfixable, suppressed: result.suppressed, logIds: persisted?.ids ?? [], runId: persisted?.runId ?? null };
 }
 
 /** The per-school switch (SchoolFeatureFlags.autofixEnabled). Missing means off. */

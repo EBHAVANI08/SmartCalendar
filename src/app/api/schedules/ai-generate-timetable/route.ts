@@ -314,7 +314,7 @@ export async function POST(request: Request) {
     const autofixOn = await isAutofixEnabled(schoolId);
     const autofix = autofixOn
       ? await runAutofix(schoolId, { apply: true, trigger: 'generation', actor: request.headers.get('x-user-email') })
-      : { fixes: [], unfixable: [], suppressed: [], logIds: [] };
+      : { fixes: [], unfixable: [], suppressed: [], logIds: [], runId: null };
     const targetGradeNames = new Set(targetClasses.map((tc) => tc.grade));
     const blocking = autofix.unfixable.filter((item) => item.blocking && (!item.grade || targetGradeNames.has(item.grade)));
     const overCapacity = (await gradeCapacityReport(schoolId)).filter((c) => targetGradeNames.has(c.grade) && !c.ok);

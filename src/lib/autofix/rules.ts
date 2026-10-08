@@ -563,7 +563,10 @@ const overCapacity: Rule = {
         before: { grade, demand, slots, quotas: Object.fromEntries(changed.map((row) => [row.subjectName, row.weeklyPeriods])) },
         after: { grade, demand: slots, slots, quotas: Object.fromEntries(changed.map((row) => [row.subjectName, targets.get(row.id)])) },
         changes: changed.map((row) => ({ model: 'gradeSubjectConfig', id: row.id, before: { weeklyPeriods: row.weeklyPeriods }, after: { weeklyPeriods: targets.get(row.id)! } })),
-        suppressKey: `over_capacity:${grade}:${slots}:${shortHash(rows.map((row) => `${row.id}=${row.weeklyPeriods}`).sort().join(','))}`,
+        // An undo holds until the school changes something itself: the grade's
+        // week (slots) or a quota set by hand. Other automatic fixes (merges)
+        // do not re-open it.
+        suppressKey: `over_capacity:${grade}:${slots}:${rows.map((row) => row.quotaEditedAt ?? '').sort().at(-1) || 'never-edited'}`,
         ifSuppressed: {
           rule: 'over_capacity', entity: `grade:${grade}`, grade, blocking: true,
           message: `${grade} needs ${demand} periods a week but has ${slots}. The automatic balancing was undone, so generation for this grade waits until the quotas are changed.`,

@@ -26,3 +26,12 @@ export const UNEDITED_TOLERANCE_MS = 2000;
 
 /** Auto-fix: safety stop for the fix-until-stable loop of one rule. */
 export const AUTOFIX_MAX_ITERATIONS = 500;
+
+/**
+ * Auto-fix: a database transaction interrupted by the network is rolled back
+ * and tried again, up to this many attempts in total.
+ */
+export const AUTOFIX_TRANSACTION_ATTEMPTS = 4;
+
+/** Auto-fix: pause before a retry, multiplied by the attempt number. */
+export const AUTOFIX_RETRY_DELAY_MS = 750;

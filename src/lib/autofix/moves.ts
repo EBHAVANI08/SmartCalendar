@@ -14,8 +14,31 @@ function pick(row: SubjectConfigRow, fields: (keyof SubjectConfigRow)[]): Record
   return Object.fromEntries(fields.map((field) => [field, row[field]]));
 }
 
-function archive(model: 'gradeSubjectConfig' | 'subjectMaster' | 'classSection', row: { id: string; active: boolean; archivedAt: string | null }, now: string): Change {
-  return { model, id: row.id, before: { active: row.active, archivedAt: row.archivedAt }, after: { active: false, archivedAt: now } };
+/**
+ * Name an archived row carries instead of its own, so it never holds a unique
+ * key (school+grade+subject, school+name, school+code) a live row needs.
+ * Undo restores the real name from the change's before-values.
+ */
+export function archivedName(name: string, id: string): string {
+  return `${name} [archived ${id}]`;
+}
+
+type Archivable =
+  | { model: 'gradeSubjectConfig'; row: { id: string; active: boolean; archivedAt: string | null; subjectName: string } }
+  | { model: 'subjectMaster'; row: { id: string; active: boolean; archivedAt: string | null; name: string; code: string } }
+  | { model: 'classSection'; row: { id: string; active: boolean; archivedAt: string | null; code: string } };
+
+function archive(target: Archivable, now: string): Change {
+  const base = { before: { active: target.row.active, archivedAt: target.row.archivedAt }, after: { active: false, archivedAt: now } };
+  const { id } = target.row;
+  switch (target.model) {
+    case 'gradeSubjectConfig':
+      return { model: 'gradeSubjectConfig', id, before: { ...base.before, subjectName: target.row.subjectName }, after: { ...base.after, subjectName: archivedName(target.row.subjectName, id) } };
+    case 'subjectMaster':
+      return { model: 'subjectMaster', id, before: { ...base.before, name: target.row.name, code: target.row.code }, after: { ...base.after, name: archivedName(target.row.name, id), code: archivedName(target.row.code, id) } };
+    case 'classSection':
+      return { model: 'classSection', id, before: { ...base.before, code: target.row.code }, after: { ...base.after, code: archivedName(target.row.code, id) } };
+  }
 }
 
 /**
@@ -27,10 +50,10 @@ function mergeConfigPair(duplicate: SubjectConfigRow, canonical: SubjectConfigRo
   if (inUse(duplicate) && !inUse(canonical)) {
     return [
       { model: 'gradeSubjectConfig', id: canonical.id, before: pick(canonical, SETTINGS), after: pick(duplicate, SETTINGS) },
-      archive('gradeSubjectConfig', duplicate, now),
+      archive({ model: 'gradeSubjectConfig', row: duplicate }, now),
     ];
   }
-  return [archive('gradeSubjectConfig', duplicate, now)];
+  return [archive({ model: 'gradeSubjectConfig', row: duplicate }, now)];
 }
 
 export interface MovePlan {
@@ -52,7 +75,7 @@ export function planGradeMove(s: Snapshot, from: string, to: string, now: string
   for (const section of s.classSections.filter((c) => isLive(c) && c.grade === from)) {
     const twin = s.classSections.find((c) => isLive(c) && c.grade === to && c.section === section.section && c.academicYearId === section.academicYearId);
     if (twin) {
-      changes.push(archive('classSection', section, now));
+      changes.push(archive({ model: 'classSection', row: section }, now));
       continue;
     }
     const code = `${to.replace(/\s+/g, '')}-${section.section}`;
@@ -114,10 +137,9 @@ export function planSubjectMove(s: Snapshot, from: string, to: string, now: stri
 
   const fromMaster = s.subjectMasters.find((m) => isLive(m) && m.name === from);
   const toMaster = s.subjectMasters.find((m) => isLive(m) && m.name === to);
-  const nameTaken = s.subjectMasters.some((m) => m.name === to);
   if (fromMaster) {
-    if (toMaster || nameTaken) {
-      changes.push(archive('subjectMaster', fromMaster, now));
+    if (toMaster) {
+      changes.push(archive({ model: 'subjectMaster', row: fromMaster }, now));
       if (toMaster) {
         for (const qualification of s.teacherQualifications.filter((q) => q.subjectId === fromMaster.id)) {
           const twin = s.teacherQualifications.some((q) => q.teacherId === qualification.teacherId && q.subjectId === toMaster.id);

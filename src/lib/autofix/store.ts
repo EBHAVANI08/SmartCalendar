@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { EDITABLE_STATUSES } from '@/lib/timetable-lifecycle';
+import { AUTOFIX_RETRY_DELAY_MS, AUTOFIX_TRANSACTION_ATTEMPTS } from '@/lib/scheduling-constants';
 import { assertWritable, valuesMatch } from '@/lib/autofix/snapshot-ops';
 import type { Change, Fix, ModelName, Snapshot } from '@/lib/autofix/types';
 
@@ -146,12 +147,32 @@ async function writeChanges(tx: Tx, schoolId: string, changes: Change[], directi
 
 const TRANSACTION_TIMEOUT_MS = 60_000;
 
+/**
+ * A MongoDB transaction interrupted by the network is rolled back entirely, so
+ * it is safe to run again. Anything else is re-thrown at once.
+ */
+function isTransient(error: unknown): boolean {
+  const text = error instanceof Error ? `${(error as { code?: string }).code ?? ''} ${error.message}` : String(error);
+  return /TransientTransactionError|P2034|write conflict|connection (was )?(forcibly )?closed|ECONNRESET|os error 10054/i.test(text);
+}
+
+async function withRetry<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work();
+    } catch (error) {
+      if (attempt >= AUTOFIX_TRANSACTION_ATTEMPTS || !isTransient(error)) throw error;
+      await new Promise((resolve) => setTimeout(resolve, AUTOFIX_RETRY_DELAY_MS * attempt));
+    }
+  }
+}
+
 /** Writes each fix and its log entry in one transaction. Returns the log ids. */
-export async function persistFixes(schoolId: string, fixes: Fix[], options: { trigger: string; actor?: string | null }): Promise<string[]> {
+export async function persistFixes(schoolId: string, fixes: Fix[], options: { trigger: string; actor?: string | null }): Promise<{ runId: string; ids: string[] }> {
   const runId = randomUUID();
   const ids: string[] = [];
   for (const fix of fixes) {
-    const log = await db.$transaction(async (tx) => {
+    const log = await withRetry(() => db.$transaction(async (tx) => {
       // The data must still be what the engine saw; otherwise skip the fix.
       for (const change of fix.changes) {
         const current = await currentValues(tx, schoolId, change);
@@ -179,13 +200,13 @@ export async function persistFixes(schoolId: string, fixes: Fix[], options: { tr
         },
         select: { id: true },
       });
-    }, { timeout: TRANSACTION_TIMEOUT_MS, maxWait: TRANSACTION_TIMEOUT_MS }).catch((error) => {
+    }, { timeout: TRANSACTION_TIMEOUT_MS, maxWait: TRANSACTION_TIMEOUT_MS })).catch((error) => {
       if (error instanceof StaleFixError) return null; // data changed meanwhile; the next run re-evaluates
       throw error;
     });
     if (log) ids.push(log.id);
   }
-  return ids;
+  return { runId, ids };
 }
 
 class StaleFixError extends Error {}
@@ -205,7 +226,10 @@ export async function undoFix(schoolId: string, logId: string, actor?: string | 
   if (log.undoneAt) return { ok: false, reason: 'already_undone' };
   const changes = log.changes as unknown as Change[];
   try {
-    await db.$transaction(async (tx) => {
+    await withRetry(() => db.$transaction(async (tx) => {
+      // Re-read inside the transaction: a retried undo may already have committed.
+      const current = await tx.autoFixLog.findFirst({ where: { id: log.id, schoolId }, select: { undoneAt: true } });
+      if (current?.undoneAt) return;
       const conflicts: string[] = [];
       for (const change of changes) {
         const current = await currentValues(tx, schoolId, change);
@@ -214,7 +238,7 @@ export async function undoFix(schoolId: string, logId: string, actor?: string | 
       if (conflicts.length) throw new UndoConflictError(conflicts);
       await writeChanges(tx, schoolId, changes, 'before');
       await tx.autoFixLog.update({ where: { id: log.id }, data: { undoneAt: new Date(), undoneBy: actor ?? null } });
-    }, { timeout: TRANSACTION_TIMEOUT_MS, maxWait: TRANSACTION_TIMEOUT_MS });
+    }, { timeout: TRANSACTION_TIMEOUT_MS, maxWait: TRANSACTION_TIMEOUT_MS }));
     return { ok: true };
   } catch (error) {
     if (error instanceof UndoConflictError) return { ok: false, reason: 'conflict', conflicts: error.conflicts };
