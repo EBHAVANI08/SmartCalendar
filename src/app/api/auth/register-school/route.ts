@@ -71,6 +71,8 @@ export async function POST(request: Request) {
           password: hashedPassword,
         },
       });
+      // New schools get automatic setup fixes from the start.
+      await db.schoolFeatureFlags.create({ data: { schoolId: school.id, autofixEnabled: true } }).catch(() => null);
 
       return NextResponse.json(
         {

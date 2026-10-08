@@ -1,5 +1,7 @@
 import { readList } from '@/lib/faculty';
-import { compareSubjects, gradeKey, parseRoman } from '@/lib/name-normalize';
+import { compareSubjects, gradeKey } from '@/lib/name-normalize';
+import { teacherQualifiedFor } from '@/lib/staffing';
+import { renameListColumn, type NameKind } from '@/lib/autofix/rename';
 import { AUTO_CREATED_MIN_ROWS, UNEDITED_TOLERANCE_MS } from '@/lib/scheduling-constants';
 import { buildTeachingGrid, longestDayPeriods, validateBellConfig, workingDayNames } from '@/lib/timetable-constraints';
 import { planGradeMove, planSubjectMove } from '@/lib/autofix/moves';
@@ -16,6 +18,8 @@ import type { Change, Fix, Snapshot, SubjectConfigRow, Unfixable } from '@/lib/a
 export interface RuleContext {
   /** ISO timestamp used for archivedAt, so a run is deterministic. */
   now: string;
+  /** Limit grade-level rules (balancing) to one grade. */
+  onlyGrade?: string;
 }
 
 export interface RuleOutput {
@@ -25,6 +29,8 @@ export interface RuleOutput {
 
 export interface Rule {
   id: string;
+  /** 1 = runs on every School Setup save; 2 = runs at generation or on request. */
+  tier: 1 | 2;
   run(s: Snapshot, ctx: RuleContext): RuleOutput;
 }
 
@@ -46,29 +52,72 @@ const priorityRank = (priority: string) => {
   const index = PRIORITY_ORDER.indexOf(priority);
   return index === -1 ? PRIORITY_ORDER.indexOf(DEFAULT_PRIORITY) : index;
 };
-const isCore = (priority: string) => priority === PRIORITY_ORDER[PRIORITY_ORDER.length - 1];
+
+/** True when a teacher list column mentions the name. */
+const mentions = (raw: string | null, kind: NameKind, name: string) => renameListColumn(raw, kind, name, '\u0000') !== null;
+
+/** How much of the school's data uses a grade name: rows, teacher lists and timetable rows (every version). */
+function gradeReferences(s: Snapshot, name: string): number {
+  return liveConfigs(s).filter((c) => c.grade === name).length
+    + s.classSections.filter((c) => isLive(c) && c.grade === name).length
+    + s.teachers.filter((t) => mentions(t.grades, 'grade', name) || mentions(t.sections, 'grade', name)).length
+    + (s.scheduleCounts.grades[name] ?? 0);
+}
+
+/** How much of the school's data uses a subject name: rows, teacher lists and timetable rows (every version). */
+function subjectReferences(s: Snapshot, name: string): number {
+  return liveConfigs(s).filter((c) => c.subjectName === name).length
+    + s.subjectMasters.filter((m) => isLive(m) && m.name === name).length
+    + s.teachers.filter((t) => t.subject.trim() === name || mentions(t.subjects, 'subject', name) || mentions(t.sections, 'subject', name)).length
+    + (s.scheduleCounts.subjects[name] ?? 0);
+}
+
+/** Single spaces and every word capitalised score higher ("Computer Science" over "computer  science"). */
+const presentability = (name: string) =>
+  (name === tidyName(name) ? 2 : 0)
+  + (name.split(/\s+/).filter((word) => /\p{L}/u.test(word)).every((word) => /^\p{Lu}/u.test(word)) ? 1 : 0);
 
 /**
- * How presentable a spelling is: single spaces, then every word capitalised
- * ("Computer Science" over "computer Science"), then mixed rather than all
- * capitals or all lower case.
+ * The most-referenced name wins; on a tie the longer form; then the better
+ * presented spelling; then alphabetical, so runs are deterministic.
  */
-const tidiness = (name: string) => {
-  let score = 0;
-  if (name === tidyName(name)) score += 4;
-  const words = name.split(/\s+/).filter((word) => /\p{L}/u.test(word));
-  if (words.length && words.every((word) => /^\p{Lu}/u.test(word))) score += 2;
-  const letters = name.replace(/[^\p{L}]/gu, '');
-  if (letters && letters !== letters.toUpperCase() && letters !== letters.toLowerCase()) score += 1;
-  return score;
-};
+const byReferences = (references: (name: string) => number) => (a: string, b: string) =>
+  references(b) - references(a) || b.length - a.length || presentability(b) - presentability(a) || a.localeCompare(b);
 
-/** "Grade 1" → "Grade #arabic", "Class IV" → "Class #roman": the shape of a grade name. */
-function gradeStyle(name: string): string {
-  return tidyName(name)
-    .replace(/\b\d+\b/g, '#arabic')
-    .replace(/\b[IVXLCDM]+\b/g, (numeral) => (parseRoman(numeral) !== null ? '#roman' : numeral));
-}
+// ── Tier 1: the school's own merge rules ─────────────────────────────────────
+
+/** "From" means "to" for this school (MergeRule rows); applied like any other merge. */
+const mergeRules: Rule = {
+  id: 'merge_rule',
+  tier: 1,
+  run(s, ctx) {
+    const fixes: Fix[] = [];
+    const unfixable: Unfixable[] = [];
+    const frozen = new Set(s.frozenGrades);
+    for (const rule of s.mergeRules) {
+      if (rule.from === rule.to) continue;
+      const plan = rule.kind === 'grade'
+        ? (frozen.has(rule.from) ? null : planGradeMove(s, rule.from, rule.to, ctx.now))
+        : planSubjectMove(s, rule.from, rule.to, ctx.now);
+      if (!plan) {
+        unfixable.push({ rule: 'merge_rule', entity: `grade:${rule.to}`, message: `Merge rule "${rule.from}" → "${rule.to}" waits: the published timetable uses "${rule.from}".`, blocking: false });
+        continue;
+      }
+      if (!plan.changes.length) continue;
+      fixes.push({
+        rule: 'merge_rule',
+        tier: 1,
+        entity: `${rule.kind}:${rule.to}`,
+        summary: `"${rule.from}" merged into "${rule.to}" (school merge rule)`,
+        before: { name: rule.from },
+        after: { name: rule.to },
+        changes: plan.changes,
+        suppressKey: `merge_rule:${rule.id}`,
+      });
+    }
+    return { fixes, unfixable };
+  },
+};
 
 // ── Tier 2: rows that look auto-created ──────────────────────────────────────
 
@@ -79,6 +128,7 @@ function gradeStyle(name: string): string {
  */
 const autoCreatedRows: Rule = {
   id: 'auto_created_rows',
+  tier: 2,
   run(s) {
     const fixes: Fix[] = [];
     for (const [grade, rows] of groupBy(liveConfigs(s).filter((c) => c.active && c.weeklyPeriods > 0), (c) => c.grade)) {
@@ -106,6 +156,7 @@ const autoCreatedRows: Rule = {
 
 const duplicateGrades: Rule = {
   id: 'duplicate_grade',
+  tier: 1,
   run(s, ctx) {
     const fixes: Fix[] = [];
     const unfixable: Unfixable[] = [];
@@ -114,23 +165,13 @@ const duplicateGrades: Rule = {
       ...s.classSections.filter(isLive).map((c) => c.grade),
     ]);
     const frozen = new Set(s.frozenGrades);
-    const styleCount = new Map<string, number>();
-    for (const name of names) styleCount.set(gradeStyle(name), (styleCount.get(gradeStyle(name)) ?? 0) + 1);
-    const references = (name: string) =>
-      s.classSections.filter((c) => isLive(c) && c.grade === name).length * 10
-      + liveConfigs(s).filter((c) => c.grade === name && inUse(c)).length;
+    const order = byReferences((name) => gradeReferences(s, name));
 
     for (const group of groupBy([...names], gradeKey).values()) {
       if (group.length < 2) continue;
-      // A name the live timetable uses must stay; otherwise the spelling that
-      // follows the school's own naming style for its other grades wins,
-      // then the tidiest, then the most used.
-      const ranked = [...group].sort((a, b) =>
-        Number(frozen.has(b)) - Number(frozen.has(a))
-        || (styleCount.get(gradeStyle(b)) ?? 0) - (styleCount.get(gradeStyle(a)) ?? 0)
-        || tidiness(b) - tidiness(a)
-        || references(b) - references(a)
-        || a.localeCompare(b));
+      // A name the live timetable uses must stay; otherwise the most-referenced
+      // name wins (the longer form on a tie).
+      const ranked = [...group].sort((a, b) => Number(frozen.has(b)) - Number(frozen.has(a)) || order(a, b));
       const canonical = ranked[0];
       for (const duplicate of ranked.slice(1)) {
         if (frozen.has(duplicate)) {
@@ -165,27 +206,24 @@ const duplicateGrades: Rule = {
 /** Name variants merged automatically: exact keys, abbreviations, one-letter spellings. */
 const MERGEABLE = new Set(['exact', 'alias', 'spelling']);
 
-function subjectNames(s: Snapshot): Map<string, number> {
-  const weight = new Map<string, number>();
-  const add = (name: string | null | undefined, amount: number) => {
-    const clean = String(name ?? '');
-    if (!clean.trim()) return;
-    weight.set(clean, (weight.get(clean) ?? 0) + amount);
-  };
-  for (const c of liveConfigs(s)) add(c.subjectName, inUse(c) ? 10 : 1);
-  for (const m of s.subjectMasters.filter(isLive)) add(m.name, 1);
-  for (const t of s.teachers) for (const name of new Set([t.subject, ...readList(t.subjects ?? t.subject)])) add(name, 1);
-  for (const r of s.editableSchedules) add(r.subject, 0.01);
-  return weight;
+/** Every subject name the school's live setup, teachers and draft timetable use. */
+function subjectNames(s: Snapshot): string[] {
+  const names = new Set<string>();
+  const add = (name: string | null | undefined) => { if (String(name ?? '').trim()) names.add(String(name)); };
+  for (const c of liveConfigs(s)) add(c.subjectName);
+  for (const m of s.subjectMasters.filter(isLive)) add(m.name);
+  for (const t of s.teachers) for (const name of [t.subject, ...readList(t.subjects ?? t.subject)]) add(name);
+  for (const r of s.editableSchedules) add(r.subject);
+  return [...names];
 }
 
 const duplicateSubjects: Rule = {
   id: 'duplicate_subject',
+  tier: 1,
   run(s, ctx) {
     const fixes: Fix[] = [];
-    const weight = subjectNames(s);
-    const ranked = [...weight.keys()].sort((a, b) =>
-      tidiness(b) - tidiness(a) || (weight.get(b)! - weight.get(a)!) || a.localeCompare(b));
+    // The most-referenced name wins (the longer form on a tie).
+    const ranked = subjectNames(s).sort(byReferences((name) => subjectReferences(s, name)));
     const assigned = new Set<string>();
     for (const canonical of ranked) {
       if (assigned.has(canonical)) continue;
@@ -218,6 +256,7 @@ const duplicateSubjects: Rule = {
 
 const displayNames: Rule = {
   id: 'display_name',
+  tier: 1,
   run(s, ctx) {
     const fixes: Fix[] = [];
     const unfixable: Unfixable[] = [];
@@ -248,6 +287,7 @@ const displayNames: Rule = {
 
 const dailyCapTooLow: Rule = {
   id: 'daily_cap_too_low',
+  tier: 1,
   run(s) {
     const fixes: Fix[] = [];
     if (!s.dayConfig) return { fixes, unfixable: [] };
@@ -313,6 +353,7 @@ function bellChange(s: Snapshot, grade: string | null, patch: Record<string, unk
 
 const bellRules: Rule = {
   id: 'bell',
+  tier: 1,
   run(s) {
     const fixes: Fix[] = [];
     for (const scope of bellScopes(s)) {
@@ -382,34 +423,101 @@ const bellRules: Rule = {
 
 // ── Tier 2: grade over capacity ──────────────────────────────────────────────
 
-/**
- * Reduce weekly quotas until the grade fits its week: lowest priority first,
- * the largest quota first within a priority, never below 1 period, and Core
- * subjects only once every other subject is down to 1.
- */
-export function planReduction(rows: SubjectConfigRow[], overBy: number): { reductions: Map<string, number>; remaining: number } {
-  const weekly = new Map(rows.map((row) => [row.id, row.weeklyPeriods]));
-  let remaining = overBy;
-  while (remaining > 0) {
-    const reducible = rows.filter((row) => weekly.get(row.id)! > 1);
-    const nonCore = reducible.filter((row) => !isCore(row.priority));
-    const pool = nonCore.length ? nonCore : reducible;
-    if (!pool.length) break;
-    pool.sort((a, b) =>
-      priorityRank(a.priority) - priorityRank(b.priority)
-      || weekly.get(b.id)! - weekly.get(a.id)!
-      || a.subjectName.localeCompare(b.subjectName));
-    weekly.set(pool[0].id, weekly.get(pool[0].id)! - 1);
-    remaining--;
-  }
-  const reductions = new Map<string, number>();
-  for (const row of rows) if (weekly.get(row.id)! !== row.weeklyPeriods) reductions.set(row.id, weekly.get(row.id)!);
-  return { reductions, remaining };
+/** Why a subject is reduced earlier or later; read from the school's data only. */
+export type BalanceSignal = 'no_teacher' | 'staffed' | 'needs_room';
+
+export interface BalanceRow {
+  id: string;
+  subjectName: string;
+  weeklyPeriods: number;
+  priority: string;
+  signal: BalanceSignal;
+  /** Quota set by hand by an admin: reduced only after everything else. */
+  edited: boolean;
 }
+
+const SIGNAL_RANK: Record<BalanceSignal, number> = { no_teacher: 0, staffed: 1, needs_room: 2 };
+
+/**
+ * Shares `total` periods among `weights` in proportion (largest-remainder
+ * method), each between 1 and its own weight. Deterministic: ties go to the
+ * larger original weight, then the earlier item.
+ */
+export function allocateProportionally(weights: number[], total: number): number[] {
+  const result = new Array<number>(weights.length).fill(0);
+  const fixed = new Set<number>();
+  for (;;) {
+    const free = weights.map((_, index) => index).filter((index) => !fixed.has(index));
+    const left = total - [...fixed].reduce((sum, index) => sum + result[index], 0);
+    const freeWeight = free.reduce((sum, index) => sum + weights[index], 0);
+    const quotas = free.map((index) => (freeWeight ? (left * weights[index]) / freeWeight : 0));
+    // Pin items that would fall below 1 or rise above their own weight, then re-share.
+    const pinned = free.filter((index, position) => quotas[position] < 1 || quotas[position] > weights[index]);
+    if (pinned.length) {
+      for (const index of pinned) {
+        const quota = quotas[free.indexOf(index)];
+        result[index] = quota < 1 ? 1 : weights[index];
+        fixed.add(index);
+      }
+      continue;
+    }
+    const floors = quotas.map(Math.floor);
+    free.forEach((index, position) => { result[index] = floors[position]; });
+    let remainder = left - floors.reduce((sum, value) => sum + value, 0);
+    const order = free
+      .map((index, position) => ({ index, fraction: quotas[position] - floors[position] }))
+      .sort((a, b) => b.fraction - a.fraction || weights[b.index] - weights[a.index] || a.index - b.index);
+    for (const { index } of order) {
+      if (remainder <= 0) break;
+      result[index] += 1;
+      remainder -= 1;
+    }
+    return result;
+  }
+}
+
+/**
+ * Brings a grade's demand down by `overBy`:
+ *  1. explicit priority first (Low, then Normal, then High, then Core);
+ *  2. within a priority, data signals: no qualified teacher first, then
+ *     staffed subjects, then subjects needing a specialised room;
+ *  3. quotas an admin set by hand only after everything else;
+ *  4. within one level, proportional to the original quotas (largest
+ *     remainder), never below 1 period.
+ */
+export function planBalance(rows: BalanceRow[], overBy: number): { targets: Map<string, number>; remaining: number } {
+  const levelKey = (row: BalanceRow) => [row.edited ? 1 : 0, priorityRank(row.priority), SIGNAL_RANK[row.signal]];
+  const levels = groupBy(rows, (row) => levelKey(row).join('|'));
+  const ordered = [...levels.values()].sort((a, b) => {
+    const [x, y] = [levelKey(a[0]), levelKey(b[0])];
+    return x[0] - y[0] || x[1] - y[1] || x[2] - y[2];
+  });
+
+  const targets = new Map<string, number>();
+  let remaining = overBy;
+  for (const level of ordered) {
+    if (remaining <= 0) break;
+    const reducible = level.reduce((sum, row) => sum + (row.weeklyPeriods - 1), 0);
+    if (reducible <= 0) continue;
+    if (remaining >= reducible) {
+      for (const row of level) if (row.weeklyPeriods > 1) targets.set(row.id, 1);
+      remaining -= reducible;
+      continue;
+    }
+    const total = level.reduce((sum, row) => sum + row.weeklyPeriods, 0) - remaining;
+    const shares = allocateProportionally(level.map((row) => row.weeklyPeriods), total);
+    level.forEach((row, index) => { if (shares[index] !== row.weeklyPeriods) targets.set(row.id, shares[index]); });
+    remaining = 0;
+  }
+  return { targets, remaining };
+}
+
+const SIGNAL_NOTE: Record<BalanceSignal, string> = { no_teacher: 'no qualified teacher', staffed: '', needs_room: 'needs a specialised room' };
 
 const overCapacity: Rule = {
   id: 'over_capacity',
-  run(s) {
+  tier: 2,
+  run(s, ctx) {
     const fixes: Fix[] = [];
     const unfixable: Unfixable[] = [];
     const active = liveConfigs(s).filter((c) => c.active && c.weeklyPeriods > 0);
@@ -417,31 +525,48 @@ const overCapacity: Rule = {
       if (active.length) unfixable.push({ rule: 'day_config_missing', entity: 'bell:school', message: 'The day & period setup has not been saved yet.', blocking: true });
       return { fixes, unfixable };
     }
+    const teachers = s.teachers.filter((t) => t.role !== 'inactive').map((t) => ({ ...t, name: '' }));
+    const strict = new Set(s.protectedConfigIds);
     for (const [grade, rows] of groupBy(active, (c) => c.grade)) {
+      if (ctx.onlyGrade && grade !== ctx.onlyGrade) continue;
       const slots = buildTeachingGrid(weekFor(s, grade)).length;
       const demand = rows.reduce((sum, row) => sum + row.weeklyPeriods, 0);
       if (demand <= slots) continue;
-      const { reductions, remaining } = planReduction(rows, demand - slots);
+
+      const balanceRows: BalanceRow[] = rows.filter((row) => !strict.has(row.id)).map((row) => ({
+        id: row.id,
+        subjectName: row.subjectName,
+        weeklyPeriods: row.weeklyPeriods,
+        priority: row.priority,
+        edited: Boolean(row.quotaEditedAt),
+        signal: !teachers.some((t) => teacherQualifiedFor(t, row.subjectName, grade))
+          ? 'no_teacher'
+          : row.requiredRoomType ? 'needs_room' : 'staffed',
+      }));
+      const { targets, remaining } = planBalance(balanceRows, demand - slots);
       if (remaining > 0) {
         unfixable.push({
           rule: 'over_capacity', entity: `grade:${grade}`, grade, blocking: true,
-          message: `${grade} has ${rows.length} active subjects but only ${slots} periods a week; even at 1 period each it is ${rows.length - slots} over. Deactivate subjects or add periods.`,
+          message: `${grade} needs ${demand} periods a week but has ${slots}; even with every subject at 1 period it is ${remaining} over. Deactivate subjects or add periods.`,
         });
         continue;
       }
-      const changed = rows.filter((row) => reductions.has(row.id));
+      const changed = balanceRows.filter((row) => targets.has(row.id));
+      // Say why: an explicit priority decides first, otherwise the data signal.
+      const reason = (row: BalanceRow) => (priorityRank(row.priority) !== priorityRank(DEFAULT_PRIORITY) ? `${row.priority} priority` : SIGNAL_NOTE[row.signal]);
+      const describe = (row: BalanceRow) => `${row.subjectName} ${row.weeklyPeriods}→${targets.get(row.id)}${reason(row) ? ` (${reason(row)})` : ''}`;
       fixes.push({
         rule: 'over_capacity',
         tier: 2,
         entity: `grade:${grade}`,
-        summary: `${grade} reduced from ${demand} → ${slots} periods: ${changed.map((row) => `${row.subjectName} ${row.weeklyPeriods}→${reductions.get(row.id)}`).join(', ')}`,
+        summary: `${grade} reduced from ${demand} → ${slots} periods: ${changed.map(describe).join(', ')}`,
         before: { grade, demand, slots, quotas: Object.fromEntries(changed.map((row) => [row.subjectName, row.weeklyPeriods])) },
-        after: { grade, demand: slots, slots, quotas: Object.fromEntries(changed.map((row) => [row.subjectName, reductions.get(row.id)])) },
-        changes: changed.map((row) => ({ model: 'gradeSubjectConfig', id: row.id, before: { weeklyPeriods: row.weeklyPeriods }, after: { weeklyPeriods: reductions.get(row.id)! } })),
+        after: { grade, demand: slots, slots, quotas: Object.fromEntries(changed.map((row) => [row.subjectName, targets.get(row.id)])) },
+        changes: changed.map((row) => ({ model: 'gradeSubjectConfig', id: row.id, before: { weeklyPeriods: row.weeklyPeriods }, after: { weeklyPeriods: targets.get(row.id)! } })),
         suppressKey: `over_capacity:${grade}:${slots}:${shortHash(rows.map((row) => `${row.id}=${row.weeklyPeriods}`).sort().join(','))}`,
         ifSuppressed: {
           rule: 'over_capacity', entity: `grade:${grade}`, grade, blocking: true,
-          message: `${grade} needs ${demand} periods a week but has ${slots}. The automatic reduction was undone, so generation for this grade waits until the quotas are changed.`,
+          message: `${grade} needs ${demand} periods a week but has ${slots}. The automatic balancing was undone, so generation for this grade waits until the quotas are changed.`,
         },
       });
     }
@@ -449,5 +574,5 @@ const overCapacity: Rule = {
   },
 };
 
-/** Run order matters: placeholders out first, then names, then limits. */
-export const RULES: Rule[] = [autoCreatedRows, duplicateGrades, duplicateSubjects, displayNames, dailyCapTooLow, bellRules, overCapacity];
+/** Run order matters: the school's own merge rules, placeholders, names, then limits. */
+export const RULES: Rule[] = [mergeRules, autoCreatedRows, duplicateGrades, duplicateSubjects, displayNames, dailyCapTooLow, bellRules, overCapacity];

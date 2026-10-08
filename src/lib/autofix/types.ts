@@ -26,6 +26,7 @@ export interface Change {
 }
 
 export type RuleId =
+  | 'merge_rule'
   | 'auto_created_rows'
   | 'duplicate_grade'
   | 'duplicate_subject'
@@ -71,9 +72,13 @@ export interface SubjectConfigRow {
   maxPeriodsPerDay: number;
   priority: string;
   allowConsecutive: boolean;
+  /** Room type the subject needs (lab etc.); null means any room. */
+  requiredRoomType: string | null;
   active: boolean;
   archivedAt: string | null;
   source: string | null;
+  /** When an admin last set weeklyPeriods by hand. */
+  quotaEditedAt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -98,6 +103,8 @@ export interface ClassSectionRow {
 
 export interface TeacherRow {
   id: string;
+  /** Read only (never written by auto-fix): inactive teachers do not count as qualified. */
+  role: string;
   subject: string;
   subjects: string | null;
   grades: string;
@@ -154,6 +161,12 @@ export interface Snapshot {
   frozenGrades: string[];
   /** suppressKeys of fixes an admin undid. */
   suppressed: string[];
+  /** The school's own merge decisions ("Computer" means "Computer Science"). */
+  mergeRules: { id: string; kind: 'subject' | 'grade'; from: string; to: string }[];
+  /** Timetable rows per name across every version (read only), for choosing canonical names. */
+  scheduleCounts: { grades: Record<string, number>; subjects: Record<string, number> };
+  /** Config rows the caller says must not be changed (e.g. the row an admin just edited). */
+  protectedConfigIds: string[];
 }
 
 export interface EngineResult {

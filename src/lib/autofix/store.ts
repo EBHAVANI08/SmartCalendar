@@ -13,7 +13,7 @@ import type { Change, Fix, ModelName, Snapshot } from '@/lib/autofix/types';
 
 const iso = (value: Date | null | undefined) => (value ? value.toISOString() : null);
 
-export async function loadSnapshot(schoolId: string): Promise<Snapshot> {
+export async function loadSnapshot(schoolId: string, options: { protectedConfigIds?: string[] } = {}): Promise<Snapshot> {
   const versions = await db.timetableVersion.findMany({ where: { schoolId }, select: { id: true, status: true } });
   const editableIds = versions.filter((v) => (EDITABLE_STATUSES as string[]).includes(v.status)).map((v) => v.id);
   const teacherIds = (await db.teacher.findMany({ where: { schoolId }, select: { id: true } })).map((t) => t.id);
@@ -23,7 +23,7 @@ export async function loadSnapshot(schoolId: string): Promise<Snapshot> {
     db.gradeSubjectConfig.findMany({ where: { schoolId } }),
     db.subjectMaster.findMany({ where: { schoolId } }),
     db.classSection.findMany({ where: { schoolId } }),
-    db.teacher.findMany({ where: { schoolId }, select: { id: true, subject: true, subjects: true, grades: true, sections: true } }),
+    db.teacher.findMany({ where: { schoolId }, select: { id: true, role: true, subject: true, subjects: true, grades: true, sections: true } }),
     editableIds.length
       ? db.schedule.findMany({ where: { schoolId, timetableVersionId: { in: editableIds } }, select: { id: true, timetableVersionId: true, grade: true, section: true, day: true, period: true, subject: true } })
       : Promise.resolve([]),
@@ -36,6 +36,11 @@ export async function loadSnapshot(schoolId: string): Promise<Snapshot> {
     }),
     db.teacherQualification.findMany({ where: { schoolId, teacherId: { in: teacherIds } }, select: { id: true, teacherId: true, subjectId: true } }),
     db.autoFixLog.findMany({ where: { schoolId, undoneAt: { not: null } }, select: { suppressKey: true } }),
+  ]);
+  const [mergeRules, gradeCounts, subjectCounts] = await Promise.all([
+    db.mergeRule.findMany({ where: { schoolId }, select: { id: true, kind: true, from: true, to: true }, orderBy: { createdAt: 'asc' } }),
+    db.schedule.groupBy({ by: ['grade'], where: { schoolId }, _count: { _all: true } }),
+    db.schedule.groupBy({ by: ['subject'], where: { schoolId }, _count: { _all: true } }),
   ]);
 
   return {
@@ -64,19 +69,27 @@ export async function loadSnapshot(schoolId: string): Promise<Snapshot> {
       maxPeriodsPerDay: c.maxPeriodsPerDay,
       priority: c.priority,
       allowConsecutive: c.allowConsecutive,
+      requiredRoomType: c.requiredRoomType ?? null,
       active: c.active,
       archivedAt: iso(c.archivedAt),
       source: c.source ?? null,
+      quotaEditedAt: iso(c.quotaEditedAt),
       createdAt: c.createdAt.toISOString(),
       updatedAt: c.updatedAt.toISOString(),
     })),
     subjectMasters: masters.map((m) => ({ id: m.id, name: m.name, code: m.code, active: m.active, archivedAt: iso(m.archivedAt) })),
     classSections: sections.map((c) => ({ id: c.id, grade: c.grade, section: c.section, code: c.code, academicYearId: c.academicYearId, active: c.active, archivedAt: iso(c.archivedAt) })),
-    teachers: teachers.map((t) => ({ id: t.id, subject: t.subject, subjects: t.subjects ?? null, grades: t.grades, sections: t.sections ?? null })),
+    teachers: teachers.map((t) => ({ id: t.id, role: t.role, subject: t.subject, subjects: t.subjects ?? null, grades: t.grades, sections: t.sections ?? null })),
     editableSchedules: editable.map((r) => ({ ...r, timetableVersionId: r.timetableVersionId as string })),
     teacherQualifications: qualifications,
     frozenGrades: frozenRows.map((r) => r.grade),
     suppressed: undone.map((u) => u.suppressKey),
+    mergeRules: mergeRules.map((rule) => ({ ...rule, kind: rule.kind === 'grade' ? 'grade' : 'subject' })),
+    scheduleCounts: {
+      grades: Object.fromEntries(gradeCounts.map((row) => [row.grade, row._count._all])),
+      subjects: Object.fromEntries(subjectCounts.map((row) => [row.subject, row._count._all])),
+    },
+    protectedConfigIds: options.protectedConfigIds ?? [],
   };
 }
 

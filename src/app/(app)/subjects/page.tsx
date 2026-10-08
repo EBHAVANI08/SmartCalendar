@@ -81,6 +81,10 @@ export default function SubjectManagementPage() {
   const [grade, setGrade] = useState('');
   // Server-computed: same calculations as the setup checklist.
   const [staffing, setStaffing] = useState<{ required: number; unstaffed: { grade: string; subjectName: string }[] } | null>(null);
+  const [autofixEnabled, setAutofixEnabled] = useState(false);
+  // The row the admin edited last: Auto-balance never changes it.
+  const [lastEditedId, setLastEditedId] = useState<string | null>(null);
+  const [balancing, setBalancing] = useState(false);
   const [capacity, setCapacity] = useState<{ demand: number; slots: number; overBy: number; ok: boolean; problem: string | null; subjectIssues: { subjectName: string; weeklyPeriods: number; maxPlaceable: number }[] } | null>(null);
   const [subjects, setSubjects] = useState<SubjectConfig[]>([]);
   const [loading, setLoading] = useState(true);
@@ -141,6 +145,7 @@ export default function SubjectManagementPage() {
       setSubjects(res.ok && data.success && grade ? data.subjects : []);
       setStaffing(res.ok && data.success ? data.staffing ?? null : null);
       setCapacity(res.ok && data.success ? data.capacity ?? null : null);
+      setAutofixEnabled(Boolean(res.ok && data.success && data.autofixEnabled));
       if (res.ok && data.success && Array.isArray(data.availableGrades) && data.availableGrades.length > 0) {
         setGradesList((prev) => (prev.length > 0 ? prev : data.availableGrades));
         if (!grade || (!data.availableGrades.includes(grade) && !gradesList.includes(grade))) {
@@ -263,10 +268,35 @@ export default function SubjectManagementPage() {
             : s
         )
       );
+      if (changes.weeklyPeriods !== undefined || changes.active !== undefined) {
+        setLastEditedId(savedConfig?.id || row.id);
+        await load(); // refresh demand vs. slots
+      }
     } catch {
       toast({ title: 'Not saved', description: 'Request failed.', variant: 'destructive' });
     } finally {
       setSavingId(null);
+    }
+  };
+
+  /** Balances this grade's quotas now, never changing the row just edited. */
+  const autoBalance = async () => {
+    setBalancing(true);
+    try {
+      const res = await fetch('/api/school/autofix/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balance: true, grade, protect: lastEditedId ? [lastEditedId] : [] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const balanced = Array.isArray(data.fixes) ? data.fixes.find((fix: { rule: string }) => fix.rule === 'over_capacity') : null;
+      const stuck = Array.isArray(data.unfixable) ? data.unfixable.find((item: { rule: string; grade?: string }) => item.rule === 'over_capacity' && item.grade === grade) : null;
+      toast(res.ok && balanced
+        ? { title: 'Balanced', description: `${balanced.summary}. Undo it from School Setup → Auto-fixes.` }
+        : { title: 'Not balanced', description: stuck?.message || data.error || 'Nothing could be reduced automatically.', variant: 'destructive' });
+      await load();
+    } finally {
+      setBalancing(false);
     }
   };
 
@@ -646,7 +676,17 @@ export default function SubjectManagementPage() {
                 <span className="font-semibold">{issue.subjectName}</span>: {issue.weeklyPeriods} periods a week, but its per-day limit allows at most {issue.maxPlaceable}.
               </p>
             ))}
-            <p className="text-rose-700">Timetable generation is blocked for this grade until this is fixed.</p>
+            {autofixEnabled ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-rose-800 font-semibold">Over by {capacity.overBy}.</span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={balancing} onClick={autoBalance}>
+                  {balancing ? 'Balancing…' : 'Auto-balance'}
+                </Button>
+                <span className="text-rose-700">Otherwise it is balanced automatically when you generate (with Undo).</span>
+              </div>
+            ) : (
+              <p className="text-rose-700">Timetable generation is blocked for this grade until this is fixed.</p>
+            )}
           </div>
         </div>
       )}

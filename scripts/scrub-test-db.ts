@@ -21,8 +21,7 @@
  */
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { assertTestDatabase } from './lib/test-db-guard';
 
 const BATCH_SIZE = 50;
 const SCRUBBED_DOMAIN = 'example.test';
@@ -42,40 +41,6 @@ function parseArgs(argv: string[]) {
   }
   if (!options.targetDb) throw new Error('--target-db <name> is required.');
   return options;
-}
-
-/** host + database name, ignoring credentials and query options. */
-function databaseIdentity(uri: string): { host: string; database: string } {
-  const match = /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)\/?([^?]*)/i.exec(uri.trim());
-  if (!match) throw new Error('DATABASE_URL is not a MongoDB connection string.');
-  return { host: match[1].toLowerCase(), database: decodeURIComponent(match[2] || '') };
-}
-
-function productionUriFromDotEnv(): string | null {
-  try {
-    const text = readFileSync(join(process.cwd(), '.env'), 'utf8');
-    const line = text.split(/\r?\n/).find((entry) => /^\s*DATABASE_URL\s*=/.test(entry));
-    if (!line) return null;
-    return line.replace(/^\s*DATABASE_URL\s*=\s*/, '').replace(/^["']|["']$/g, '').trim();
-  } catch {
-    return null;
-  }
-}
-
-function assertSafeTarget(targetDb: string) {
-  const uri = process.env.DATABASE_URL || '';
-  if (!uri) throw new Error('Set DATABASE_URL to the TEST database in this shell first.');
-  const target = databaseIdentity(uri);
-  if (target.database !== targetDb) {
-    throw new Error(`DATABASE_URL database is "${target.database || '(none)'}", not --target-db "${targetDb}". Refusing.`);
-  }
-  const productionUri = productionUriFromDotEnv();
-  if (!productionUri) throw new Error('Could not read DATABASE_URL from .env to compare against. Refusing.');
-  const production = databaseIdentity(productionUri);
-  if (production.host === target.host && production.database === target.database) {
-    throw new Error('DATABASE_URL points at the production database from .env. Refusing.');
-  }
-  return target;
 }
 
 async function scrubAccounts(db: PrismaClient, model: AccountModel, passwordHash: string, keepLogin: string, apply: boolean) {
@@ -110,7 +75,7 @@ async function scrubAccounts(db: PrismaClient, model: AccountModel, passwordHash
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
-  const target = assertSafeTarget(options.targetDb);
+  const target = assertTestDatabase(options.targetDb);
   const testPassword = process.env.SC_TEST_PASSWORD || '';
   if (testPassword.length < 8) throw new Error('Set SC_TEST_PASSWORD (at least 8 characters) in this shell.');
 

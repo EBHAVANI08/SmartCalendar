@@ -1,5 +1,5 @@
 import { db } from '@/lib/db';
-import { parseSubjectGradeSectionsMap, readList } from '@/lib/faculty';
+import { hasScopedSections, parseSubjectGradeSectionsMap, readList } from '@/lib/faculty';
 import { gradeKey, sameSubject } from '@/lib/name-normalize';
 
 /**
@@ -32,8 +32,10 @@ export function teacherQualifiedFor(teacher: StaffingTeacher, subjectName: strin
   if (!grade) return true;
 
   const target = gradeKey(grade);
-  const mapping = parseSubjectGradeSectionsMap(teacher.sections, subjects, grades);
-  const subjectGrades = mapping[matched]?.grades || [];
+  // Only real grade assignments count, never the editor's example grade.
+  const subjectGrades = hasScopedSections(teacher.sections)
+    ? parseSubjectGradeSectionsMap(teacher.sections, subjects, grades)[matched]?.grades || []
+    : [];
   if (subjectGrades.length > 0) return subjectGrades.some((g) => gradeKey(g) === target);
   if (grades.length === 0) return true;
   return grades.some((g) => gradeKey(g) === target);

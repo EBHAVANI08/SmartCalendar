@@ -7,6 +7,7 @@ import { NextResponse } from 'next/server';
 import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
 import { staffingReport } from '@/lib/staffing';
 import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { isAutofixEnabled } from '@/lib/autofix';
 
 /**
  * How far a school is through setting itself up.
@@ -93,6 +94,7 @@ export async function GET(request: Request) {
     return count ? ` · Auto-fixed: ${count}` : '';
   };
   const totalAutoFixed = appliedFixes.reduce((sum, row) => sum + row._count._all, 0);
+  const autofixOn = await isAutofixEnabled(schoolId);
 
   const steps: Step[] = [
     {
@@ -166,10 +168,10 @@ export async function GET(request: Request) {
       detail: activeSubjects.length === 0
         ? 'Configure subjects first'
         : overCapacity.length
-          ? overCapacity.map(describeCapacityProblem).join('; ')
+          ? `${overCapacity.map(describeCapacityProblem).join('; ')}${autofixOn ? ' — balanced automatically when you generate' : ''}`
           : `All ${capacity.length} grade(s) fit their week${autoFixed(['over_capacity', 'daily_cap_too_low'])}`,
       required: true,
-      blocking: overCapacity.length > 0,
+      blocking: overCapacity.length > 0 && !autofixOn,
     },
     {
       id: 'autofix',

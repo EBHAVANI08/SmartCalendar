@@ -150,6 +150,9 @@ model GradeSubjectConfig {
   /// Who created the row: "user", "sync" (from Faculty Directory) or "import".
   /// Null for rows created before this was recorded.
   source             String?
+  /// When an admin last set weeklyPeriods by hand. Automatic balancing reduces
+  /// such rows only as a last resort.
+  quotaEditedAt      DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -289,6 +292,10 @@ model SchoolFeatureFlags {
   workloadAnalyticsEnabled Boolean @default(true)
   // Communication
   teacherNotifyEnabled    Boolean  @default(true)
+  /// Automatic setup corrections (src/lib/autofix). Null/false: the engine only
+  /// previews. Schools created after the engine existed get true; existing
+  /// schools are switched on deliberately by the owner.
+  autofixEnabled          Boolean?
   // Limits
   maxGrades               Int      @default(12)
   maxTeachers             Int      @default(200)
@@ -1193,4 +1200,20 @@ model AutoFixLog {
 
   @@index([schoolId, appliedAt])
   @@index([schoolId, suppressKey])
+}
+
+/// A school's own decision that one name means another ("Computer" is
+/// "Computer Science"). Applied by the auto-fix engine like any other merge.
+model MergeRule {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId  String   @db.ObjectId
+  /// "subject" or "grade".
+  kind      String   @default("subject")
+  from      String
+  to        String
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([schoolId, kind, from])
+  @@index([schoolId])
 }

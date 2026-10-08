@@ -7,7 +7,7 @@ import { periodsForDay, workingDayNames, buildTeachingGrid, periodTimingsForDay 
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
-import { runAutofix } from '@/lib/autofix';
+import { isAutofixEnabled, runAutofix } from '@/lib/autofix';
 
 const MAX_PERIODS_PER_TEACHER_DAY = 6;
 
@@ -309,14 +309,21 @@ export async function POST(request: Request) {
     // Correct setup mistakes first (logged, undoable), then refuse before
     // touching any version if a target grade still cannot be timetabled:
     // padding or dropping periods would hide that from the school.
-    const autofix = await runAutofix(schoolId, { apply: true, trigger: 'generation', actor: request.headers.get('x-user-email') });
+    // Tier 1 and tier 2 (including balancing over-capacity grades) run here,
+    // before solving, when the school has automatic fixes switched on.
+    const autofixOn = await isAutofixEnabled(schoolId);
+    const autofix = autofixOn
+      ? await runAutofix(schoolId, { apply: true, trigger: 'generation', actor: request.headers.get('x-user-email') })
+      : { fixes: [], unfixable: [], suppressed: [], logIds: [] };
     const targetGradeNames = new Set(targetClasses.map((tc) => tc.grade));
     const blocking = autofix.unfixable.filter((item) => item.blocking && (!item.grade || targetGradeNames.has(item.grade)));
     const overCapacity = (await gradeCapacityReport(schoolId)).filter((c) => targetGradeNames.has(c.grade) && !c.ok);
     if (blocking.length > 0 || overCapacity.length > 0) {
       return NextResponse.json(
         {
-          error: `Cannot generate: ${blocking.length + overCapacity.length} setup problem(s) could not be fixed automatically.`,
+          error: autofixOn
+            ? `Cannot generate: ${blocking.length + overCapacity.length} setup problem(s) could not be fixed automatically.`
+            : `Cannot generate: ${blocking.length + overCapacity.length} setup problem(s). Automatic fixes are switched off for this school.`,
           code: 'CAPACITY_EXCEEDED',
           autoFixed: autofix.fixes.map((fix) => fix.summary),
           grades: [

@@ -1,7 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
-import { parseSubjectGradeSectionsMap, readList } from '@/lib/faculty';
+import { hasScopedSections, parseSubjectGradeSectionsMap, readList } from '@/lib/faculty';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
@@ -68,7 +68,8 @@ export async function POST(request: Request) {
   for (const t of teachers) {
     const subs = readList(t.subjects ?? t.subject);
     const grs = readList(t.grades);
-    const mapping = parseSubjectGradeSectionsMap(t.sections, subs, grs);
+    // Only real grade assignments; the parser's example grade is not one.
+    const mapping = hasScopedSections(t.sections) ? parseSubjectGradeSectionsMap(t.sections, subs, grs) : {};
     let contributed = false;
     for (const sub of subs) {
       const subjGrades = mapping[sub.trim()]?.grades || [];

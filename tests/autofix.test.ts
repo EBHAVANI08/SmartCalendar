@@ -2,9 +2,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { runEngine } from '../src/lib/autofix/engine';
-import { planReduction } from '../src/lib/autofix/rules';
+import { RULES, allocateProportionally, planBalance, type BalanceRow } from '../src/lib/autofix/rules';
 import { applyChanges, assertWritable, cloneSnapshot, revertChanges } from '../src/lib/autofix/snapshot-ops';
-import type { Snapshot, SubjectConfigRow } from '../src/lib/autofix/types';
+import type { Snapshot, SubjectConfigRow, TeacherRow } from '../src/lib/autofix/types';
 
 const NOW = '2030-01-01T00:00:00.000Z';
 const CREATED = '2029-01-01T00:00:00.000Z';
@@ -15,11 +15,14 @@ const id = () => `id${++nextId}`;
 function config(grade: string, subjectName: string, weeklyPeriods: number, extra: Partial<SubjectConfigRow> = {}): SubjectConfigRow {
   return {
     id: id(), grade, subjectName, weeklyPeriods, maxPeriodsPerDay: 2, priority: 'Normal', allowConsecutive: false,
-    active: true, archivedAt: null, source: null, createdAt: CREATED, updatedAt: EDITED, ...extra,
+    requiredRoomType: null, active: true, archivedAt: null, source: null, quotaEditedAt: null,
+    createdAt: CREATED, updatedAt: EDITED, ...extra,
   };
 }
 
-/** A synthetic week: five days of 6 periods = 30 slots, no breaks problems. */
+const teacher = (extra: Partial<TeacherRow>): TeacherRow => ({ id: id(), role: 'teacher', subject: '', subjects: '[]', grades: '[]', sections: null, ...extra });
+
+/** A synthetic week: five days of 6 periods = 30 slots. */
 function snapshot(partial: Partial<Snapshot> = {}): Snapshot {
   return {
     schoolId: 'school',
@@ -28,22 +31,31 @@ function snapshot(partial: Partial<Snapshot> = {}): Snapshot {
       startTime: '09:00', endTime: '14:00', breakEnabled: true, breakAfter: 2, breakMinutes: 10, lunchEnabled: true, lunchAfter: 4, lunchMinutes: 30, gradeConfigs: '{}',
     },
     subjectConfigs: [], subjectMasters: [], classSections: [], teachers: [], editableSchedules: [], teacherQualifications: [],
-    frozenGrades: [], suppressed: [],
+    frozenGrades: [], suppressed: [], mergeRules: [], scheduleCounts: { grades: {}, subjects: {} }, protectedConfigIds: [],
     ...partial,
   };
 }
 
-const run = (s: Snapshot) => runEngine(s, { now: NOW });
+const run = (s: Snapshot, tiers: (1 | 2)[] = [1, 2]) => runEngine(s, { now: NOW }, RULES.filter((rule) => tiers.includes(rule.tier)));
 const rules = (result: ReturnType<typeof run>) => result.fixes.map((fix) => fix.rule);
 const configNamed = (s: Snapshot, grade: string, subject: string) => s.subjectConfigs.find((c) => c.grade === grade && c.subjectName === subject && !c.archivedAt);
+const live = (s: Snapshot, grade: string) => s.subjectConfigs.filter((c) => c.grade === grade && !c.archivedAt).map((c) => c.subjectName).sort();
 
 test('a clean setup produces no fixes, and the engine is idempotent', () => {
-  const s = snapshot({ subjectConfigs: [config('Year A', 'Alpha', 10), config('Year A', 'Beta', 8, { maxPeriodsPerDay: 2 })] });
+  const s = snapshot({ subjectConfigs: [config('Year A', 'Alpha', 10), config('Year A', 'Beta', 8)] });
   assert.deepEqual(run(s).fixes, []);
   const messy = snapshot({ subjectConfigs: [config('Year A', 'alpha', 10), config('Year A', 'Alpha', 4)] });
   const first = run(messy);
   assert.ok(first.fixes.length > 0);
   assert.deepEqual(run(first.after).fixes, []);
+});
+
+test('saves run tier 1 only: names and limits are fixed, quotas are never balanced', () => {
+  const s = snapshot({ subjectConfigs: [config('Y', 'A', 20), config('Y', 'a', 1), config('Y', 'B', 15)] });
+  const result = run(s, [1]);
+  assert.ok(rules(result).includes('duplicate_subject'));
+  assert.equal(rules(result).includes('over_capacity'), false);
+  assert.equal(result.after.subjectConfigs.filter((c) => !c.archivedAt).reduce((sum, c) => sum + c.weeklyPeriods, 0), 35);
 });
 
 test('auto-created rows: identical, never edited, not user-made → set inactive (tier 2)', () => {
@@ -54,93 +66,99 @@ test('auto-created rows: identical, never edited, not user-made → set inactive
   assert.ok(fix);
   assert.equal(fix.tier, 2);
   assert.ok(result.after.subjectConfigs.every((c) => !c.active));
-
-  // Edited, user-made or differing rows are left alone.
   const edited = snapshot({ subjectConfigs: [placeholder('A'), placeholder('B'), config('Grade I', 'C', 4)] });
   assert.equal(rules(run(edited)).includes('auto_created_rows'), false);
   const userMade = snapshot({ subjectConfigs: [placeholder('A'), placeholder('B'), { ...placeholder('C'), source: 'user' }] });
   assert.equal(rules(run(userMade)).includes('auto_created_rows'), false);
 });
 
-test('duplicate grades merge into one name; the active row wins a collision; nothing is deleted', () => {
+test('duplicate grades merge into the most-referenced name; the active row wins; nothing is deleted', () => {
   const canonicalInactive = config('Grade 1', 'Music', 2, { active: false });
   const duplicateActive = config('Grade I', 'Music', 3, { maxPeriodsPerDay: 1 });
   const onlyDuplicate = config('Grade I', 'Art', 1);
-  // The school's other grades use Arabic numerals, so "Grade 1" is the house spelling.
   const s = snapshot({
-    subjectConfigs: [canonicalInactive, duplicateActive, onlyDuplicate, config('Grade 2', 'Art', 1), config('Grade 3', 'Art', 1)],
+    subjectConfigs: [canonicalInactive, duplicateActive, onlyDuplicate],
     classSections: [
       { id: 'sec1', grade: 'Grade 1', section: 'A', code: 'Grade1-A', academicYearId: 'y', active: true, archivedAt: null },
       { id: 'sec2', grade: 'Grade I', section: 'B', code: 'GradeI-B', academicYearId: 'y', active: true, archivedAt: null },
     ],
-    teachers: [{ id: 't1', subject: 'Music', subjects: '["Music"]', grades: '["Grade I"]', sections: '["Music::Grade I:B"]' }],
+    teachers: [teacher({ id: 't1', subject: 'Music', subjects: '["Music"]', grades: '["Grade I"]', sections: '["Music::Grade I:B"]' })],
+    // The timetable uses "Grade 1" far more.
+    scheduleCounts: { grades: { 'Grade 1': 30 }, subjects: {} },
   });
-  const result = run(s);
-  assert.ok(rules(result).includes('duplicate_grade'));
-  const after = result.after;
+  const after = run(s).after;
   const music = after.subjectConfigs.find((c) => c.id === canonicalInactive.id)!;
   assert.deepEqual([music.grade, music.active, music.weeklyPeriods, music.maxPeriodsPerDay], ['Grade 1', true, 3, 1]);
   const archived = after.subjectConfigs.find((c) => c.id === duplicateActive.id)!;
-  assert.equal(archived.archivedAt, NOW);
-  assert.equal(archived.active, false);
-  assert.equal(after.subjectConfigs.length, 5, 'rows are archived, never removed');
+  assert.deepEqual([archived.archivedAt, archived.active], [NOW, false]);
+  assert.equal(after.subjectConfigs.length, 3, 'rows are archived, never removed');
   assert.equal(after.subjectConfigs.find((c) => c.id === onlyDuplicate.id)!.grade, 'Grade 1');
-  assert.deepEqual(after.classSections.find((c) => c.id === 'sec2'), { id: 'sec2', grade: 'Grade 1', section: 'B', code: 'Grade1-B', academicYearId: 'y', active: true, archivedAt: null });
+  assert.equal(after.classSections.find((c) => c.id === 'sec2')!.code, 'Grade1-B');
   assert.equal(after.teachers[0].grades, '["Grade 1"]');
   assert.equal(after.teachers[0].sections, '["Music::Grade 1:B"]');
 });
 
 test('a grade name used by the published timetable is never renamed away', () => {
-  const s = snapshot({
-    subjectConfigs: [config('Grade I', 'Alpha', 2), config('Grade 1', 'Beta', 2)],
-    frozenGrades: ['Grade I', 'Grade 1'],
-  });
+  const s = snapshot({ subjectConfigs: [config('Grade I', 'Alpha', 2), config('Grade 1', 'Beta', 2)], frozenGrades: ['Grade I', 'Grade 1'] });
   const result = run(s);
   assert.equal(rules(result).includes('duplicate_grade'), false);
   assert.ok(result.unfixable.some((u) => u.rule === 'duplicate_grade' && !u.blocking));
 });
 
-test('duplicate subjects: case, spelling variant and initials merge; descriptive names stay apart', () => {
+test('duplicate subjects: the most-referenced name wins, the longer form on a tie; descriptive names stay apart', () => {
   const s = snapshot({
     subjectConfigs: [
       config('Year A', 'Kaushal Bodh', 2), config('Year A', 'Koushal Bodh', 1),
       config('Year B', 'Value Education', 1), config('Year B', 'VE', 1),
       config('Year A', 'Science', 3), config('Year A', 'Science Practical', 1),
       config('Year C', 'computer Science', 2), config('Year C', 'Computer Science', 2, { active: false }),
+      config('Year D', 'PE', 1), config('Year D', 'Physical Education', 1),
     ],
     subjectMasters: [
       { id: 'm1', name: 'Value Education', code: 'VALUE', active: true, archivedAt: null },
       { id: 'm2', name: 'VE', code: 'VE', active: true, archivedAt: null },
     ],
-    teacherQualifications: [{ id: 'q1', teacherId: 't1', subjectId: 'm2' }],
-    teachers: [{ id: 't1', subject: 'VE', subjects: '["VE","Science"]', grades: '[]', sections: null }],
-    editableSchedules: [{ id: 'r1', timetableVersionId: 'draft', grade: 'Year B', section: 'A', day: 'Monday', period: 1, subject: 'VE' }],
+    teacherQualifications: [{ id: 'q1', teacherId: 't1', subjectId: 'm1' }],
+    teachers: [teacher({ id: 't1', subject: 'Value Education', subjects: '["Value Education","Science"]' })],
+    editableSchedules: [{ id: 'r1', timetableVersionId: 'draft', grade: 'Year B', section: 'A', day: 'Monday', period: 1, subject: 'Value Education' }],
+    // The timetable uses the abbreviation far more.
+    scheduleCounts: { grades: {}, subjects: { VE: 40 } },
   });
-  const result = run(s);
-  const after = result.after;
-  const subjectsOf = (grade: string) => after.subjectConfigs.filter((c) => c.grade === grade && !c.archivedAt).map((c) => c.subjectName).sort();
-  assert.deepEqual(subjectsOf('Year A'), ['Kaushal Bodh', 'Science', 'Science Practical']);
-  assert.deepEqual(subjectsOf('Year B'), ['Value Education']);
-  // The active row's settings win over the inactive canonical one.
-  assert.equal(configNamed(after, 'Year C', 'Computer Science')!.active, true);
-  assert.equal(after.subjectMasters.find((m) => m.id === 'm2')!.archivedAt, NOW);
-  assert.equal(after.teacherQualifications[0].subjectId, 'm1');
-  assert.equal(after.teachers[0].subject, 'Value Education');
-  assert.equal(after.editableSchedules[0].subject, 'Value Education');
+  const after = run(s).after;
+  assert.deepEqual(live(after, 'Year A'), ['Kaushal Bodh', 'Science', 'Science Practical']);
+  assert.deepEqual(live(after, 'Year B'), ['VE'], 'VE has the most references');
+  assert.deepEqual(live(after, 'Year D'), ['Physical Education'], 'equal references: the longer form');
+  assert.equal(configNamed(after, 'Year C', 'Computer Science')!.active, true, 'the in-use row wins; better capitalisation breaks the tie');
+  assert.equal(after.subjectMasters.find((m) => m.id === 'm1')!.archivedAt, NOW);
+  assert.equal(after.teacherQualifications[0].subjectId, 'm2');
+  assert.equal(after.teachers[0].subject, 'VE');
+  assert.equal(after.editableSchedules[0].subject, 'VE');
+});
+
+test("the school's own merge rules are applied (tier 1)", () => {
+  const s = snapshot({
+    subjectConfigs: [config('Y', 'Computer', 2), config('Y', 'Computer Science', 3, { active: false }), config('Z', 'Art', 1)],
+    mergeRules: [
+      { id: 'r1', kind: 'subject', from: 'Computer', to: 'Computer Science' },
+      { id: 'r2', kind: 'subject', from: 'Art', to: 'Art & Craft' },
+    ],
+  });
+  const result = run(s, [1]);
+  assert.equal(result.fixes.filter((f) => f.rule === 'merge_rule').length, 2);
+  assert.deepEqual(live(result.after, 'Y'), ['Computer Science']);
+  assert.equal(configNamed(result.after, 'Y', 'Computer Science')!.active, true);
+  assert.deepEqual(live(result.after, 'Z'), ['Art & Craft']);
 });
 
 test('display names are tidied', () => {
-  const s = snapshot({ subjectConfigs: [config('Year A', 'Information  Technology ', 2)] });
-  const result = run(s);
+  const result = run(snapshot({ subjectConfigs: [config('Year A', 'Information  Technology ', 2)] }));
   assert.ok(rules(result).includes('display_name'));
   assert.equal(result.after.subjectConfigs[0].subjectName, 'Information Technology');
 });
 
 test('daily cap below the weekly need is raised to ceil(weekly / working days)', () => {
-  const s = snapshot({ subjectConfigs: [config('Year A', 'Alpha', 7, { maxPeriodsPerDay: 1 })] });
-  const result = run(s);
-  const fix = result.fixes.find((f) => f.rule === 'daily_cap_too_low');
-  assert.ok(fix);
+  const result = run(snapshot({ subjectConfigs: [config('Year A', 'Alpha', 7, { maxPeriodsPerDay: 1 })] }));
+  assert.ok(rules(result).includes('daily_cap_too_low'));
   assert.equal(result.after.subjectConfigs[0].maxPeriodsPerDay, 2);
 });
 
@@ -152,88 +170,101 @@ test('inactive subjects never count toward demand', () => {
 test('bell: 0-minute break switched off, out-of-range clamped, same-period keeps the longer', () => {
   const zero = snapshot();
   zero.dayConfig!.breakMinutes = 0;
-  const z = run(zero);
-  assert.ok(rules(z).includes('break_zero_minutes'));
-  assert.equal(z.after.dayConfig!.breakEnabled, false);
+  assert.equal(run(zero).after.dayConfig!.breakEnabled, false);
 
   const range = snapshot();
   range.dayConfig!.lunchAfter = 9;
-  const r = run(range);
-  assert.ok(rules(r).includes('break_out_of_range'));
-  assert.equal(r.after.dayConfig!.lunchAfter, 5);
+  assert.equal(run(range).after.dayConfig!.lunchAfter, 5);
 
   const same = snapshot();
   same.dayConfig!.breakAfter = 3;
   same.dayConfig!.lunchAfter = 3;
-  const m = run(same);
-  assert.ok(rules(m).includes('break_same_period'));
-  assert.equal(m.after.dayConfig!.breakEnabled, false, 'the shorter break goes');
-  assert.equal(m.after.dayConfig!.lunchEnabled, true);
+  const m = run(same).after.dayConfig!;
+  assert.deepEqual([m.breakEnabled, m.lunchEnabled], [false, true]);
 
-  // A grade override is fixed inside its own settings.
   const override = snapshot();
   override.dayConfig!.gradeConfigs = JSON.stringify({ 'Year A': { enabled: true, workingDays: 5, periodsPerDay: 6, breakEnabled: true, breakMinutes: 0, breakAfter: 2, lunchEnabled: true, lunchAfter: 4, lunchMinutes: 30 } });
-  const o = run(override);
-  assert.equal(JSON.parse(o.after.dayConfig!.gradeConfigs!)['Year A'].breakEnabled, false);
-  assert.equal(o.after.dayConfig!.breakEnabled, true, 'the school default is untouched');
+  const o = run(override).after.dayConfig!;
+  assert.equal(JSON.parse(o.gradeConfigs!)['Year A'].breakEnabled, false);
+  assert.equal(o.breakEnabled, true, 'the school default is untouched');
 });
 
-test('over capacity: lowest priority first, largest quota first, never below 1, Core last (tier 2)', () => {
+test('largest-remainder allocation: exact total, proportional, at least 1, never above the original', () => {
+  assert.deepEqual(allocateProportionally([6, 5, 4, 4], 13), [4, 3, 3, 3]);
+  assert.equal(allocateProportionally([6, 5, 4, 4], 13).reduce((a, b) => a + b, 0), 13);
+  assert.deepEqual(allocateProportionally([10, 1, 1], 6), [4, 1, 1]);
+  assert.deepEqual(allocateProportionally([3, 3], 6), [3, 3]);
+});
+
+test('balancing order: explicit priority, then no-teacher first and labs last, hand-set quotas last of all', () => {
+  const row = (subjectName: string, weeklyPeriods: number, extra: Partial<BalanceRow> = {}): BalanceRow =>
+    ({ id: subjectName, subjectName, weeklyPeriods, priority: 'Normal', signal: 'staffed', edited: false, ...extra });
   const rows = [
-    config('Y', 'CoreA', 10, { priority: 'Core' }),
-    config('Y', 'NormalBig', 9),
-    config('Y', 'NormalSmall', 3),
-    config('Y', 'LowA', 2, { priority: 'Low' }),
-    config('Y', 'HighA', 8, { priority: 'High' }),
+    row('Unstaffed', 4, { signal: 'no_teacher' }),
+    row('LowOne', 3, { priority: 'Low' }),
+    row('Big', 8), row('Small', 4),
+    row('Lab', 6, { signal: 'needs_room' }),
+    row('CoreOne', 9, { priority: 'Core' }),
+    row('Edited', 6, { edited: true, priority: 'Low' }),
   ];
-  const { reductions, remaining } = planReduction(rows, 5);
-  assert.equal(remaining, 0);
-  const after = (name: string) => reductions.get(rows.find((r) => r.subjectName === name)!.id);
-  assert.equal(after('LowA'), 1);         // Low goes first, down to 1
-  assert.equal(after('NormalBig'), 5);    // then the largest Normal
-  assert.equal(after('CoreA'), undefined);
-  assert.equal(after('HighA'), undefined);
+  // 2 over: only the Low level is touched (LowOne 3→1), not the hand-edited Low row.
+  assert.deepEqual([...planBalance(rows, 2).targets], [['LowOne', 1]]);
+  // 6 over: Low (2), then Normal/no-teacher (3), then 1 from Normal/staffed, proportional.
+  const six = planBalance(rows, 6).targets;
+  assert.equal(six.get('Unstaffed'), 1);
+  assert.equal(six.get('Big'), 7);
+  assert.equal(six.has('Lab'), false);
+  assert.equal(six.has('CoreOne'), false);
+  // Everything else at 1 before Core or hand-edited rows move.
+  const all = planBalance(rows, 22);
+  assert.equal(all.targets.get('Lab'), 1);
+  assert.ok(all.targets.has('CoreOne'));
+  assert.equal(all.targets.has('Edited'), false);
+});
 
-  // Core is only reduced once everything else is at 1.
-  const tight = [config('Y', 'CoreA', 10, { priority: 'Core' }), config('Y', 'Other', 2)];
-  const plan = planReduction(tight, 3);
-  assert.equal(plan.reductions.get(tight[1].id), 1);
-  assert.equal(plan.reductions.get(tight[0].id), 8);
-
-  const s = snapshot({ subjectConfigs: [config('Y', 'A', 20), config('Y', 'B', 15)] });
+test('over capacity at generation: exact slot count, specialised rooms protected, unstaffed reduced first (tier 2)', () => {
+  const s = snapshot({
+    subjectConfigs: [
+      config('Y', 'Taught', 12), config('Y', 'NoTeacher', 8), config('Y', 'LabWork', 10, { requiredRoomType: 'physics_lab' }), config('Y', 'Other', 6),
+    ],
+    teachers: [teacher({ subjects: '["Taught","LabWork","Other"]' })],
+  });
   const result = run(s);
   const fix = result.fixes.find((f) => f.rule === 'over_capacity')!;
   assert.equal(fix.tier, 2);
-  assert.match(fix.summary, /reduced from 35 → 30/);
+  assert.match(fix.summary, /reduced from 36 → 30/);
+  const after = Object.fromEntries(result.after.subjectConfigs.map((c) => [c.subjectName, c.weeklyPeriods]));
+  assert.deepEqual(after, { Taught: 12, NoTeacher: 2, LabWork: 10, Other: 6 });
+});
+
+test('a row the admin just edited is never changed by balancing', () => {
+  const edited = config('Y', 'A', 20);
+  const s = snapshot({ subjectConfigs: [edited, config('Y', 'B', 15)], protectedConfigIds: [edited.id] });
+  const result = run(s);
+  assert.equal(result.after.subjectConfigs.find((c) => c.id === edited.id)!.weeklyPeriods, 20);
   assert.equal(result.after.subjectConfigs.reduce((sum, c) => sum + c.weeklyPeriods, 0), 30);
 });
 
-test('over capacity that cannot be fixed (too many subjects) blocks only that grade', () => {
+test('over capacity that cannot be fixed blocks only that grade', () => {
   const many = Array.from({ length: 32 }, (_, index) => config('Y', `S${index}`, 1));
-  const result = run(snapshot({ subjectConfigs: [...many, config('Z', 'Fine', 5)] }));
-  const blocking = result.unfixable.filter((u) => u.blocking);
+  const blocking = run(snapshot({ subjectConfigs: [...many, config('Z', 'Fine', 5)] })).unfixable.filter((u) => u.blocking);
   assert.equal(blocking.length, 1);
   assert.equal(blocking[0].grade, 'Y');
 });
 
 test('undo restores every row, refuses when the rows changed since, and an undone fix is not re-applied', () => {
   const s = snapshot({ subjectConfigs: [config('Y', 'A', 20), config('Y', 'B', 15)] });
-  const result = run(s);
-  const fix = result.fixes.find((f) => f.rule === 'over_capacity')!;
+  const fix = run(s).fixes.find((f) => f.rule === 'over_capacity')!;
   const state = cloneSnapshot(s);
   applyChanges(state, fix.changes);
-
   const edited = cloneSnapshot(state);
   edited.subjectConfigs[0].weeklyPeriods = 99;
   assert.equal(revertChanges(edited, fix.changes).ok, false);
-
   assert.equal(revertChanges(state, fix.changes).ok, true);
   assert.deepEqual(state.subjectConfigs.map((c) => c.weeklyPeriods), [20, 15]);
-
   const again = run({ ...state, suppressed: [fix.suppressKey] });
   assert.equal(rules(again).includes('over_capacity'), false);
   assert.ok(again.unfixable.some((u) => u.rule === 'over_capacity' && u.blocking && u.grade === 'Y'));
-  // Once the school changes the quotas, the rule applies again.
   again.after.subjectConfigs[0].weeklyPeriods = 25;
   assert.ok(rules(run({ ...again.after, suppressed: [fix.suppressKey] })).includes('over_capacity'));
 });

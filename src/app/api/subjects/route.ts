@@ -12,6 +12,7 @@ import { isKnownRoomType } from '@/lib/room-types';
 import { canonicalGrade, resolveSubjectName, schoolGradeNames, schoolSubjectNames, subjectConflictMessage } from '@/lib/master-data';
 import { NOT_ARCHIVED } from '@/lib/soft-delete';
 import { autofixAfterSave } from '@/lib/autofix';
+import { isAutofixEnabled } from '@/lib/autofix';
 
 const PRIORITIES = ['Core', 'High', 'Normal', 'Low'];
 
@@ -142,6 +143,7 @@ export async function GET(request: Request) {
         }
       : null,
     // Weekly demand vs. teaching slots for this grade (src/lib/timetable-capacity.ts).
+    autofixEnabled: await isAutofixEnabled(schoolId),
     capacity: gradeCapacity
       ? { ...gradeCapacity, problem: gradeCapacity.ok ? null : describeCapacityProblem(gradeCapacity) }
       : null,
@@ -350,6 +352,8 @@ export async function PUT(request: Request) {
     data: {
       weeklyPeriods,
       maxPeriodsPerDay,
+      // A quota the admin set by hand is balanced only as a last resort.
+      ...(body.weeklyPeriods !== undefined && weeklyPeriods !== current.weeklyPeriods ? { quotaEditedAt: new Date() } : {}),
       ...(body.allowConsecutive !== undefined
         ? { allowConsecutive: Boolean(body.allowConsecutive) }
         : {}),

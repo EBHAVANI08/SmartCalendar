@@ -37,7 +37,7 @@ export async function POST(request: Request) {
   });
 
   await db.schoolFeatureFlags.create({
-    data: { schoolId: school.id, planName: planName ?? 'standard' },
+    data: { schoolId: school.id, planName: planName ?? 'standard', autofixEnabled: true },
   });
 
   await writeAudit(request, 'tenant.create', 'school', school.id, { via: 'legacy-schools' });

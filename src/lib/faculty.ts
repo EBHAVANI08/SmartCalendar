@@ -681,6 +681,16 @@ export function parseSubjectGradeSectionsMap(
 }
 
 /**
+ * True when a teacher's sections column actually names grades ("Grade:Section",
+ * "Subject::Grade:Section" or a grade-keyed object). parseSubjectGradeSectionsMap
+ * fills in an example grade for editing when it does not; data checks must
+ * not treat that example as a real assignment.
+ */
+export function hasScopedSections(raw: unknown): boolean {
+  return String(raw ?? '').includes(':');
+}
+
+/**
  * Serialize a per-subject-and-grade mapping into array of "Subject::Grade:Section" strings.
  */
 export function serializeSubjectGradeSectionsMap(mapping: SubjectGradeMapping): string[] {

@@ -31,7 +31,7 @@ export async function PUT(request: Request) {
     'shortBreakEnabled', 'lunchBreakEnabled', 'ptPeriodsEnabled',
     'substitutionEnabled', 'autoSubstitutionEnabled', 'workloadAnalyticsEnabled',
     'teacherNotifyEnabled', 'maxGrades', 'maxTeachers', 'maxPeriodsPerDay',
-    'planName', 'customNote', 'trialEndsAt',
+    'planName', 'customNote', 'trialEndsAt', 'autofixEnabled',
   ];
   const data: Record<string, unknown> = {};
   for (const key of allowed) {

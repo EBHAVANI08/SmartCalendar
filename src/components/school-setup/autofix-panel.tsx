@@ -29,7 +29,8 @@ const RULE_LABELS: Record<string, string> = {
   break_zero_minutes: 'Break with no time',
   break_out_of_range: 'Break position',
   break_same_period: 'Break and lunch together',
-  over_capacity: 'Weekly periods reduced',
+  over_capacity: 'Weekly periods balanced',
+  merge_rule: 'School merge rule',
 };
 
 const TRIGGER_LABELS: Record<string, string> = {
@@ -38,6 +39,7 @@ const TRIGGER_LABELS: Record<string, string> = {
   'save:dayconfig': 'after a day & period change',
   generation: 'before generating',
   manual: 'checks run manually',
+  'manual:balance': 'Auto-balance',
   script: 'maintenance script',
 };
 
