@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { createHash } from 'crypto';
 import { db } from '@/lib/db';
 import { signJwt, verifyJwt } from '@/lib/jwt-auth';
 
@@ -12,40 +13,69 @@ export interface SetupPasswordTokenPayload {
 const SETUP_TOKEN_EXPIRY = 7 * 24 * 60 * 60; // 7 days in seconds
 
 /**
+ * Fingerprint of the teacher's stored password hash. A setup link carries the
+ * fingerprint from when it was issued; setting a password changes the hash, so
+ * the link stops working after its first use (and after any other reset).
+ */
+export function passwordFingerprint(storedPassword: string | null | undefined): string {
+  return createHash('sha256').update(String(storedPassword ?? '')).digest('hex').slice(0, 16);
+}
+
+/**
  * Generate a cryptographically signed password setup token valid for 7 days.
+ * Single use: see passwordFingerprint.
  */
 export async function generatePasswordSetupToken(
   teacherId: string,
   email: string,
   schoolId?: string | null
 ): Promise<string> {
+  const teacher = await db.teacher.findUnique({ where: { id: teacherId }, select: { password: true } });
   const payload: any = {
     userId: teacherId,
     email: email.trim().toLowerCase(),
     role: 'teacher',
     schoolId: schoolId || null,
     purpose: 'teacher_password_setup',
+    pwv: passwordFingerprint(teacher?.password),
   };
   return await signJwt(payload, SETUP_TOKEN_EXPIRY);
 }
 
 /**
- * Verify and decode a password setup token.
+ * Verify a password setup token, including that it has not been used.
+ * Returns the teacher's current stored password so the caller can make the
+ * update conditional on it (two simultaneous submissions cannot both win).
+ *
+ * Links issued before single-use tokens carry no fingerprint; they are honoured
+ * only while the teacher still has a pending forced password change, which
+ * setting a password clears, so they are single-use too.
  */
 export async function verifyPasswordSetupToken(token: string): Promise<{
   teacherId: string;
   email: string;
   schoolId?: string | null;
+  storedPassword: string;
 } | null> {
   try {
     const verified: any = await verifyJwt(token);
     if (!verified || verified.purpose !== 'teacher_password_setup' || !verified.userId || !verified.email) {
       return null;
     }
+    const teacher = await db.teacher.findUnique({
+      where: { id: verified.userId },
+      select: { password: true, mustChangePassword: true },
+    });
+    if (!teacher) return null;
+    const unused = typeof verified.pwv === 'string'
+      ? verified.pwv === passwordFingerprint(teacher.password)
+      : teacher.mustChangePassword === true;
+    if (!unused) return null;
     return {
       teacherId: verified.userId,
       email: verified.email,
       schoolId: verified.schoolId,
+      storedPassword: teacher.password,
     };
   } catch {
     return null;

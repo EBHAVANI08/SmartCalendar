@@ -20,7 +20,7 @@ export async function GET(request: Request) {
       return NextResponse.json(
         {
           valid: false,
-          error: 'This password setup link is invalid or has expired (valid for 7 days). Please request a new link from your school administrator.',
+          error: 'This password setup link is invalid, has expired (valid for 7 days) or has already been used. Please sign in, or request a new link from your school administrator.',
         },
         { status: 400 }
       );

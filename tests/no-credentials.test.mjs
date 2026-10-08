@@ -97,6 +97,14 @@ test('passwords chosen for someone else force a change at next sign-in', async (
   assert.match(changePassword, /verifySessionJwt/);
 });
 
+test('teacher setup links are single-use', async () => {
+  const mailer = await readFile(join(root, 'src/lib/mailer.ts'), 'utf8');
+  assert.match(mailer, /pwv: passwordFingerprint\(/, 'tokens must carry the password fingerprint');
+  assert.match(mailer, /verified\.pwv === passwordFingerprint\(teacher\.password\)/, 'verification must compare it');
+  const setup = await readFile(join(root, 'src/app/api/auth/setup-password/route.ts'), 'utf8');
+  assert.match(setup, /updateMany\(\{\s*where: \{ id: teacher\.id, password: payload\.storedPassword \}/, 'the update must be conditional on the unused password');
+});
+
 test('teacher login never picks the first school with a matching email', async () => {
   const login = await readFile(join(root, 'src/app/api/auth/login/route.ts'), 'utf8');
   assert.doesNotMatch(login, /db\.teacher\.findFirst/);

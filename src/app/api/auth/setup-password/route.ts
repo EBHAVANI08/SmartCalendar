@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     if (!payload || !payload.teacherId) {
       return NextResponse.json(
         {
-          error: 'This password setup link is invalid or has expired. Please request a new setup link from your administrator.',
+          error: 'This password setup link is invalid, expired or already used. Please request a new setup link from your administrator.',
         },
         { status: 400 }
       );
@@ -44,15 +44,28 @@ export async function POST(request: Request) {
 
     const hashedPassword = await hashPassword(password.trim());
 
-    const updatedTeacher = await db.teacher.update({
-      where: { id: teacher.id },
-      // The teacher chose this password, so no forced change is pending.
-      data: {
-        password: hashedPassword,
-        mustChangePassword: false,
-      },
-      select: { id: true, name: true, email: true, schoolId: true, subject: true, grades: true, phone: true },
+    // Conditional on the password the link was verified against: the link is
+    // single-use, and of two simultaneous submissions only one can succeed.
+    // The teacher chose this password, so no forced change is pending.
+    const claimed = await db.teacher.updateMany({
+      where: { id: teacher.id, password: payload.storedPassword },
+      data: { password: hashedPassword, mustChangePassword: false },
     });
+    if (claimed.count !== 1) {
+      return NextResponse.json(
+        { error: 'This password setup link has already been used. Sign in, or ask your administrator for a new link.' },
+        { status: 400 }
+      );
+    }
+    const updatedTeacher = {
+      id: teacher.id,
+      name: teacher.name,
+      email: teacher.email,
+      schoolId: teacher.schoolId,
+      subject: teacher.subject,
+      grades: teacher.grades,
+      phone: teacher.phone,
+    };
 
     // Create session token so the teacher is logged in immediately
     const userSession = {
