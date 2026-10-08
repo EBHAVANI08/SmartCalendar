@@ -11,6 +11,7 @@
  */
 
 import { db } from '@/lib/db';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 interface PredictionSignal {
   type: string;
@@ -64,7 +65,7 @@ export async function predictAbsencesForDate(targetDate: string, schoolId?: stri
       startDate: { gte: ninetyDaysAgoStr, lte: targetDate },
       ...(schoolId ? { teacher: { schoolId } } : {}),
     },
-    include: { teacher: true },
+    include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
   });
 
   // Count recurring leaves per teacher per day-of-week
@@ -90,7 +91,7 @@ export async function predictAbsencesForDate(targetDate: string, schoolId?: stri
       startDate: { gte: fourteenDaysAgoStr, lte: targetDate },
       ...(schoolId ? { teacher: { schoolId } } : {}),
     },
-    include: { teacher: true },
+    include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
   });
 
   const deptLeaveCounts = new Map<string, number>();
@@ -113,7 +114,7 @@ export async function predictAbsencesForDate(targetDate: string, schoolId?: stri
       endDate: { gte: targetDate },
       ...(schoolId ? { teacher: { schoolId } } : {}),
     },
-    include: { teacher: true },
+    include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
   });
 
   const pendingLeaveTeacherIds = new Set(pendingLeaves.map(l => l.teacherId));

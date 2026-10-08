@@ -1,4 +1,8 @@
 import { PrismaClient, Prisma } from '@prisma/client';
+import bcrypt from 'bcryptjs';
+
+// Demo credentials are stored hashed; login accepts bcrypt hashes only.
+const demoHash = (plain: string) => bcrypt.hashSync(plain, 10);
 
 const prisma = new PrismaClient();
 
@@ -126,7 +130,7 @@ async function main() {
       name: 'Takshila School',
       code: 'TAKSHILA2025',
       email: 'admin@takshilaschool.edu',
-      password: 'school123',
+      password: demoHash('school123'),
     },
   });
 
@@ -136,7 +140,7 @@ async function main() {
       name: 'Takshila School Admin',
       code: 'CLIENTPILOT',
       email: 'pilot@client.school',
-      password: 'ClientPilot2026',
+      password: demoHash('ClientPilot2026'),
     },
   });
 
@@ -145,7 +149,7 @@ async function main() {
     data: {
       name: 'Takshila School Admin',
       email: 'admin@takshilaschool.edu',
-      password: 'admin123',
+      password: demoHash('admin123'),
       role: 'admin',
     },
   });
@@ -175,11 +179,12 @@ async function main() {
     }
   }
 
+  const demoTeacherHash = demoHash('teacher123');
   const teacherInputs: Prisma.TeacherCreateManyInput[] = Array.from(teacherMapByName.values()).map(t => ({
     id: t.id,
     name: t.fullName,
     email: t.email,
-    password: 'teacher123',
+    password: demoTeacherHash,
     phone: `+91 98765 ${Math.floor(10000 + Math.random() * 90000)}`,
     subject: 'General',
     grades: JSON.stringify(['Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8']),

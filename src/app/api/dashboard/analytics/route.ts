@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 /**
  * School-wide workload and staffing analytics.
@@ -27,11 +28,11 @@ export async function GET(req: NextRequest) {
           schoolId,
           absentTeacher: { schoolId },
         },
-        include: { absentTeacher: true, substitute: true },
+        include: { absentTeacher: { select: TEACHER_PUBLIC_SELECT }, substitute: { select: TEACHER_PUBLIC_SELECT } },
       }),
       db.substitution.findMany({
         where: { schoolId, absentTeacher: { schoolId } },
-        include: { absentTeacher: true, substitute: true },
+        include: { absentTeacher: { select: TEACHER_PUBLIC_SELECT }, substitute: { select: TEACHER_PUBLIC_SELECT } },
         orderBy: { date: 'desc' },
         take: 200,
       }),

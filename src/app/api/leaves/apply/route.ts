@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function POST(request: NextRequest) {
   // Teachers may file their own leave; admins may file for anyone. The
@@ -60,7 +61,7 @@ export async function POST(request: NextRequest) {
         status: targetStatus,
       },
       include: {
-        teacher: true,
+        teacher: { select: TEACHER_PUBLIC_SELECT },
       },
     });
 

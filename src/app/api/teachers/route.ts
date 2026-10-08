@@ -13,6 +13,8 @@ import { NextResponse } from 'next/server';
 import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 import { requireCapability } from '@/lib/authz';
 import { sendTeacherPasswordSetupEmail } from '@/lib/mailer';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
+import { generateTemporaryPassword, hashPassword } from '@/lib/password';
 
 export async function GET(request: Request) {
   const denied = requireCapability(request, 'faculty.read');
@@ -36,12 +38,12 @@ export async function GET(request: Request) {
 
     const teachers = await db.teacher.findMany({
       where: whereClause,
-      include: {
+      select: {
+        ...TEACHER_PUBLIC_SELECT,
         schedules: {
           where: Object.keys(scheduleWhere).length > 0 ? scheduleWhere : undefined,
           orderBy: [{ day: 'asc' }, { period: 'asc' }],
         },
-        school: true,
       },
       orderBy: { name: 'asc' },
     });
@@ -191,8 +193,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // Only the hash is stored. The Admin sees the temporary password once, so
+    // the teacher can sign in even when the setup email cannot be delivered.
+    const temporaryPassword = generateTemporaryPassword();
     const teacher = await db.teacher.create({
+      select: TEACHER_PUBLIC_SELECT,
       data: {
+        password: await hashPassword(temporaryPassword),
+        mustChangePassword: true,
         name: record.name,
         email: record.email || `${normalizeName(record.name).replace(/\s+/g, '.')}.${Date.now().toString(36)}@faculty.local`,
         employeeId: record.employeeId,
@@ -231,7 +239,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       teacher,
-      emailSent: Boolean(emailResult?.success),
+      temporaryPassword,
+      emailSent: Boolean(emailResult?.success && !emailResult?.simulated),
       setupUrl: emailResult?.setupUrl,
     });
   } catch (error) {
@@ -256,7 +265,7 @@ export async function PUT(request: Request) {
     }
 
     // Scope the lookup to the caller's school so one tenant cannot edit another's faculty.
-    const current = await db.teacher.findFirst({ where: { id, schoolId } });
+    const current = await db.teacher.findFirst({ where: { id, schoolId }, select: TEACHER_PUBLIC_SELECT });
     if (!current) {
       return NextResponse.json({ error: 'Teacher not found in this school.' }, { status: 404 });
     }
@@ -304,6 +313,7 @@ export async function PUT(request: Request) {
 
     const teacher = await db.teacher.update({
       where: { id },
+      select: TEACHER_PUBLIC_SELECT,
       data: {
         name: record.name,
         ...(record.email ? { email: record.email } : {}),
@@ -346,6 +356,7 @@ export async function PATCH(request: Request) {
 
     const teacher = await db.teacher.update({
       where: { id },
+      select: TEACHER_PUBLIC_SELECT,
       data: { role: role === 'teacher' ? 'teacher' : 'inactive' },
     });
 

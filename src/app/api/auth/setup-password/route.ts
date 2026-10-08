@@ -3,8 +3,9 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyPasswordSetupToken } from '@/lib/mailer';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '@/lib/password';
 import { signJwt } from '@/lib/jwt-auth';
+import { SCHOOL_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function POST(request: Request) {
   try {
@@ -34,20 +35,23 @@ export async function POST(request: Request) {
 
     const teacher = await db.teacher.findUnique({
       where: { id: payload.teacherId },
-      include: { school: true },
+      include: { school: { select: SCHOOL_PUBLIC_SELECT } },
     });
 
     if (!teacher) {
       return NextResponse.json({ error: 'Teacher account not found.' }, { status: 404 });
     }
 
-    const hashedPassword = await bcrypt.hash(password.trim(), 10);
+    const hashedPassword = await hashPassword(password.trim());
 
     const updatedTeacher = await db.teacher.update({
       where: { id: teacher.id },
+      // The teacher chose this password, so no forced change is pending.
       data: {
         password: hashedPassword,
+        mustChangePassword: false,
       },
+      select: { id: true, name: true, email: true, schoolId: true, subject: true, grades: true, phone: true },
     });
 
     // Create session token so the teacher is logged in immediately
@@ -71,6 +75,7 @@ export async function POST(request: Request) {
       schoolId: updatedTeacher.schoolId || null,
       schoolCode: teacher.school?.code || null,
       name: updatedTeacher.name,
+      accountType: 'teacher',
     });
 
     const response = NextResponse.json({

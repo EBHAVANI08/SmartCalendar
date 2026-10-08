@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { getTenantSchoolId } from '@/lib/school-helper';
-import bcrypt from 'bcryptjs';
+import { hashPassword, verifyPassword } from '@/lib/password';
 import { requireCapability } from '@/lib/authz';
 
 export const dynamic = 'force-dynamic';
@@ -78,32 +78,28 @@ export async function PATCH(request: Request) {
     if (body.newPassword.length < 6) {
       return NextResponse.json({ error: 'New password must be at least 6 characters' }, { status: 400 });
     }
-    const matches = async (stored: string) => {
-      if (!stored) return false;
-      if (stored.startsWith('$2')) return bcrypt.compare(body.currentPassword, stored);
-      return stored === body.currentPassword;
-    };
+    const matches = (stored: string) => verifyPassword(body.currentPassword, stored);
 
     if (role === 'teacher' && userId) {
       const t = await db.teacher.findUnique({ where: { id: userId } }).catch(() => null)
-        || (email ? await db.teacher.findFirst({ where: { email } }).catch(() => null) : null);
+        || (email && schoolId ? await db.teacher.findFirst({ where: { email, schoolId } }).catch(() => null) : null);
       if (!t || !(await matches(t.password))) {
         return NextResponse.json({ error: 'Current password is incorrect' }, { status: 400 });
       }
-      const hashed = await bcrypt.hash(body.newPassword, 10);
-      await db.teacher.update({ where: { id: t.id }, data: { password: hashed } });
+      const hashed = await hashPassword(body.newPassword);
+      await db.teacher.update({ where: { id: t.id }, data: { password: hashed, mustChangePassword: false } });
     } else if (schoolId && (role === 'school' || role === 'admin')) {
       const school = await db.school.findUnique({ where: { id: schoolId } });
       if (school && (await matches(school.password))) {
-        const hashed = await bcrypt.hash(body.newPassword, 10);
-        await db.school.update({ where: { id: schoolId }, data: { password: hashed } });
+        const hashed = await hashPassword(body.newPassword);
+        await db.school.update({ where: { id: schoolId }, data: { password: hashed, mustChangePassword: false } });
       } else {
-        const member = email ? await db.workspaceMember.findFirst({ where: { email } }) : null;
+        const member = email ? await db.workspaceMember.findFirst({ where: { email, schoolId } }) : null;
         if (!member || !(await matches(member.password))) {
           return NextResponse.json({ error: 'Current password is incorrect. Demo accounts cannot change password.' }, { status: 400 });
         }
-        const hashed = await bcrypt.hash(body.newPassword, 10);
-        await db.workspaceMember.update({ where: { id: member.id }, data: { password: hashed } });
+        const hashed = await hashPassword(body.newPassword);
+        await db.workspaceMember.update({ where: { id: member.id }, data: { password: hashed, mustChangePassword: false } });
       }
     } else {
       return NextResponse.json({ error: 'Password change is not available for this account type' }, { status: 400 });
@@ -115,7 +111,7 @@ export async function PATCH(request: Request) {
       const teacher = userId
         ? await db.teacher.findUnique({ where: { id: userId } }).catch(() => null)
         : null;
-      const target = teacher || (email ? await db.teacher.findFirst({ where: { email } }).catch(() => null) : null);
+      const target = teacher || (email && schoolId ? await db.teacher.findFirst({ where: { email, schoolId } }).catch(() => null) : null);
       if (target) {
         await db.teacher.update({
           where: { id: target.id },

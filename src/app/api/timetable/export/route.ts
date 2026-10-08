@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import * as XLSX from 'xlsx';
 import { NextResponse } from 'next/server';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,7 +14,7 @@ export async function GET(request: Request) {
   const schoolId = await getTenantSchoolId(request);
   if (!schoolId) return NextResponse.json({ error: 'No school in session' }, { status: 401 });
   const teacherId = new URL(request.url).searchParams.get('teacherId');
-  const [school, schedules] = await Promise.all([db.school.findUnique({ where: { id: schoolId } }), db.schedule.findMany({ where: { schoolId, ...(teacherId ? { teacherId } : {}) }, include: { teacher: true }, orderBy: [{ grade: 'asc' }, { section: 'asc' }, { day: 'asc' }, { period: 'asc' }] })]);
+  const [school, schedules] = await Promise.all([db.school.findUnique({ where: { id: schoolId } }), db.schedule.findMany({ where: { schoolId, ...(teacherId ? { teacherId } : {}) }, include: { teacher: { select: TEACHER_PUBLIC_SELECT } }, orderBy: [{ grade: 'asc' }, { section: 'asc' }, { day: 'asc' }, { period: 'asc' }] })]);
   if (!school) return NextResponse.json({ error: 'School not found' }, { status: 404 });
   const workbook = XLSX.utils.book_new();
   const masterRows = schedules.map((item) => ({ Grade: item.grade, Section: item.section, Day: item.day, Period: item.period, 'Start Time': item.startTime, 'End Time': item.endTime, Subject: item.subject, Teacher: item.teacher?.name || 'Unallocated', Room: item.roomId || '', Status: item.teacherId ? 'Allocated' : 'Needs teacher' }));

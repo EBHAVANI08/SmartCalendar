@@ -4,6 +4,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyPasswordSetupToken } from '@/lib/mailer';
 import { readList } from '@/lib/faculty';
+import { SCHOOL_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function GET(request: Request) {
   try {
@@ -27,7 +28,7 @@ export async function GET(request: Request) {
 
     const teacher = await db.teacher.findUnique({
       where: { id: payload.teacherId },
-      include: { school: true },
+      include: { school: { select: SCHOOL_PUBLIC_SELECT } },
     });
 
     if (!teacher) {

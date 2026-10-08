@@ -35,6 +35,7 @@ export async function POST(request: Request) {
       name: body.name,
       email,
       password: hashedPassword,
+      mustChangePassword: true,
       role,
       modules: JSON.stringify(modules),
       status: 'active',
@@ -61,6 +62,7 @@ export async function PATCH(request: Request) {
       isDemo: body.isDemo,
       notes: body.notes,
       password: hashedPassword,
+      ...(hashedPassword ? { mustChangePassword: true } : {}),
       modules: Array.isArray(body.modules) ? JSON.stringify(body.modules) : body.modules,
     },
   });

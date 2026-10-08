@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 /**
  * AI Agent Service - Smart Teacher Substitution Engine
@@ -138,7 +139,7 @@ export async function detectAndCreateSubstitutionRequests(date: string, schoolId
       endDate: { gte: date },
       ...(schoolId ? { teacher: { schoolId } } : {}),
     },
-    include: { teacher: true },
+    include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
   });
 
   const absentTeacherIds = new Set(approvedLeaves.map(l => l.teacherId));
@@ -151,7 +152,7 @@ export async function detectAndCreateSubstitutionRequests(date: string, schoolId
   for (const teacherId of absentTeacherIds) {
     const schedules = await db.schedule.findMany({
       where: { teacherId, day: dayNameStr },
-      include: { teacher: true },
+      include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     for (const schedule of schedules) {

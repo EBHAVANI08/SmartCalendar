@@ -9,12 +9,12 @@ async function seedDefaults() {
     update: {
       isSuperAdmin: true,
       name: 'Platform SuperAdmin',
-      password: 'P@ssw0rd123',
+      password: bcrypt.hashSync('P@ssw0rd123', 10),
     },
     create: {
       email: 'sp@kamglobalai.com',
       name: 'Platform SuperAdmin',
-      password: 'P@ssw0rd123',
+      password: bcrypt.hashSync('P@ssw0rd123', 10),
       isSuperAdmin: true,
     },
   });
@@ -25,14 +25,14 @@ async function seedDefaults() {
     where: { code: 'CLIENTPILOT' },
     update: {
       email: 'pilot@client.school',
-      password: 'ClientPilot2026',
+      password: bcrypt.hashSync('ClientPilot2026', 10),
       name: 'Client Pilot School',
     },
     create: {
       name: 'Client Pilot School',
       code: 'CLIENTPILOT',
       email: 'pilot@client.school',
-      password: 'ClientPilot2026',
+      password: bcrypt.hashSync('ClientPilot2026', 10),
     },
   });
   console.log('Pilot school upserted:', pilot.email);
@@ -41,9 +41,9 @@ async function seedDefaults() {
   const dpsSchool = await prisma.school.findFirst({ where: { code: 'DPS2025' } });
   if (dpsSchool) {
     const priya = await prisma.teacher.upsert({
-      where: { email: 'priya.math@dps.edu' },
+      where: { schoolId_email: { schoolId: dpsSchool.id, email: 'priya.math@dps.edu' } },
       update: {
-        password: 'teacher123',
+        password: bcrypt.hashSync('teacher123', 10),
         schoolId: dpsSchool.id,
       },
       create: {
@@ -51,7 +51,7 @@ async function seedDefaults() {
         email: 'priya.math@dps.edu',
         subject: 'Mathematics',
         grades: JSON.stringify(['Grade 9', 'Grade 10']),
-        password: 'teacher123',
+        password: bcrypt.hashSync('teacher123', 10),
         schoolId: dpsSchool.id,
       },
     });

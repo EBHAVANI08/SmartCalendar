@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import ZAI from 'z-ai-web-dev-sdk';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 const MAX_PERIODS_PER_DAY = 8;
 
@@ -30,7 +31,7 @@ export async function POST(request: Request) {
         status: 'pending',
       },
       include: {
-        absentTeacher: true,
+        absentTeacher: { select: TEACHER_PUBLIC_SELECT },
       },
       orderBy: { period: 'asc' },
     });
@@ -361,8 +362,8 @@ ${JSON.stringify(aiContext, null, 2)}`;
           status: 'assigned',
         },
         include: {
-          absentTeacher: true,
-          substitute: true,
+          absentTeacher: { select: TEACHER_PUBLIC_SELECT },
+          substitute: { select: TEACHER_PUBLIC_SELECT },
         },
       });
 

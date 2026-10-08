@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 const escapeIcs = (value: string) =>
   String(value || '')
@@ -43,7 +44,7 @@ export async function GET(request: NextRequest) {
         schoolId: resolvedSchoolId,
         ...(teacherId ? { teacherId } : {}),
       },
-      include: { teacher: true },
+      include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
       orderBy: [{ day: 'asc' }, { period: 'asc' }],
     });
 

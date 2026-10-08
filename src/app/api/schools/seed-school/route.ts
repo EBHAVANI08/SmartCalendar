@@ -9,6 +9,7 @@ import {
   type DayPeriodConfig,
 } from '@/lib/timetable-constraints';
 import { requireCapability } from '@/lib/authz';
+import { generateTemporaryPassword, hashPassword } from '@/lib/password';
 
 const SAMPLE_FACULTY = [
   { name: 'Dr. Priya Sharma', email: 'priya.sharma@school.edu', phone: '+91 98765 43210', subject: 'Mathematics', grades: '["Grade 9","Grade 10","Grade 11","Grade 12"]' },
@@ -102,6 +103,9 @@ export async function POST(req: NextRequest) {
       } else {
         const t = await db.teacher.create({
           data: {
+            // Sample faculty never sign in with this; it only satisfies the
+            // required field without storing a known default.
+            password: await hashPassword(generateTemporaryPassword()),
             schoolId,
             name: f.name,
             email: f.email,

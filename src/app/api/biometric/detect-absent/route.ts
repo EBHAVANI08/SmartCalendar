@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 // AI-powered absence detection — OPTIMIZED with batch queries
 export async function POST(request: Request) {
@@ -36,9 +37,9 @@ export async function POST(request: Request) {
 
     // 1. Get all affected records
     const [absentRecords, lateRecords, halfDayRecords] = await Promise.all([
-      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'absent' }, include: { teacher: true } }),
-      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'late' }, include: { teacher: true } }),
-      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'half-day' }, include: { teacher: true } }),
+      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'absent' }, include: { teacher: { select: TEACHER_PUBLIC_SELECT } } }),
+      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'late' }, include: { teacher: { select: TEACHER_PUBLIC_SELECT } } }),
+      db.biometricAttendance.findMany({ where: { ...tenantFilter, date: detectDate, status: 'half-day' }, include: { teacher: { select: TEACHER_PUBLIC_SELECT } } }),
     ]);
 
     const affectedTeachers = [...absentRecords, ...lateRecords, ...halfDayRecords];

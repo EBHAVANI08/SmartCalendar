@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { hashPassword } from '@/lib/password';
 
 // ─── CLASS TEACHERS MATRIX (User Image 2) ───
 const CLASS_TEACHERS: Record<string, string> = {
@@ -438,7 +439,7 @@ export async function POST(request: Request) {
       data: {
         name: 'Takshila School Admin',
         email: 'admin@takshilaschool.edu',
-        password: 'admin123',
+        password: await hashPassword('admin123'),
         role: 'admin',
       },
     });
@@ -447,7 +448,7 @@ export async function POST(request: Request) {
       data: {
         name: 'Global SuperAdmin',
         email: 'superadmin@smartcalendar.app',
-        password: 'admin123',
+        password: await hashPassword('admin123'),
         isSuperAdmin: true,
         role: 'superadmin',
       },
@@ -459,7 +460,7 @@ export async function POST(request: Request) {
         name: 'Takshila School Admin',
         code: 'CLIENTPILOT',
         email: 'pilot@client.school',
-        password: 'ClientPilot2026',
+        password: await hashPassword('ClientPilot2026'),
         featureFlags: {
           create: {
             aiTimetableEnabled: true,
@@ -478,7 +479,7 @@ export async function POST(request: Request) {
         name: 'Takshila School',
         code: 'TAKSHILA2025',
         email: 'admin@takshilaschool.edu',
-        password: 'school123',
+        password: await hashPassword('school123'),
         featureFlags: {
           create: {
             aiTimetableEnabled: true,
@@ -514,6 +515,8 @@ export async function POST(request: Request) {
     const teacherDataInput: { schoolId: string; name: string; email: string; subject: string; grades: string; password: string; phone: string; availability: string; role: string }[] = [];
     const teacherDbMap = new Map<string, string>(); // fullName -> teacherId
 
+    // Demo credential, stored hashed. Hashed once: bcrypt per row is slow.
+    const demoTeacherPasswordHash = await hashPassword('teacher123');
     let tIdx = 1;
     for (const tName of uniqueTeachers) {
       const cleanEmail = tName.toLowerCase().replace(/[^a-z]/g, '') + `@takshilaschool.edu`;
@@ -523,7 +526,7 @@ export async function POST(request: Request) {
         email: cleanEmail,
         subject: 'General',
         grades: JSON.stringify(['Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8']),
-        password: 'teacher123',
+        password: demoTeacherPasswordHash,
         phone: `+91 98765 ${String(10000 + tIdx)}`,
         availability: JSON.stringify([]),
         role: 'teacher',

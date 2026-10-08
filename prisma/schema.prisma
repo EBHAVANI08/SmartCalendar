@@ -13,7 +13,8 @@ model School {
   name          String
   code          String              @unique
   email         String              @unique
-  password      String              @default("school123")
+  password      String
+  mustChangePassword Boolean? @default(false)
   status        String              @default("active") // active | suspended | cancelled
   contactName   String?
   phone         String?
@@ -47,7 +48,11 @@ model Teacher {
   /// employ people with the same address; a global key also leaked the
   /// existence of another school's staff through "email already exists".
   email                   String
-  password                String                @default("teacher123")
+  password                String
+  /// Set when someone other than the account holder chose the password (migration,
+  /// Admin-issued temporary password, owner reset). Optional because existing
+  /// documents lack the field; null means false. Same field on the other account models.
+  mustChangePassword      Boolean? @default(false)
   phone                   String?
   employeeId              String?               // School's own staff ID; first key used for duplicate detection
   subject                 String                // Primary subject, kept for existing readers
@@ -201,6 +206,7 @@ model Admin {
   name         String
   email        String   @unique
   password     String
+  mustChangePassword Boolean? @default(false)
   role         String   @default("admin")
   isSuperAdmin Boolean  @default(false)
   createdAt    DateTime @default(now())
@@ -1067,6 +1073,7 @@ model OwnerEmployee {
   name      String
   email     String   @unique
   password  String
+  mustChangePassword Boolean? @default(false)
   role      String   @default("support") // owner | sales | support | demo | finance | engineer
   modules   String   @default("[]")
   status    String   @default("active") // active | disabled
@@ -1081,7 +1088,8 @@ model WorkspaceMember {
   schoolId  String   @db.ObjectId
   name      String
   email     String   @unique
-  password  String   @default("member123")
+  password  String
+  mustChangePassword Boolean? @default(false)
   role      String   @default("staff") // admin | principal | coordinator | teacher | staff | demo
   modules   String   @default("[]")
   status    String   @default("active") // active | disabled

@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { ensureDefaultPlans, isSuperAdminRequest, unauthorized } from '@/lib/superadmin';
+import { stripCredentials } from '@/lib/safe-fields';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,7 +89,7 @@ export async function GET(request: Request) {
       overdueInvoices,
     },
     subscriptions: Object.fromEntries(subscriptions.map((s) => [s.status, s._count._all])),
-    recentTenants,
+    recentTenants: stripCredentials(recentTenants),
     recentPayments,
     recentAudit,
   });

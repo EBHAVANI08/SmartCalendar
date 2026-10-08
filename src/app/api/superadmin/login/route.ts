@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { signJwt } from '@/lib/jwt-auth';
 import { NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
+import { verifyPassword } from '@/lib/password';
 
 export async function POST(request: Request) {
   try {
@@ -16,15 +16,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Invalid credentials or insufficient privileges' }, { status: 401 });
     }
 
-    let valid = false;
-    if (admin.password.startsWith('$2a$') || admin.password.startsWith('$2b$')) {
-      valid = await bcrypt.compare(password, admin.password);
-    } else if (admin.password === password) {
-      valid = true;
-      // Upgrade plain text to bcrypt
-      const hashed = await bcrypt.hash(password, 10);
-      await db.admin.update({ where: { id: admin.id }, data: { password: hashed } }).catch(() => null);
-    }
+    const valid = await verifyPassword(password, admin.password, (newHash) =>
+      db.admin.update({ where: { id: admin.id }, data: { password: newHash } })
+    );
 
     if (!valid) {
       return NextResponse.json({ error: 'Invalid credentials or insufficient privileges' }, { status: 401 });

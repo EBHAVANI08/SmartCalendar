@@ -160,6 +160,9 @@ export default function TeachersPage() {
   const [filtered, setFiltered] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [schoolName, setSchoolName] = useState('');
+  // Temporary passwords returned by create/bulk upload. Held only in memory and
+  // shown once; the server stores only their hashes.
+  const [issuedCredentials, setIssuedCredentials] = useState<{ name: string; email: string; temporaryPassword: string; emailSent?: boolean }[]>([]);
   const [search, setSearch] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
@@ -858,10 +861,16 @@ export default function TeachersPage() {
         }),
       });
       if (r.ok) {
+        const created = await r.json().catch(() => ({}));
         toast({
           title: 'Faculty Added',
-          description: `${form.name} added. A password setup email has been dispatched to ${form.email}.`,
+          description: created.emailSent
+            ? `${form.name} added. A password setup email was sent to ${form.email}.`
+            : `${form.name} added. No setup email was sent; share the temporary password shown next.`,
         });
+        if (created.temporaryPassword) {
+          setIssuedCredentials([{ name: form.name.trim(), email: created.teacher?.email || form.email.trim(), temporaryPassword: created.temporaryPassword, emailSent: Boolean(created.emailSent) }]);
+        }
         setAddOpen(false);
         setForm({
           name: '',
@@ -1174,7 +1183,8 @@ export default function TeachersPage() {
       });
       const d = await r.json();
       if (r.ok && d.success) {
-        toast({ title: 'Faculty Bulk Upload Complete', description: d.message || 'Faculty list created & password setup emails dispatched.' });
+        toast({ title: 'Faculty Bulk Upload Complete', description: d.message || 'Faculty list created.' });
+        if (Array.isArray(d.issuedCredentials) && d.issuedCredentials.length > 0) setIssuedCredentials(d.issuedCredentials);
         setBulkOpen(false);
         setBulkFile(null);
         fetchTeachers();
@@ -3224,6 +3234,43 @@ export default function TeachersPage() {
                   ? 'Delete permanently'
                   : 'Delete blocked by references'}
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={issuedCredentials.length > 0} onOpenChange={(open) => { if (!open) setIssuedCredentials([]); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Temporary passwords</DialogTitle>
+            <DialogDescription>
+              These are shown only once and are not stored in readable form. Share each one with the teacher privately; they can change it after signing in.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-72 overflow-y-auto divide-y rounded-md border text-sm">
+            {issuedCredentials.map((item) => (
+              <div key={item.email} className="flex items-center justify-between gap-3 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="font-semibold truncate">{item.name}</p>
+                  <p className="text-xs text-slate-500 truncate">{item.email}</p>
+                </div>
+                <code className="shrink-0 rounded bg-slate-100 px-2 py-1 font-mono text-xs">{item.temporaryPassword}</code>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                const text = issuedCredentials.map((item) => [item.name, item.email, item.temporaryPassword].join(', ')).join('\n');
+                navigator.clipboard?.writeText(text).then(
+                  () => toast({ title: 'Copied', description: 'Credentials copied to the clipboard.' }),
+                  () => toast({ title: 'Copy failed', description: 'Select and copy the passwords manually.', variant: 'destructive' })
+                );
+              }}
+            >
+              Copy all
+            </Button>
+            <Button onClick={() => setIssuedCredentials([])}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

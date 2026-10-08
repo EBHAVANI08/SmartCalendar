@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 const MAX_PERIODS_PER_DAY = 8;
 
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
     if (substitutionId) {
       const sub = await db.substitution.findUnique({
         where: { id: substitutionId },
-        include: { absentTeacher: true },
+        include: { absentTeacher: { select: TEACHER_PUBLIC_SELECT } },
       });
       if (!sub) {
         return NextResponse.json({ error: 'Substitution not found' }, { status: 404 });

@@ -1,3 +1,5 @@
+export type AccountType = 'teacher' | 'school' | 'member' | 'admin' | 'ownerEmployee';
+
 export interface UserSessionPayload {
   userId: string;
   email: string;
@@ -7,6 +9,10 @@ export interface UserSessionPayload {
   name?: string;
   ownerRole?: string | null;
   modules?: string | null;
+  /** Which table the account lives in; role alone is ambiguous (a member can be 'admin'). */
+  accountType?: AccountType;
+  /** Limited session: may only set a new password (see middleware). */
+  mustChangePassword?: boolean;
   iat?: number;
   exp?: number;
 }
@@ -141,4 +147,17 @@ export async function verifyJwt(token: string): Promise<UserSessionPayload | nul
   } catch {
     return null;
   }
+}
+
+/**
+ * Verifies a token presented as a login session. Purpose-bound tokens signed
+ * with the same key (password-reset codes, teacher password-setup links) are
+ * rejected: they are handed to people who have not signed in.
+ */
+export async function verifySessionJwt(token: string): Promise<UserSessionPayload | null> {
+  const payload = await verifyJwt(token);
+  if (!payload) return null;
+  const purposeBound = payload as UserSessionPayload & { purpose?: unknown };
+  if (purposeBound.purpose || payload.modules === 'password_reset_otp') return null;
+  return payload;
 }

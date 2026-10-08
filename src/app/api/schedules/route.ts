@@ -5,6 +5,7 @@ import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 import { NextResponse } from 'next/server';
 import { ownTeacherId } from '@/lib/teacher-scope';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 /**
  * Timetable rows for one class.
@@ -58,7 +59,7 @@ export async function GET(request: Request) {
 
     let schedules = await db.schedule.findMany({
       where,
-      include: { teacher: true },
+      include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
       orderBy: [{ day: 'asc' }, { period: 'asc' }],
     });
 
@@ -72,7 +73,7 @@ export async function GET(request: Request) {
           teacherId: targetTeacherId,
           ...(day ? { day } : {}),
         },
-        include: { teacher: true },
+        include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
         orderBy: [{ day: 'asc' }, { period: 'asc' }],
       });
     }

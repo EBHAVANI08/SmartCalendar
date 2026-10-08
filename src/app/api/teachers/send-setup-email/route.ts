@@ -6,6 +6,7 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
 import { sendTeacherPasswordSetupEmail } from '@/lib/mailer';
 import { readList } from '@/lib/faculty';
+import { SCHOOL_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function POST(request: Request) {
   const denied = requireCapability(request, 'faculty.write');
@@ -26,7 +27,7 @@ export async function POST(request: Request) {
 
     const teacher = await db.teacher.findFirst({
       where: { id: teacherId, schoolId },
-      include: { school: true },
+      include: { school: { select: SCHOOL_PUBLIC_SELECT } },
     });
 
     if (!teacher) {

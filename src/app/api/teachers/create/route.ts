@@ -1,7 +1,7 @@
 import { db } from '@/lib/db';
 import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
+import { generateTemporaryPassword, hashPassword } from '@/lib/password';
 import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: Request) {
@@ -59,7 +59,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const hashedPassword = await bcrypt.hash(password || 'teacher123', 10);
+    // Never fall back to a shared default password. Without an explicit one the
+    // Admin receives a random temporary password, shown once.
+    const temporaryPassword = password ? null : generateTemporaryPassword();
+    const hashedPassword = await hashPassword(password || temporaryPassword!);
 
     // Create the teacher
     const teacher = await db.teacher.create({
@@ -70,6 +73,8 @@ export async function POST(request: Request) {
         subject: subject.trim(),
         grades: JSON.stringify(grades),
         password: hashedPassword,
+        // An Admin chose or generated it; the teacher sets their own at first login.
+        mustChangePassword: true,
         role: role || 'teacher',
         availability: '[]',
         schoolId: schoolId || undefined,
@@ -88,6 +93,7 @@ export async function POST(request: Request) {
         role: teacher.role,
         createdAt: teacher.createdAt,
       },
+      ...(temporaryPassword ? { temporaryPassword } : {}),
     }, { status: 201 });
   } catch (error) {
     console.error('Error creating teacher:', error);

@@ -1,4 +1,4 @@
-import { verifyJwt, type UserSessionPayload } from '@/lib/jwt-auth';
+import { verifySessionJwt, type UserSessionPayload } from '@/lib/jwt-auth';
 
 /**
  * Session helpers for route handlers.
@@ -35,7 +35,7 @@ export async function getSession(request: Request): Promise<UserSessionPayload |
   const token = readSessionToken(request);
   if (!token) return null;
   try {
-    return await verifyJwt(token);
+    return await verifySessionJwt(token);
   } catch {
     return null;
   }

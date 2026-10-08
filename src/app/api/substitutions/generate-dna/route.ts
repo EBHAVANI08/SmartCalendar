@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function POST(request: Request) {
   const denied = requireCapability(request, 'substitution.assign');
@@ -16,8 +17,8 @@ export async function POST(request: Request) {
     const substitution = await db.substitution.findUnique({
       where: { id: substitutionId },
       include: {
-        absentTeacher: true,
-        substitute: true,
+        absentTeacher: { select: TEACHER_PUBLIC_SELECT },
+        substitute: { select: TEACHER_PUBLIC_SELECT },
       },
     });
 

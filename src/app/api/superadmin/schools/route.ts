@@ -33,7 +33,7 @@ export async function POST(request: Request) {
 
   const hashedPassword = await bcrypt.hash(password, 10);
   const school = await db.school.create({
-    data: { name, code: String(code).toUpperCase(), email: String(email).toLowerCase(), password: hashedPassword },
+    data: { name, code: String(code).toUpperCase(), email: String(email).toLowerCase(), password: hashedPassword, mustChangePassword: true },
   });
 
   await db.schoolFeatureFlags.create({

@@ -6,6 +6,7 @@ import { dispatchMessage } from '@/lib/notifications/messaging-service';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { ownTeacherId } from '@/lib/teacher-scope';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function GET(request: Request) {
   try {
@@ -60,8 +61,8 @@ export async function GET(request: Request) {
     const substitutions = await db.substitution.findMany({
       where,
       include: {
-        absentTeacher: true,
-        substitute: true,
+        absentTeacher: { select: TEACHER_PUBLIC_SELECT },
+        substitute: { select: TEACHER_PUBLIC_SELECT },
       },
       orderBy: [{ period: 'asc' }, { createdAt: 'desc' }],
     });
@@ -91,7 +92,7 @@ export async function PATCH(request: Request) {
     // so an Admin could assign cover inside another school's timetable.
     const substitution = await db.substitution.findFirst({
       where: { id: substitutionId, schoolId, absentTeacher: { schoolId } },
-      include: { absentTeacher: true, substitute: true },
+      include: { absentTeacher: { select: TEACHER_PUBLIC_SELECT }, substitute: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     if (!substitution) {
@@ -142,8 +143,8 @@ export async function PATCH(request: Request) {
         status: 'assigned',
       },
       include: {
-        absentTeacher: true,
-        substitute: true,
+        absentTeacher: { select: TEACHER_PUBLIC_SELECT },
+        substitute: { select: TEACHER_PUBLIC_SELECT },
       },
     });
 
@@ -246,8 +247,8 @@ export async function POST(request: Request) {
           status: 'pending',
         },
         include: {
-          absentTeacher: true,
-          substitute: true,
+          absentTeacher: { select: TEACHER_PUBLIC_SELECT },
+          substitute: { select: TEACHER_PUBLIC_SELECT },
         },
       });
       substitutions.push(sub);

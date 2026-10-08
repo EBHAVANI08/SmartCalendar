@@ -15,6 +15,7 @@ import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import { TENANT_MODULES, TENANT_ROLE_MODULES } from '@/lib/access';
+import { OneTimePasswordDialog, type IssuedPassword } from '@/components/auth/one-time-password-dialog';
 
 function inr(n: number) {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n || 0);
@@ -39,6 +40,7 @@ export default function TenantDetailPage() {
   const { toast } = useToast();
   const [tab, setTab] = useState<(typeof TABS)[number]>('overview');
   const [data, setData] = useState<any>(null);
+  const [issued, setIssued] = useState<IssuedPassword | null>(null);
   const [plans, setPlans] = useState<any[]>([]);
   const [form, setForm] = useState({ name: '', email: '', contactName: '', phone: '', notes: '' });
   const [planName, setPlanName] = useState('standard');
@@ -46,7 +48,7 @@ export default function TenantDetailPage() {
   const [saving, setSaving] = useState(false);
   const [extraSeats, setExtraSeats] = useState('0');
   const [memberForm, setMemberForm] = useState({
-    name: '', email: '', password: 'member123', role: 'staff', modules: TENANT_ROLE_MODULES.staff as string[],
+    name: '', email: '', password: '', role: 'staff', modules: TENANT_ROLE_MODULES.staff as string[],
   });
   const [msg, setMsg] = useState({ subject: '', body: '', channel: 'message' });
   const [ticketReply, setTicketReply] = useState<Record<string, string>>({});
@@ -90,7 +92,8 @@ export default function TenantDetailPage() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Update failed');
-      toast({ title: ok, description: d.password ? `New password: ${d.password}` : undefined });
+      toast({ title: ok });
+      if (d.password) setIssued({ label: data?.tenant?.email || 'School login', password: d.password });
       load();
     } catch (e: any) {
       toast({ title: 'Action failed', description: e.message, variant: 'destructive' });
@@ -158,8 +161,9 @@ export default function TenantDetailPage() {
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Failed');
-      toast({ title: 'User created', description: `${memberForm.email} / ${d.password}` });
-      setMemberForm({ name: '', email: '', password: 'member123', role: 'staff', modules: TENANT_ROLE_MODULES.staff });
+      toast({ title: 'User created', description: memberForm.email });
+      if (d.temporaryPassword) setIssued({ label: memberForm.email, password: d.temporaryPassword });
+      setMemberForm({ name: '', email: '', password: '', role: 'staff', modules: TENANT_ROLE_MODULES.staff });
       load();
     } catch (e: any) {
       toast({ title: 'Could not add user', description: e.message, variant: 'destructive' });
@@ -329,7 +333,7 @@ export default function TenantDetailPage() {
               <p className="text-xs text-slate-500">Uses one of {seats.remaining} remaining seats.</p>
               <div><Label>Name</Label><Input value={memberForm.name} onChange={(e) => setMemberForm({ ...memberForm, name: e.target.value })} /></div>
               <div><Label>Email / login</Label><Input value={memberForm.email} onChange={(e) => setMemberForm({ ...memberForm, email: e.target.value })} /></div>
-              <div><Label>Password</Label><Input value={memberForm.password} onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })} /></div>
+              <div><Label>Password</Label><Input value={memberForm.password} placeholder="Leave blank to generate one" onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })} /></div>
               <div>
                 <Label>Role</Label>
                 <select className="h-9 w-full rounded-md border px-2 text-sm" value={memberForm.role} onChange={(e) => setMemberForm({ ...memberForm, role: e.target.value, modules: TENANT_ROLE_MODULES[e.target.value] || TENANT_ROLE_MODULES.staff })}>
@@ -492,6 +496,7 @@ export default function TenantDetailPage() {
           </CardContent>
         </Card>
       )}
+      <OneTimePasswordDialog issued={issued} onClose={() => setIssued(null)} />
     </div>
   );
 }

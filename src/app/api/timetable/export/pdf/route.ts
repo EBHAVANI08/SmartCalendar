@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 /**
  * GET /api/timetable/export/pdf
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
       }
       schedules = await db.schedule.findMany({
         where: { teacherId, schoolId },
-        include: { teacher: true },
+        include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
         orderBy: [{ day: 'asc' }, { period: 'asc' }],
       });
       title = `Faculty Master Schedule: ${teacher.name}`;
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest) {
           section: { equals: section, mode: 'insensitive' },
           schoolId,
         },
-        include: { teacher: true },
+        include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
         orderBy: [{ day: 'asc' }, { period: 'asc' }],
       });
       title = `Class Timetable: ${grade} - Section ${section}`;

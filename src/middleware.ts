@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { verifyJwt, type UserSessionPayload } from '@/lib/jwt-auth';
+import { verifySessionJwt, type UserSessionPayload } from '@/lib/jwt-auth';
 import { can, capabilityForPath, isKnownRole } from '@/lib/authz';
 
 /**
@@ -67,7 +67,7 @@ export async function middleware(request: NextRequest) {
   let session: UserSessionPayload | null = null;
   if (token) {
     try {
-      session = await verifyJwt(token);
+      session = await verifySessionJwt(token);
     } catch {
       session = null;
     }
@@ -86,6 +86,18 @@ export async function middleware(request: NextRequest) {
     if (session.schoolCode) {
       requestHeaders.set('x-school-code', session.schoolCode);
     }
+  }
+
+  // A session issued with a password someone else chose may only set a new
+  // password. /api/auth/* (including change-password) returned above.
+  if (session?.mustChangePassword) {
+    if (pathname.startsWith('/api/')) {
+      return NextResponse.json(
+        { error: 'Set a new password to continue.', code: 'PASSWORD_CHANGE_REQUIRED' },
+        { status: 403 }
+      );
+    }
+    return NextResponse.redirect(new URL('/change-password', request.url));
   }
 
   const configuredToken = process.env.SUPERADMIN_TOKEN;

@@ -9,6 +9,8 @@ import {
   unauthorized,
   writeAudit,
 } from '@/lib/superadmin';
+import { stripCredentials } from '@/lib/safe-fields';
+import { generateTemporaryPassword } from '@/lib/password';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,7 +57,7 @@ export async function GET(request: Request, ctx: Ctx) {
   const seats = await seatUsage(id);
 
   const { password: _pw, ...safe } = tenant;
-  return NextResponse.json({ tenant: safe, teachers, members, tickets, messages, seats });
+  return NextResponse.json(stripCredentials({ tenant: safe, teachers, members, tickets, messages, seats }));
 }
 
 export async function PATCH(request: Request, ctx: Ctx) {
@@ -78,13 +80,14 @@ export async function PATCH(request: Request, ctx: Ctx) {
       });
     }
     await writeAudit(request, `tenant.${action}`, 'school', id, { status });
-    return NextResponse.json({ success: true, school });
+    return NextResponse.json(stripCredentials({ success: true, school }));
   }
 
   if (action === 'resetPassword') {
-    const password = (body.password as string) || `School${Math.random().toString(36).slice(2, 8)}`;
+    const password = (body.password as string) || generateTemporaryPassword();
     const hashedPassword = await bcrypt.hash(password, 10);
-    await db.school.update({ where: { id }, data: { password: hashedPassword } });
+    // Shown to the owner once; the school must choose its own at next login.
+    await db.school.update({ where: { id }, data: { password: hashedPassword, mustChangePassword: true } });
     await writeAudit(request, 'tenant.resetPassword', 'school', id);
     return NextResponse.json({ success: true, password });
   }
@@ -138,7 +141,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
       data: { extraSeats, ...(includedSeats != null ? { includedSeats } : {}) },
     });
     await writeAudit(request, 'tenant.grantSeats', 'school', id, { extraSeats, includedSeats });
-    return NextResponse.json({ success: true, school });
+    return NextResponse.json(stripCredentials({ success: true, school }));
   }
 
   if (body.planName) {
@@ -176,7 +179,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
     },
   });
   await writeAudit(request, 'tenant.update', 'school', id, { fields: Object.keys(body) });
-  return NextResponse.json({ success: true, school });
+  return NextResponse.json(stripCredentials({ success: true, school }));
 }
 
 export async function DELETE(request: Request, ctx: Ctx) {
@@ -203,10 +206,10 @@ export async function DELETE(request: Request, ctx: Ctx) {
     await db.tenantMessage.deleteMany({ where: { schoolId: id } }).catch(() => null);
     const school = await db.school.delete({ where: { id } });
     await writeAudit(request, 'tenant.deletePermanent', 'school', id);
-    return NextResponse.json({ success: true, deleted: true, school });
+    return NextResponse.json(stripCredentials({ success: true, deleted: true, school }));
   }
 
   const school = await db.school.update({ where: { id }, data: { status: 'cancelled' } });
   await writeAudit(request, 'tenant.cancel', 'school', id);
-  return NextResponse.json({ success: true, school });
+  return NextResponse.json(stripCredentials({ success: true, school }));
 }

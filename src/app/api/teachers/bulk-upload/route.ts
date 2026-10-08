@@ -17,6 +17,7 @@ import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { requireCapability } from '@/lib/authz';
 import { sendTeacherPasswordSetupEmail } from '@/lib/mailer';
+import { generateTemporaryPassword, hashPassword } from '@/lib/password';
 
 /**
  * Faculty bulk import.
@@ -295,6 +296,8 @@ export async function POST(request: Request) {
     // ── Write ──
     let created = 0;
     let updated = 0;
+    // Shown to the Admin once; only hashes are stored.
+    const issuedCredentials: { name: string; email: string; temporaryPassword: string }[] = [];
 
     const school = await db.school.findUnique({
       where: { id: schoolId },
@@ -311,8 +314,12 @@ export async function POST(request: Request) {
         record.email ||
         `${normalizeName(record.name).replace(/\s+/g, '.')}.${Date.now().toString(36)}@faculty.local`;
 
+      const temporaryPassword = generateTemporaryPassword();
       const newTeacher = await db.teacher.create({
+        select: { id: true, name: true, email: true },
         data: {
+          password: await hashPassword(temporaryPassword),
+          mustChangePassword: true,
           schoolId,
           name: record.name,
           email,
@@ -326,6 +333,7 @@ export async function POST(request: Request) {
         },
       });
       created++;
+      issuedCredentials.push({ name: newTeacher.name, email: newTeacher.email, temporaryPassword });
 
       // Automatically dispatch password setup email for real teacher emails
       if (record.email && !record.email.endsWith('@faculty.local')) {
@@ -374,6 +382,7 @@ export async function POST(request: Request) {
       message: `Imported ${created} new faculty member(s) and updated ${updated} existing profile(s) with additional subjects/grades.`,
       teachersCreated: created,
       teachersUpdated: updated,
+      issuedCredentials,
       ...summary,
     });
   } catch (error) {

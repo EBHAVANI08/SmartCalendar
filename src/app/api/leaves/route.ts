@@ -5,6 +5,7 @@ import { affectedPeriodsForLeave, syncSubstitutionsForLeave, type AffectedPeriod
 import { requireCapability } from '@/lib/authz';
 import { ownTeacherId } from '@/lib/teacher-scope';
 import { dispatchMessage } from '@/lib/notifications/messaging-service';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 /**
  * Leave applications.
@@ -75,7 +76,7 @@ export async function PATCH(req: NextRequest) {
     const updated = await db.leaveApplication.update({
       where: { id },
       data: { status, approvedBy: approvedBy || 'Admin' },
-      include: { teacher: true },
+      include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     let substitutions:

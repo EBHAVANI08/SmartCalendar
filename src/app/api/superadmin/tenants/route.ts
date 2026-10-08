@@ -9,6 +9,7 @@ import {
   unauthorized,
   writeAudit,
 } from '@/lib/superadmin';
+import { generateTemporaryPassword } from '@/lib/password';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,9 +55,11 @@ export async function POST(request: Request) {
     name, code, email, password, planName, contactName, phone, notes, billingCycle,
   } = body as Record<string, string>;
 
-  if (!name || !code || !email || !password) {
-    return NextResponse.json({ error: 'name, code, email and password are required' }, { status: 400 });
+  if (!name || !code || !email) {
+    return NextResponse.json({ error: 'name, code and email are required' }, { status: 400 });
   }
+  // Without an explicit password a random one is generated and shown once.
+  const temporaryPassword = password ? null : generateTemporaryPassword();
 
   const existing = await db.school.findFirst({
     where: { OR: [{ email: email.toLowerCase() }, { code: code.toUpperCase() }] },
@@ -65,9 +68,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'A tenant with this email or school code already exists' }, { status: 409 });
   }
 
-  const hashedPassword = await bcrypt.hash(password, 10);
+  const hashedPassword = await bcrypt.hash(password || temporaryPassword!, 10);
   const school = await db.school.create({
     data: {
+      mustChangePassword: true,
       name,
       code: code.toUpperCase(),
       email: email.toLowerCase(),
@@ -114,5 +118,5 @@ export async function POST(request: Request) {
 
   await writeAudit(request, 'tenant.create', 'school', school.id, { name, code: school.code, plan: planKey });
   const { password: _p, ...safeSchool } = school;
-  return NextResponse.json({ success: true, school: safeSchool }, { status: 201 });
+  return NextResponse.json({ success: true, school: safeSchool, ...(temporaryPassword ? { temporaryPassword } : {}) }, { status: 201 });
 }

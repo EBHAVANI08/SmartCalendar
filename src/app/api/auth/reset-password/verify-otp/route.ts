@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { verifyPasswordResetOtp, invalidatePasswordResetOtp } from '@/lib/otp-store';
-import bcrypt from 'bcryptjs';
+import { hashPassword } from '@/lib/password';
 
 export async function POST(request: Request) {
   try {
@@ -34,38 +34,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    let updatedAny = false;
+    const account = otpVerification.account;
+    if (!account) {
+      return NextResponse.json({ error: 'This code is no longer valid. Please request a new code.' }, { status: 400 });
+    }
 
-    // 1. Update Teacher
-    const teacherUpdate = await db.teacher.updateMany({
-      where: { email },
-      data: { password: hashedPassword },
-    });
-    if (teacherUpdate.count > 0) updatedAny = true;
+    // Update only the account the code was issued for (identified by id when
+    // the code was sent), never every record that shares this email.
+    const hashedPassword = await hashPassword(newPassword);
+    const target = { id: account.id };
+    // The account holder chose this password, so any forced change is satisfied.
+    const data = { password: hashedPassword, mustChangePassword: false };
+    const result =
+      account.type === 'teacher' ? await db.teacher.updateMany({ where: target, data })
+      : account.type === 'school' ? await db.school.updateMany({ where: target, data })
+      : account.type === 'member' ? await db.workspaceMember.updateMany({ where: target, data })
+      : await db.admin.updateMany({ where: target, data });
 
-    // 2. Update School Tenant
-    const schoolUpdate = await db.school.updateMany({
-      where: { email },
-      data: { password: hashedPassword },
-    });
-    if (schoolUpdate.count > 0) updatedAny = true;
-
-    // 3. Update Workspace Member
-    const memberUpdate = await db.workspaceMember.updateMany({
-      where: { email },
-      data: { password: hashedPassword },
-    });
-    if (memberUpdate.count > 0) updatedAny = true;
-
-    // 4. Update Admin
-    const adminUpdate = await db.admin.updateMany({
-      where: { email },
-      data: { password: hashedPassword },
-    });
-    if (adminUpdate.count > 0) updatedAny = true;
-
-    if (!updatedAny) {
+    if (result.count === 0) {
       return NextResponse.json(
         { error: 'Account record could not be updated. Please contact support.' },
         { status: 404 }

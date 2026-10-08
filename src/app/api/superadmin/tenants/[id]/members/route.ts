@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import bcrypt from 'bcryptjs';
 import { TENANT_ROLE_MODULES } from '@/lib/access';
 import { isSuperAdminRequest, seatUsage, unauthorized, writeAudit } from '@/lib/superadmin';
+import { generateTemporaryPassword } from '@/lib/password';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,8 +48,8 @@ export async function POST(request: Request, ctx: Ctx) {
   const memberRole = role || 'staff';
   const mods = Array.isArray(modules) && modules.length ? modules : (TENANT_ROLE_MODULES[memberRole] || TENANT_ROLE_MODULES.staff);
 
-  const rawPassword = password || `Member${Math.random().toString(36).slice(2, 8)}`;
-  const hashedPassword = await bcrypt.hash(rawPassword, 10);
+  const temporaryPassword = password ? null : generateTemporaryPassword();
+  const hashedPassword = await bcrypt.hash(password || temporaryPassword!, 10);
 
   const member = await db.workspaceMember.create({
     data: {
@@ -56,6 +57,7 @@ export async function POST(request: Request, ctx: Ctx) {
       name,
       email: String(email).toLowerCase(),
       password: hashedPassword,
+      mustChangePassword: true,
       role: memberRole,
       modules: JSON.stringify(mods),
       status: status || 'active',
@@ -68,6 +70,7 @@ export async function POST(request: Request, ctx: Ctx) {
         name,
         email: String(email).toLowerCase(),
         password: hashedPassword,
+        mustChangePassword: true,
         subject: body.subject || 'General',
         schoolId: id,
       },
@@ -76,7 +79,8 @@ export async function POST(request: Request, ctx: Ctx) {
 
   await writeAudit(request, 'member.create', 'workspaceMember', member.id, { schoolId: id, role: memberRole });
   const { password: _p, ...safeMember } = member;
-  return NextResponse.json({ success: true, member: safeMember }, { status: 201 });
+  // A generated password is shown to the owner once; the member must change it at first login.
+  return NextResponse.json({ success: true, member: safeMember, ...(temporaryPassword ? { temporaryPassword } : {}) }, { status: 201 });
 }
 
 export async function PATCH(request: Request, ctx: Ctx) {
@@ -93,6 +97,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
       status: body.status,
       modules: Array.isArray(body.modules) ? JSON.stringify(body.modules) : body.modules,
       password: hashedPassword,
+      ...(hashedPassword ? { mustChangePassword: true } : {}),
     },
   });
   await writeAudit(request, 'member.update', 'workspaceMember', member.id, { schoolId: id });

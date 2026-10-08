@@ -59,7 +59,7 @@ export async function POST(request: Request) {
       where: { id: school.id },
       data: {
         ...(email ? { email } : {}),
-        ...(password ? { password: await bcrypt.hash(password, 10) } : {}),
+        ...(password ? { password: await bcrypt.hash(password, 10), mustChangePassword: true } : {}),
         ...(name ? { name } : {}),
       },
       select: { id: true, name: true, code: true, email: true },

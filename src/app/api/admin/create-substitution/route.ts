@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireCapability } from '@/lib/authz';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function POST(request: NextRequest) {
   const denied = requireCapability(request, 'substitution.assign');
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
 
     const schedule = await db.schedule.findUnique({
       where: { id: scheduleId },
-      include: { teacher: true },
+      include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     if (!schedule) {

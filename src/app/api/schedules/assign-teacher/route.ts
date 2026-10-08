@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { readList, teacherTeachesSection } from '@/lib/faculty';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 const MAX_PERIODS_PER_DAY = 8;
 
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
     const updated = await db.schedule.update({
       where: { id: scheduleId },
       data: { teacherId },
-      include: { teacher: true },
+      include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     return NextResponse.json({

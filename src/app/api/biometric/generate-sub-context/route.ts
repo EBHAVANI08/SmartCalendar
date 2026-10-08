@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 // Call AI chat completions using ZAI helper from z-ai-web-dev-sdk
 async function callAIChat(messages: { role: string; content: string }[], maxTokens: number = 4000) {
@@ -50,8 +51,8 @@ export async function POST(request: Request) {
       substitution = await db.substitution.findFirst({
         where: { id: substitutionId, schoolId },
         include: {
-          absentTeacher: true,
-          substitute: true,
+          absentTeacher: { select: TEACHER_PUBLIC_SELECT },
+          substitute: { select: TEACHER_PUBLIC_SELECT },
         },
       });
     } catch (dbErr) {

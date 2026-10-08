@@ -6,7 +6,7 @@
     "node": ">=20.0.0"
   },
   "scripts": {
-    "dev": "next dev -p 3005",
+    "dev": "next dev -p 3000",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
@@ -16,6 +16,7 @@
     "db:reset": "prisma migrate reset",
     "typecheck:smart-calendar": "tsc -p tsconfig.smart-calendar.json",
     "test:smart-calendar": "node --test tests/smart-calendar.test.mjs",
+    "test:credentials": "node --test tests/no-credentials.test.mjs",
     "postinstall": "prisma generate",
     "test:integration": "node --env-file=.env --test tests/integration.test.mjs",
     "test:authz": "node --env-file=.env --test tests/authz.test.mjs",
@@ -109,6 +110,7 @@
     "bun-types": "^1.3.4",
     "cross-env": "^7.0.3",
     "eslint": "^9",
-    "eslint-config-next": "^16.1.1"
+    "eslint-config-next": "^16.1.1",
+    "tsx": "^4.23.15"
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function GET(request: NextRequest) {
   try {
@@ -21,13 +22,13 @@ export async function GET(request: NextRequest) {
 
     const schedules = await db.schedule.findMany({
       where: scheduleWhere,
-      include: { teacher: true },
+      include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
       orderBy: { period: 'asc' },
     });
 
     const substitutions = await db.substitution.findMany({
       where: subWhere,
-      include: { absentTeacher: true, substitute: true },
+      include: { absentTeacher: { select: TEACHER_PUBLIC_SELECT }, substitute: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     return NextResponse.json({ success: true, data: { schedules, substitutions } });

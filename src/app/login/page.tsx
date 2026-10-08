@@ -26,6 +26,9 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Set when one email belongs to teachers at several schools.
+  const [schoolChoices, setSchoolChoices] = useState<{ code: string; name: string }[]>([]);
+  const [schoolCode, setSchoolCode] = useState('');
   // Load saved credentials if any
   useEffect(() => {
     try {
@@ -45,7 +48,7 @@ export default function LoginPage() {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, ...(schoolCode ? { schoolCode } : {}) }),
       });
 
       let data: any = {};
@@ -87,7 +90,14 @@ export default function LoginPage() {
           description: `Signed in as ${data.user.name || data.user.email}`,
         });
 
+        if (data.user?.mustChangePassword) {
+          router.push('/change-password');
+          return;
+        }
         router.push(data.user?.role === 'superadmin' ? '/superadmin' : '/dashboard');
+      } else if (res.status === 409 && data?.code === 'SCHOOL_REQUIRED' && Array.isArray(data.schools)) {
+        setSchoolChoices(data.schools);
+        setError(data.error);
       } else {
         setError(data.error || 'Invalid credentials. Please verify your email and password.');
       }
@@ -315,6 +325,24 @@ export default function LoginPage() {
                 </div>
 
                 {/* Error Display */}
+                {schoolChoices.length > 1 && (
+                  <div className="space-y-1.5">
+                    <label htmlFor="login-school" className="text-xs font-semibold text-slate-700">School</label>
+                    <select
+                      id="login-school"
+                      value={schoolCode}
+                      onChange={(e) => setSchoolCode(e.target.value)}
+                      className="w-full h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"
+                      required
+                    >
+                      <option value="" disabled>Choose your school</option>
+                      {schoolChoices.map((school) => (
+                        <option key={school.code} value={school.code}>{school.name} ({school.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
                 {error && (
                   <div className="flex items-center gap-2.5 p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs">
                     <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />

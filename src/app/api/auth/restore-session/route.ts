@@ -1,6 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
-import { signJwt, verifyJwt } from '@/lib/jwt-auth';
+import { signJwt, verifySessionJwt } from '@/lib/jwt-auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,7 +33,7 @@ export async function POST(request: Request) {
       const val = part.slice(sep + 1).trim();
       if (key === 'smart_calendar_token') {
         const candidate = decodeURIComponent(val);
-        const check = await verifyJwt(candidate);
+        const check = await verifySessionJwt(candidate);
         if (check && check.role === 'superadmin') {
           token = candidate;
         }
@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'SuperAdmin session token not found' }, { status: 400 });
   }
 
-  const session = await verifyJwt(token);
+  const session = await verifySessionJwt(token);
   if (!session || session.role !== 'superadmin') {
     return NextResponse.json({ error: 'Invalid owner session. Please log in as SuperAdmin.' }, { status: 401 });
   }
@@ -58,6 +58,9 @@ export async function POST(request: Request) {
     schoolId: session.schoolId,
     schoolCode: session.schoolCode,
     name: session.name,
+    accountType: session.accountType,
+    // Re-signing must not turn a limited session into a full one.
+    ...(session.mustChangePassword ? { mustChangePassword: true } : {}),
   });
 
   const admin = await db.admin.findFirst({ where: { isSuperAdmin: true } }).catch(() => null);

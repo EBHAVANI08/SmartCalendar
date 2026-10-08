@@ -2,9 +2,22 @@ export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { isSuperAdminRequest } from '@/lib/superadmin';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
-export async function GET() {
+/**
+ * The platform owner sees every school. Anyone else sees only their own, so a
+ * signed-in user of one school cannot list other schools' codes and emails.
+ */
+export async function GET(request: Request) {
   try {
+    if (!(await isSuperAdminRequest(request))) {
+      const schoolId = await getTenantSchoolId(request);
+      if (!schoolId) return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+      const own = await db.school.findUnique({ where: { id: schoolId }, select: { id: true, name: true, code: true } });
+      return NextResponse.json(own ? [own] : []);
+    }
+
     const schools = await db.school.findMany({
       select: {
         id: true,

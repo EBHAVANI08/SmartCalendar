@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import ZAI from 'z-ai-web-dev-sdk';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function POST(req: NextRequest) {
   const denied = requireCapability(req, 'lessonplan.write');
@@ -17,7 +18,7 @@ export async function POST(req: NextRequest) {
 
     const substitution = await db.substitution.findUnique({
       where: { id: assignmentId },
-      include: { absentTeacher: true, substitute: true },
+      include: { absentTeacher: { select: TEACHER_PUBLIC_SELECT }, substitute: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     if (!substitution) {

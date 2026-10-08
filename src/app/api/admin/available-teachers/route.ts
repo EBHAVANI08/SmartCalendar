@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(request: NextRequest) {
   try {
@@ -7,9 +8,12 @@ export async function GET(request: NextRequest) {
     const date = searchParams.get('date');
     const periodStr = searchParams.get('timeSlotId');
     const period = periodStr ? parseInt(periodStr) : 1;
+    const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) return NextResponse.json({ success: false, error: 'No school context. Please sign in again.' }, { status: 401 });
 
     const teachers = await db.teacher.findMany({
-      include: { schedules: true, leaveApplications: true },
+      where: { schoolId },
+      include: { schedules: { where: { schoolId } }, leaveApplications: true },
     });
 
     const candidates = teachers.map(teacher => {

@@ -4,9 +4,11 @@ export const revalidate = 0;
 import { db } from '@/lib/db';
 import { signJwt } from '@/lib/jwt-auth';
 import { NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
+import { hashPassword, verifyPassword } from '@/lib/password';
+import { SCHOOL_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 async function createLoginResponse(user: any) {
+  user = { ...user, mustChangePassword: Boolean(user.mustChangePassword) };
   try {
     const token = await signJwt({
       userId: user.id,
@@ -17,6 +19,9 @@ async function createLoginResponse(user: any) {
       name: user.name,
       ownerRole: user.ownerRole || null,
       modules: Array.isArray(user.modules) ? JSON.stringify(user.modules) : (user.modules || null),
+      accountType: user.accountType,
+      // A limited session: middleware lets it reach only the change-password screen.
+      ...(user.mustChangePassword ? { mustChangePassword: true } : {}),
     });
 
     const response = NextResponse.json({
@@ -38,29 +43,6 @@ async function createLoginResponse(user: any) {
     console.error('createLoginResponse error:', err);
     return NextResponse.json({ error: 'Failed to generate authentication session' }, { status: 500 });
   }
-}
-
-async function verifyPassword(
-  provided: string,
-  stored: string,
-  onPlainMatchUpgrade?: (newHash: string) => Promise<void>
-): Promise<boolean> {
-  // An account with no stored password can never be authenticated. Previously
-  // this returned true, which let any password sign in to such an account.
-  if (!stored) return false;
-  if (stored.startsWith('$2a$') || stored.startsWith('$2b$')) {
-    return await bcrypt.compare(provided, stored);
-  }
-  if (provided === stored) {
-    if (onPlainMatchUpgrade) {
-      try {
-        const hashed = await bcrypt.hash(provided, 10);
-        await onPlainMatchUpgrade(hashed);
-      } catch {}
-    }
-    return true;
-  }
-  return false;
 }
 
 export async function POST(request: Request) {
@@ -111,6 +93,8 @@ export async function POST(request: Request) {
             modules,
             isDemo: employee.isDemo,
             schoolName: 'Application Owner Console',
+            accountType: 'ownerEmployee',
+            mustChangePassword: employee.mustChangePassword,
           });
         }
       }
@@ -132,7 +116,7 @@ export async function POST(request: Request) {
       if (password !== SUPERADMIN_PASSWORD) {
         return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
       }
-      const hashed = await bcrypt.hash(SUPERADMIN_PASSWORD, 10);
+      const hashed = await hashPassword(SUPERADMIN_PASSWORD);
       await db.admin.upsert({
         where: { email: SUPERADMIN_EMAIL },
         update: { password: hashed, isSuperAdmin: true, name: 'Platform SuperAdmin', role: 'superadmin' },
@@ -180,6 +164,8 @@ export async function POST(request: Request) {
             schoolId: school.id,
             schoolCode: school.code,
             schoolName: school.name,
+            accountType: 'school',
+            mustChangePassword: school.mustChangePassword,
           });
         }
       }
@@ -191,7 +177,7 @@ export async function POST(request: Request) {
     try {
       const member = await db.workspaceMember.findFirst({
         where: { email: cleanEmail, status: 'active' },
-        include: { school: true },
+        include: { school: { select: SCHOOL_PUBLIC_SELECT } },
       });
       if (member) {
         const ok = await verifyPassword(password, member.password, async (newHash) => {
@@ -214,6 +200,8 @@ export async function POST(request: Request) {
             schoolName: member.school?.name,
             modules,
             memberRole: member.role,
+            accountType: 'member',
+            mustChangePassword: member.mustChangePassword,
           });
         }
       }
@@ -222,33 +210,55 @@ export async function POST(request: Request) {
     }
 
     // ── 2. Check Teacher Faculty Database ──
+    // Email is unique per school, not globally. Every teacher with this email
+    // is checked; the first match is never assumed to be the right school.
     try {
-      const teacher = await db.teacher.findFirst({
+      const requestedSchoolCode = String(body?.schoolCode || '').trim().toUpperCase();
+      const candidates = await db.teacher.findMany({
         where: {
           OR: [{ email: cleanEmail }, { email }],
+          ...(requestedSchoolCode ? { school: { code: requestedSchoolCode } } : {}),
         },
-        include: { school: true },
+        include: { school: { select: SCHOOL_PUBLIC_SELECT } },
       });
 
-      if (teacher) {
-        const isTeacherPassValid = await verifyPassword(password, teacher.password, async (newHash) => {
-          await db.teacher.update({ where: { id: teacher.id }, data: { password: newHash } }).catch(() => null);
+      const verified: typeof candidates = [];
+      for (const candidate of candidates) {
+        const ok = await verifyPassword(password, candidate.password, async (newHash) => {
+          await db.teacher.update({ where: { id: candidate.id }, data: { password: newHash } }).catch(() => null);
         });
+        if (ok) verified.push(candidate);
+      }
 
-        if (isTeacherPassValid) {
-          return await createLoginResponse({
-            id: teacher.id,
-            name: teacher.name,
-            email: teacher.email,
-            role: 'teacher',
-            schoolId: teacher.schoolId,
-            schoolCode: teacher.school?.code,
-            schoolName: teacher.school?.name || 'School',
-            subject: teacher.subject,
-            grades: teacher.grades,
-            phone: teacher.phone,
-          });
-        }
+      if (verified.length > 1) {
+        // Only schools where this password already verified are listed, so
+        // nothing about other schools is disclosed.
+        return NextResponse.json(
+          {
+            error: 'This email is registered at more than one school. Choose your school to continue.',
+            code: 'SCHOOL_REQUIRED',
+            schools: verified.map((item) => ({ code: item.school?.code || '', name: item.school?.name || 'School' })),
+          },
+          { status: 409 }
+        );
+      }
+
+      const teacher = verified[0];
+      if (teacher) {
+        return await createLoginResponse({
+          id: teacher.id,
+          name: teacher.name,
+          email: teacher.email,
+          role: 'teacher',
+          schoolId: teacher.schoolId,
+          schoolCode: teacher.school?.code,
+          schoolName: teacher.school?.name || 'School',
+          subject: teacher.subject,
+          grades: teacher.grades,
+          phone: teacher.phone,
+          accountType: 'teacher',
+          mustChangePassword: teacher.mustChangePassword,
+        });
       }
     } catch (e) {
       console.error('Error querying teacher during login:', e);
@@ -298,6 +308,8 @@ export async function POST(request: Request) {
             schoolId,
             schoolCode,
             schoolName,
+            accountType: 'admin',
+            mustChangePassword: admin.mustChangePassword,
           });
         }
       }

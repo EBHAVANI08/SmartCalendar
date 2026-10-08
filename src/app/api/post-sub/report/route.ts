@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
 
     const sub = await db.substitution.findUnique({
       where: { id: assignmentId },
-      include: { absentTeacher: true, substitute: true },
+      include: { absentTeacher: { select: TEACHER_PUBLIC_SELECT }, substitute: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     if (!sub) {

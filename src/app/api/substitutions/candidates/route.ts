@@ -1,20 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
+import { getTenantSchoolId } from '@/lib/school-helper';
 
 export async function GET(req: NextRequest) {
   try {
     const requestId = req.nextUrl.searchParams.get('requestId');
     if (!requestId) return NextResponse.json({ success: false, error: 'requestId required' }, { status: 400 });
+    const schoolId = await getTenantSchoolId(req);
+    if (!schoolId) return NextResponse.json({ success: false, error: 'No school context. Please sign in again.' }, { status: 401 });
 
-    const substitution = await db.substitution.findUnique({
-      where: { id: requestId },
-      include: { absentTeacher: true },
+    const substitution = await db.substitution.findFirst({
+      where: { id: requestId, schoolId },
+      include: { absentTeacher: { select: TEACHER_PUBLIC_SELECT } },
     });
 
     if (!substitution) return NextResponse.json({ success: false, error: 'Request not found' }, { status: 404 });
 
     const teachers = await db.teacher.findMany({
-      include: { schedules: true, substituteSubstitutions: true },
+      where: { schoolId },
+      include: { schedules: { where: { schoolId } }, substituteSubstitutions: true },
     });
 
     const candidates = teachers

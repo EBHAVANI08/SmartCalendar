@@ -29,6 +29,9 @@ export default function ResetPasswordPage() {
 
   const [step, setStep] = useState<'request' | 'verify' | 'success'>('request');
   const [email, setEmail] = useState('');
+  // Asked for only when the email belongs to teachers at several schools.
+  const [schoolCode, setSchoolCode] = useState('');
+  const [needsSchoolCode, setNeedsSchoolCode] = useState(false);
   const [accountInfo, setAccountInfo] = useState<{ name: string; schoolName: string } | null>(null);
   const [otpToken, setOtpToken] = useState<string>('');
 
@@ -74,7 +77,7 @@ export default function ResetPasswordPage() {
       const res = await fetch('/api/auth/reset-password/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), ...(schoolCode.trim() ? { schoolCode: schoolCode.trim() } : {}) }),
       });
 
       const data = await res.json();
@@ -94,6 +97,7 @@ export default function ResetPasswordPage() {
             (data.devOtp ? ` (Dev Demo Code: ${data.devOtp})` : '')
         );
       } else {
+        if (data.code === 'SCHOOL_CODE_REQUIRED') setNeedsSchoolCode(true);
         setError(data.error || 'Could not send verification code. Please check your email.');
       }
     } catch {
@@ -113,7 +117,7 @@ export default function ResetPasswordPage() {
       const res = await fetch('/api/auth/reset-password/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), ...(schoolCode.trim() ? { schoolCode: schoolCode.trim() } : {}) }),
       });
 
       const data = await res.json();
@@ -251,6 +255,18 @@ export default function ResetPasswordPage() {
                     Enter the email linked to your school faculty or admin account.
                   </p>
                 </div>
+                {needsSchoolCode && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-bold text-slate-800">School code *</Label>
+                    <Input
+                      value={schoolCode}
+                      onChange={(e) => setSchoolCode(e.target.value)}
+                      placeholder="The code your school signs in with"
+                      className="h-10 text-xs rounded-xl border-slate-300"
+                      required
+                    />
+                  </div>
+                )}
 
                 <Button
                   type="submit"

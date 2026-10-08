@@ -21,6 +21,7 @@ import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
   DropdownMenuSeparator, DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { OneTimePasswordDialog, type IssuedPassword } from '@/components/auth/one-time-password-dialog';
 
 const statusStyle: Record<string, string> = {
   active: 'bg-emerald-50 text-emerald-800 border-emerald-200',
@@ -33,6 +34,7 @@ export default function TenantsPage() {
   const router = useRouter();
   const { toast } = useToast();
   const [tenants, setTenants] = useState<any[]>([]);
+  const [issued, setIssued] = useState<IssuedPassword | null>(null);
   const [plans, setPlans] = useState<any[]>([]);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('all');
@@ -41,7 +43,7 @@ export default function TenantsPage() {
 
   // New tenant form
   const [form, setForm] = useState({
-    name: '', code: '', email: '', password: 'school123', planName: 'trial',
+    name: '', code: '', email: '', password: '', planName: 'trial',
     contactName: '', phone: '', notes: '', billingCycle: 'monthly',
   });
 
@@ -94,8 +96,9 @@ export default function TenantsPage() {
       const d = await res.json();
       if (!res.ok) throw new Error(d.error || 'Create failed');
       toast({ title: 'Tenant created', description: `${form.name} is live on the ${form.planName} plan.` });
+      if (d.temporaryPassword) setIssued({ label: `${form.name} (${form.email})`, password: d.temporaryPassword });
       setOpen(false);
-      setForm({ name: '', code: '', email: '', password: 'school123', planName: 'trial', contactName: '', phone: '', notes: '', billingCycle: 'monthly' });
+      setForm({ name: '', code: '', email: '', password: '', planName: 'trial', contactName: '', phone: '', notes: '', billingCycle: 'monthly' });
       load();
     } catch (e: any) {
       toast({ title: 'Could not create tenant', description: e.message, variant: 'destructive' });
@@ -431,7 +434,7 @@ export default function TenantsPage() {
             </div>
             <div>
               <Label>Initial password</Label>
-              <Input value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              <Input value={form.password} placeholder="Leave blank to generate one" onChange={(e) => setForm({ ...form, password: e.target.value })} />
             </div>
             <div>
               <Label>Contact name</Label>
@@ -570,6 +573,7 @@ export default function TenantsPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <OneTimePasswordDialog issued={issued} onClose={() => setIssued(null)} />
     </div>
   );
 }

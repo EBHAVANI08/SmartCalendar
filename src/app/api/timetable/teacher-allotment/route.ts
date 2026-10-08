@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server';
 import * as XLSX from 'xlsx';
 import { PDFParse } from 'pdf-parse';
 import { requireCapability } from '@/lib/authz';
+import { generateTemporaryPassword, hashPassword } from '@/lib/password';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -122,7 +123,10 @@ export async function POST(request: Request) {
       // Keyed on (schoolId, email). Keying on email alone could match a teacher
       // in a DIFFERENT school and rewrite their schoolId, silently moving them
       // between tenants.
-      for (const row of rows) teachers.push(await tx.teacher.upsert({ where: { schoolId_email: { schoolId, email: row.email.toLowerCase() } }, update: { name: row.name, subject: row.subject, grades: JSON.stringify(row.grades) }, create: { name: row.name, email: row.email.toLowerCase(), subject: row.subject, grades: JSON.stringify(row.grades), schoolId, availability: '[]' } }));
+      // New rows get the hash of a discarded random secret, never a known default;
+      // teachers sign in through the setup-password link.
+      const unusablePasswordHash = await hashPassword(generateTemporaryPassword());
+      for (const row of rows) teachers.push(await tx.teacher.upsert({ where: { schoolId_email: { schoolId, email: row.email.toLowerCase() } }, update: { name: row.name, subject: row.subject, grades: JSON.stringify(row.grades) }, create: { password: unusablePasswordHash, name: row.name, email: row.email.toLowerCase(), subject: row.subject, grades: JSON.stringify(row.grades), schoolId, availability: '[]' } }));
       if (matrixLayout && matrixAllotments.length) {
         const classes = [...new Set(matrixAllotments.map((item) => `${item.grade}|${item.section}`))];
         await tx.schedule.deleteMany({ where: { schoolId, OR: classes.map((item) => { const [grade, section] = item.split('|'); return { grade, section }; }) } });

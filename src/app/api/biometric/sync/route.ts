@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
 
 // Simulate biometric device sync — pulls attendance data from "biometric system"
 // Also simulates teachers who applied for leave through the school portal
@@ -123,7 +124,7 @@ export async function GET(request: Request) {
         date,
         ...(schoolId ? { teacher: { schoolId } } : {}),
       },
-      include: { teacher: true },
+      include: { teacher: { select: TEACHER_PUBLIC_SELECT } },
       orderBy: { status: 'asc' },
     });
 
