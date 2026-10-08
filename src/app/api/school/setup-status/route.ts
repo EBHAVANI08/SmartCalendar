@@ -4,6 +4,8 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
 import { NextResponse } from 'next/server';
+import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
+import { staffingReport } from '@/lib/staffing';
 
 /**
  * How far a school is through setting itself up.
@@ -28,6 +30,8 @@ interface Step {
   required: boolean;
   /** Present but not applicable to this school, e.g. rooms when unused. */
   skipped?: boolean;
+  /** Not just incomplete: generation cannot succeed until this is fixed. */
+  blocking?: boolean;
 }
 
 export async function GET(request: Request) {
@@ -71,20 +75,10 @@ export async function GET(request: Request) {
 
   const activeTeachers = teachers.filter((t) => t.role !== 'inactive');
 
-  const teacherSubjects = (t: (typeof teachers)[number]) => {
-    const raw = t.subjects || t.subject || '';
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map((x) => String(x).toLowerCase());
-    } catch {
-      /* legacy single value */
-    }
-    return raw ? [String(raw).toLowerCase()] : [];
-  };
-  const coveredSubjects = new Set(activeTeachers.flatMap(teacherSubjects));
-
   const activeSubjects = subjectConfigs.filter((c) => c.active !== false && (c.weeklyPeriods ?? 0) > 0);
-  const unmappedSubjects = activeSubjects.filter((c) => !coveredSubjects.has(c.subjectName.toLowerCase()));
+  // Same calculations as the Subjects tab (src/lib/staffing.ts, src/lib/timetable-capacity.ts).
+  const [{ unstaffed: unmappedSubjects }, capacity] = await Promise.all([staffingReport(schoolId), gradeCapacityReport(schoolId)]);
+  const overCapacity = capacity.filter((grade) => !grade.ok);
 
   // Rooms only count when the school has started using them at all.
   const roomsInUse = rooms > 0;
@@ -149,9 +143,22 @@ export async function GET(request: Request) {
       detail: activeSubjects.length === 0
         ? 'Configure subjects first'
         : unmappedSubjects.length
-          ? `${unmappedSubjects.length} subject(s) have no qualified teacher`
+          ? `${unmappedSubjects.length} grade subject(s) have no qualified teacher`
           : 'Every configured subject has a teacher',
       required: true,
+    },
+    {
+      id: 'capacity',
+      label: 'Weekly periods fit the week',
+      done: activeSubjects.length > 0 && overCapacity.length === 0,
+      href: '/settings?tab=timetable&sub=subjects',
+      detail: activeSubjects.length === 0
+        ? 'Configure subjects first'
+        : overCapacity.length
+          ? overCapacity.map(describeCapacityProblem).join('; ')
+          : `All ${capacity.length} grade(s) fit their week`,
+      required: true,
+      blocking: overCapacity.length > 0,
     },
     {
       id: 'rooms',

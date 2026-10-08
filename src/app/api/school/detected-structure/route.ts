@@ -8,6 +8,8 @@ import { periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
 import { ensureAcademicYear } from '@/lib/timetable-lifecycle';
 import { readList } from '@/lib/faculty';
 import { NextResponse } from 'next/server';
+import { canonicalGrade, schoolGradeNames } from '@/lib/master-data';
+import { findSameGrade, gradeKey } from '@/lib/name-normalize';
 
 /**
  * Academic structure inferred from a school's existing timetable.
@@ -164,17 +166,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Grade name is required.' }, { status: 400 });
     }
 
-    // Default to 'A' if section not provided
-    if (!section) {
-      section = 'A';
-    }
-
     // Strip any "Section " prefix
     section = section.replace(/^SECTION\s*/i, '').trim().toUpperCase();
 
     if (!section) {
       return NextResponse.json({ error: 'Section name cannot be empty.' }, { status: 400 });
     }
+
+    // Store under the school's existing spelling of this grade ("Grade I" and
+    // "grade 1" become the existing "Grade 1"), never as a second grade.
+    grade = canonicalGrade(grade, await schoolGradeNames(schoolId));
 
     const academicYearId = await ensureAcademicYear(schoolId);
     const code = `${grade.replace(/\s+/g, '')}-${section}`;
@@ -241,17 +242,14 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: true, message: 'Grade name unchanged.' });
     }
 
-    // Check if newGrade already exists in classSection or schedule under this school
-    if (oldGrade.toLowerCase() !== newGrade.toLowerCase()) {
-      const existingGrade = await db.classSection.findFirst({
-        where: { schoolId, grade: newGrade },
-      });
-      const existingSchedule = await db.schedule.findFirst({
-        where: { schoolId, grade: newGrade },
-      });
-      if (existingGrade || existingSchedule) {
+    // The new name must not be another existing grade under any spelling
+    // ("Grade I" vs "Grade 1"). Re-spelling the same grade is allowed.
+    if (gradeKey(oldGrade) !== gradeKey(newGrade)) {
+      const clash = findSameGrade(newGrade, (await schoolGradeNames(schoolId)).filter((name) => name !== oldGrade));
+      const existingSchedule = clash ? null : await db.schedule.findFirst({ where: { schoolId, grade: newGrade }, select: { id: true } });
+      if (clash || existingSchedule) {
         return NextResponse.json(
-          { error: `Grade "${newGrade}" already exists. Please choose a different name.` },
+          { error: `Grade "${clash || newGrade}" already exists. Please choose a different name.` },
           { status: 409 }
         );
       }

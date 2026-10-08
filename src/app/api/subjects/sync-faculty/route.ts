@@ -5,6 +5,8 @@ import { parseSubjectGradeSectionsMap, readList } from '@/lib/faculty';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { canonicalGrade, resolveSubjectName, schoolGradeNames, schoolSubjectNames } from '@/lib/master-data';
+import { gradeKey, subjectKey } from '@/lib/name-normalize';
 
 export async function POST(request: Request) {
   const denied = requireCapability(request, 'subject.write');
@@ -31,52 +33,57 @@ export async function POST(request: Request) {
     }),
   ]);
 
-  const existingConfigSet = new Set<string>();
-  for (const c of existingConfigs) {
-    existingConfigSet.add(`${c.grade.toLowerCase().trim()}::${c.subjectName.toLowerCase().trim()}`);
-  }
+  // Pairs are keyed by normalised grade and subject, and stored under the
+  // school's existing spelling, so syncing never creates "grade 1" beside
+  // "Grade 1" or "computer science" beside "Computer Science".
+  const gradeNames = [...new Set([...(await schoolGradeNames(schoolId)), ...existingConfigs.map((c) => c.grade)])];
+  const subjectNames = await schoolSubjectNames(schoolId);
+  const pairKey = (grade: string, subject: string) => `${gradeKey(grade)}::${subjectKey(subject)}`;
+  const existingConfigSet = new Set(existingConfigs.map((c) => pairKey(c.grade, c.subjectName)));
 
   const pairMap = new Map<string, { grade: string; subject: string }>();
+  const conflicts = new Map<string, string>();
+  let teachersWithoutGrades = 0;
 
-  // 1. From teachers
+  const addPair = (rawGrade: string, rawSubject: string) => {
+    const cleanGrade = rawGrade.trim();
+    const cleanSubject = rawSubject.trim();
+    if (!cleanGrade || !cleanSubject) return;
+    const resolution = resolveSubjectName(cleanSubject, subjectNames);
+    if (resolution.kind === 'conflict') {
+      conflicts.set(resolution.name, resolution.existing);
+      return;
+    }
+    if (resolution.kind === 'new') subjectNames.push(resolution.name);
+    const grade = canonicalGrade(cleanGrade, gradeNames);
+    if (!gradeNames.includes(grade)) gradeNames.push(grade);
+    const key = pairKey(grade, resolution.name);
+    if (!pairMap.has(key)) pairMap.set(key, { grade, subject: resolution.name });
+  };
+
+  // 1. From teachers. A teacher with no grade mapping contributes nothing:
+  // guessing a grade would invent curriculum.
   for (const t of teachers) {
     const subs = readList(t.subjects ?? t.subject);
     const grs = readList(t.grades);
     const mapping = parseSubjectGradeSectionsMap(t.sections, subs, grs);
-
+    let contributed = false;
     for (const sub of subs) {
-      const cleanSub = sub.trim();
-      if (!cleanSub) continue;
-
-      const subjGrades = mapping[cleanSub]?.grades || [];
-      const effectiveGrades = subjGrades.length > 0 ? subjGrades : (grs.length > 0 ? grs : ['Grade 10']);
-
-      for (const g of effectiveGrades) {
-        const cleanG = g.trim();
-        if (!cleanG) continue;
-        const key = `${cleanG.toLowerCase()}::${cleanSub.toLowerCase()}`;
-        if (!pairMap.has(key)) {
-          pairMap.set(key, { grade: cleanG, subject: cleanSub });
-        }
-      }
+      const subjGrades = mapping[sub.trim()]?.grades || [];
+      const effectiveGrades = subjGrades.length > 0 ? subjGrades : grs;
+      for (const g of effectiveGrades) { addPair(g, sub); contributed = true; }
     }
+    if (subs.length > 0 && !contributed) teachersWithoutGrades++;
   }
 
   // 2. From schedule
   for (const s of schedules) {
-    if (s.grade && s.subject) {
-      const cleanG = s.grade.trim();
-      const cleanSub = s.subject.trim();
-      const key = `${cleanG.toLowerCase()}::${cleanSub.toLowerCase()}`;
-      if (!pairMap.has(key)) {
-        pairMap.set(key, { grade: cleanG, subject: cleanSub });
-      }
-    }
+    if (s.grade && s.subject) addPair(s.grade, s.subject);
   }
 
   let createdConfigsCount = 0;
 
-  for (const { grade, subject } of pairMap.values()) {
+  for (const [key, { grade, subject }] of pairMap.entries()) {
     // Ensure subject master exists
     const code = subject.toUpperCase().replace(/[^A-Z0-9]+/g, '_').slice(0, 24);
     await db.subjectMaster
@@ -87,24 +94,24 @@ export async function POST(request: Request) {
       })
       .catch(() => null);
 
-    // Ensure gradeSubjectConfig exists
-    const configKey = `${grade.toLowerCase()}::${subject.toLowerCase()}`;
-    if (!existingConfigSet.has(configKey)) {
-      await db.gradeSubjectConfig.create({
+    // New mappings start with weeklyPeriods 0 ("not set"): the quota is the
+    // school's decision and is entered in the Subjects tab.
+    if (!existingConfigSet.has(key)) {
+      const created = await db.gradeSubjectConfig.create({
         data: {
           schoolId,
           grade,
           subjectName: subject,
-          weeklyPeriods: 4,
-          maxPeriodsPerDay: 2,
+          weeklyPeriods: 0,
+          maxPeriodsPerDay: 1,
           allowConsecutive: false,
           priority: 'Normal',
           requiredRoomType: null,
           active: true,
         },
       }).catch(() => null);
-      existingConfigSet.add(configKey);
-      createdConfigsCount++;
+      existingConfigSet.add(key);
+      if (created) createdConfigsCount++;
     }
   }
 
@@ -112,8 +119,12 @@ export async function POST(request: Request) {
     success: true,
     createdConfigsCount,
     totalDiscoveredPairs: pairMap.size,
-    message: createdConfigsCount > 0
-      ? `Successfully synced ${createdConfigsCount} new subject mapping(s) from Faculty Directory into curriculum.`
-      : `All subjects and grades from Faculty Directory are already synchronized.`,
+    teachersWithoutGrades,
+    nameConflicts: [...conflicts.entries()].map(([name, existing]) => ({ name, existing })),
+    message: (createdConfigsCount > 0
+      ? `Synced ${createdConfigsCount} new subject mapping(s) from Faculty Directory. Set their weekly periods in the Subjects tab.`
+      : `All subjects and grades from Faculty Directory are already synchronized.`)
+      + (teachersWithoutGrades > 0 ? ` ${teachersWithoutGrades} teacher(s) have no grade mapping and were skipped.` : '')
+      + (conflicts.size > 0 ? ` ${conflicts.size} subject name(s) look like existing subjects and were not added.` : ''),
   });
 }

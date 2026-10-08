@@ -6,6 +6,8 @@ import { getDayConfig } from '@/lib/timetable-config';
 import { buildTeachingGrid, workingDayNames } from '@/lib/timetable-constraints';
 import { requireCapability } from '@/lib/authz';
 import { NextResponse } from 'next/server';
+import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
+import { staffingReport } from '@/lib/staffing';
 
 export async function GET(request: Request) {
   const denied = requireCapability(request, 'school.settings.read');
@@ -52,16 +54,6 @@ export async function GET(request: Request) {
   // Active faculty
   const activeTeachers = teachers.filter((t) => t.role !== 'inactive');
 
-  const parseTeacherSubjects = (t: (typeof teachers)[number]) => {
-    const raw = t.subjects || t.subject || '';
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map((x) => String(x).toLowerCase().trim());
-    } catch {}
-    return raw ? [String(raw).toLowerCase().trim()] : [];
-  };
-
-  const facultySubjects = new Set(activeTeachers.flatMap(parseTeacherSubjects));
 
   // Distinct grades from classSection & subjectConfig
   const gradesSet = new Set<string>();
@@ -71,7 +63,9 @@ export async function GET(request: Request) {
 
   // Active subjects
   const activeSubjects = subjectConfigs.filter((s) => s.active !== false && (s.weeklyPeriods ?? 0) > 0);
-  const unmappedSubjects = activeSubjects.filter((s) => !facultySubjects.has(s.subjectName.toLowerCase().trim()));
+  // Same calculations as the Subjects tab and the setup checklist.
+  const [{ unstaffed: unmappedSubjects }, capacity] = await Promise.all([staffingReport(schoolId), gradeCapacityReport(schoolId)]);
+  const overCapacity = capacity.filter((grade) => !grade.ok);
 
   // Active rooms
   const activeRooms = rooms.filter((r) => r.active !== false);
@@ -124,7 +118,18 @@ export async function GET(request: Request) {
     issues.push({
       type: 'warning',
       title: `${unmappedSubjects.length} Subject(s) Missing Assigned Faculty`,
-      message: `Subjects like "${unmappedSubjects.slice(0, 3).map((s) => s.subjectName).join(', ')}" have no qualified teachers in Faculty Directory.`,
+      message: `For example ${unmappedSubjects.slice(0, 3).map((s) => `${s.grade} ${s.subjectName}`).join(', ')} have no qualified teacher in Faculty Directory.`,
+      actionTab: 'timetable',
+      actionSub: 'subjects',
+    });
+  }
+
+  // Weekly demand must fit the week (blocking for generation).
+  if (overCapacity.length > 0) {
+    issues.push({
+      type: 'error',
+      title: `${overCapacity.length} Grade(s) Need More Periods Than the Week Has`,
+      message: overCapacity.map(describeCapacityProblem).join(' · '),
       actionTab: 'timetable',
       actionSub: 'subjects',
     });

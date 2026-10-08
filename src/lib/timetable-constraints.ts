@@ -1,4 +1,5 @@
 import { db } from '@/lib/db';
+import { MIN_PERIOD_MINUTES } from '@/lib/scheduling-constants';
 
 /**
  * Shared timetable constraints.
@@ -109,7 +110,7 @@ export function buildPeriodTimings(options: {
   const end = parse(options.endTime, 15 * 60);
   const breakMinutes = Math.max(0, Number(options.breakMinutes) || 0);
   const lunchMinutes = Math.max(0, Number(options.lunchMinutes) || 0);
-  const teaching = Math.max(periods * 20, end - start - breakMinutes - lunchMinutes);
+  const teaching = Math.max(periods * MIN_PERIOD_MINUTES, end - start - breakMinutes - lunchMinutes);
   const perPeriod = Math.floor(teaching / periods);
   const extra = teaching % periods;
 
@@ -123,6 +124,117 @@ export function buildPeriodTimings(options: {
     if (period === options.lunchAfter) cursor += lunchMinutes;
     return { period, startTime, endTime };
   });
+}
+
+/** Bell settings for one grade (or the school default), as stored. */
+export interface BellConfig {
+  startTime: string;
+  endTime: string;
+  breakEnabled: boolean;
+  breakAfter: number;
+  breakMinutes: number;
+  lunchEnabled: boolean;
+  lunchAfter: number;
+  lunchMinutes: number;
+}
+
+export type BellTimelineItem =
+  | { kind: 'period'; period: number; startTime: string; endTime: string }
+  | { kind: 'break' | 'lunch'; after: number; startTime: string; endTime: string };
+
+/** Most periods any working day has; the full day's bell is built for this count. */
+export function longestDayPeriods(config: DayPeriodConfig): number {
+  return Math.max(1, ...workingDayNames(config).map((day) => periodsForDay(day, config)));
+}
+
+/**
+ * The full day's bell: periods and the enabled breaks, in order. A full day
+ * runs from startTime to endTime; shorter days use the same period times and
+ * end earlier. Every screen and the generator read times from here.
+ */
+export function buildBellTimeline(config: DayPeriodConfig & BellConfig): BellTimelineItem[] {
+  const periods = longestDayPeriods(config);
+  const breakMinutes = config.breakEnabled ? config.breakMinutes : 0;
+  const lunchMinutes = config.lunchEnabled ? config.lunchMinutes : 0;
+  const timings = buildPeriodTimings({
+    periods,
+    startTime: config.startTime,
+    endTime: config.endTime,
+    breakAfter: config.breakEnabled ? config.breakAfter : undefined,
+    breakMinutes,
+    lunchAfter: config.lunchEnabled ? config.lunchAfter : undefined,
+    lunchMinutes,
+  });
+  const items: BellTimelineItem[] = [];
+  for (const timing of timings) {
+    items.push({ kind: 'period', ...timing });
+    let cursor = timing.endTime;
+    for (const [kind, enabled, after, minutes] of [
+      ['break', config.breakEnabled, config.breakAfter, breakMinutes],
+      ['lunch', config.lunchEnabled, config.lunchAfter, lunchMinutes],
+    ] as const) {
+      if (!enabled || after !== timing.period || minutes <= 0) continue;
+      const end = addMinutes(cursor, minutes);
+      items.push({ kind, after, startTime: cursor, endTime: end });
+      cursor = end;
+    }
+  }
+  return items;
+}
+
+/** Start/end of each period on one day (first N periods of the full-day bell). */
+export function periodTimingsForDay(config: DayPeriodConfig & BellConfig, day: string): { period: number; startTime: string; endTime: string }[] {
+  const count = periodsForDay(day, config);
+  return buildBellTimeline(config)
+    .filter((item): item is Extract<BellTimelineItem, { kind: 'period' }> => item.kind === 'period')
+    .slice(0, count)
+    .map(({ period, startTime, endTime }) => ({ period, startTime, endTime }));
+}
+
+function addMinutes(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function toMinutes(time: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec((time || '').trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/**
+ * Problems that make a bell schedule unusable. An empty list means valid.
+ * Checked on save (the API rejects invalid settings) and shown in setup.
+ */
+export function validateBellConfig(config: DayPeriodConfig & BellConfig, label = 'School day'): string[] {
+  const errors: string[] = [];
+  const periods = longestDayPeriods(config);
+  const start = toMinutes(config.startTime);
+  const end = toMinutes(config.endTime);
+  if (start === null || end === null) errors.push(`${label}: start and end times must be HH:MM.`);
+  else if (end <= start) errors.push(`${label}: the day must end after it starts (${config.startTime} – ${config.endTime}).`);
+
+  const checkBreak = (name: string, enabled: boolean, after: number, minutes: number) => {
+    if (!enabled) return;
+    if (!(minutes > 0)) errors.push(`${label}: ${name} is switched on but lasts 0 minutes. Give it a duration or switch it off.`);
+    if (!Number.isInteger(after) || after < 1 || after >= periods) {
+      errors.push(`${label}: ${name} must come after a period between 1 and ${periods - 1}.`);
+    }
+  };
+  checkBreak('the short break', config.breakEnabled, config.breakAfter, config.breakMinutes);
+  checkBreak('lunch', config.lunchEnabled, config.lunchAfter, config.lunchMinutes);
+  if (config.breakEnabled && config.lunchEnabled && config.breakAfter === config.lunchAfter) {
+    errors.push(`${label}: the short break and lunch are both after period ${config.breakAfter}. Put them after different periods.`);
+  }
+
+  if (start !== null && end !== null && end > start) {
+    const breaks = (config.breakEnabled ? Math.max(0, config.breakMinutes) : 0) + (config.lunchEnabled ? Math.max(0, config.lunchMinutes) : 0);
+    const perPeriod = Math.floor((end - start - breaks) / periods);
+    if (perPeriod < MIN_PERIOD_MINUTES) {
+      errors.push(`${label}: ${periods} periods and the breaks leave only ${Math.max(0, perPeriod)} minutes per period between ${config.startTime} and ${config.endTime}; at least ${MIN_PERIOD_MINUTES} are needed.`);
+    }
+  }
+  return errors;
 }
 
 export interface SlotIdentity {

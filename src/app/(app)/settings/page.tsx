@@ -23,6 +23,7 @@ import DayConfigPage from '../day-config/page';
 import RoomsPage from '../rooms/page';
 import { DetectedStructure } from '@/components/school-setup/detected-structure';
 import { SetupChecklistFull } from '@/components/dashboard/setup-checklist';
+import { CapacitySummary } from '@/components/school-setup/capacity-summary';
 
 interface SchoolProfile {
   id: string;
@@ -43,8 +44,10 @@ interface DayConfig {
   workingDays: number;
   startTime: string;
   endTime: string;
+  breakEnabled?: boolean;
   breakAfter: number;
   breakMinutes: number;
+  lunchEnabled?: boolean;
   lunchAfter: number;
   lunchMinutes: number;
 }
@@ -627,6 +630,7 @@ function SchoolSettingsContent({
           {timetableSubTab === 'summary' && (
             <div className="space-y-4">
               <SetupChecklistFull />
+              <CapacitySummary />
               <Card className="border-slate-200 shadow-sm rounded-3xl">
                 <CardHeader className="p-6 pb-4">
                   <CardTitle className="text-base font-bold text-slate-900">Teaching Week Overview &amp; Period Balances</CardTitle>
@@ -640,8 +644,8 @@ function SchoolSettingsContent({
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 space-y-1">
                         <ReadOnlyRow label="Working days per week" value={`${dayConfig.workingDays} Days`} />
                         <ReadOnlyRow label="School hours" value={`${dayConfig.startTime} – ${dayConfig.endTime}`} />
-                        <ReadOnlyRow label="Short break" value={`${dayConfig.breakMinutes} min (after period ${dayConfig.breakAfter})`} />
-                        <ReadOnlyRow label="Lunch break" value={`${dayConfig.lunchMinutes} min (after period ${dayConfig.lunchAfter})`} />
+                        <ReadOnlyRow label="Short break" value={dayConfig.breakEnabled === false ? 'Off' : `${dayConfig.breakMinutes} min (after period ${dayConfig.breakAfter})`} />
+                        <ReadOnlyRow label="Lunch break" value={dayConfig.lunchEnabled === false ? 'Off' : `${dayConfig.lunchMinutes} min (after period ${dayConfig.lunchAfter})`} />
                         <ReadOnlyRow label="Total teaching periods per week" value={<Badge className="bg-blue-600 font-bold">{totalWeekly} Periods</Badge>} />
                       </div>
 

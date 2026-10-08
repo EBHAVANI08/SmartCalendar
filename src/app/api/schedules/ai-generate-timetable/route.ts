@@ -3,9 +3,10 @@ import { readList, teacherTeachesSection } from '@/lib/faculty';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { getDayConfig } from '@/lib/timetable-config';
 import { getPublishedVersion } from '@/lib/timetable-lifecycle';
-import { periodsForDay, workingDayNames, buildTeachingGrid } from '@/lib/timetable-constraints';
+import { periodsForDay, workingDayNames, buildTeachingGrid, periodTimingsForDay } from '@/lib/timetable-constraints';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
 
 const MAX_PERIODS_PER_TEACHER_DAY = 6;
 
@@ -304,6 +305,22 @@ export async function POST(request: Request) {
       targetClasses = [{ grade: String(grade).trim(), section: String(section).trim().toUpperCase() }];
     }
 
+    // Refuse before touching any version: a grade whose subject quotas exceed
+    // its teaching week cannot be timetabled, and padding or dropping periods
+    // would hide that from the school.
+    const targetGradeNames = new Set(targetClasses.map((tc) => tc.grade));
+    const overCapacity = (await gradeCapacityReport(schoolId)).filter((c) => targetGradeNames.has(c.grade) && !c.ok);
+    if (overCapacity.length > 0) {
+      return NextResponse.json(
+        {
+          error: `Cannot generate: ${overCapacity.length} grade(s) need more periods than their week has. Fix the subject quotas or the day & period setup first.`,
+          code: 'CAPACITY_EXCEEDED',
+          grades: overCapacity.map((c) => ({ grade: c.grade, demand: c.demand, slots: c.slots, problem: describeCapacityProblem(c) })),
+        },
+        { status: 422 }
+      );
+    }
+
     // Handle timetable versioning (draft / revision)
     let draftVersion = await db.timetableVersion.findFirst({
       where: { schoolId, status: { in: ['draft', 'review'] } },
@@ -406,37 +423,9 @@ export async function POST(request: Request) {
       const totalWeeklySlotsNeeded = teachingGrid.length; // e.g. 45 periods (8*5 + 5)
       totalWeeklyRequirementsMap[`${targetGrade}-${targetSection}`] = totalWeeklySlotsNeeded;
 
-      // Bell timing calculations
-      const parseMinutes = (value: string, fallback: number) => {
-        const match = /^(\d{1,2}):(\d{2})$/.exec(value || '');
-        return match ? Number(match[1]) * 60 + Number(match[2]) : fallback;
-      };
-      const formatMinutes = (value: number) =>
-        `${String(Math.floor(value / 60) % 24).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-
-      const periodsPerDay = gradeDayConfig.periodsPerDay ?? 8;
-      const startMin = parseMinutes(gradeDayConfig.startTime, 8 * 60);
-      const endMin = parseMinutes(gradeDayConfig.endTime, 15 * 60);
-      const breakAfter = gradeDayConfig.breakAfter ?? 2;
-      const breakMinutes = gradeDayConfig.breakMinutes ?? 15;
-      const lunchAfter = gradeDayConfig.lunchAfter ?? 4;
-      const lunchMinutes = gradeDayConfig.lunchMinutes ?? 30;
-
-      const totalTeachingMins = Math.max(periodsPerDay * 20, endMin - startMin - breakMinutes - lunchMinutes);
-      const periodDuration = Math.floor(totalTeachingMins / periodsPerDay);
-      const extraMins = totalTeachingMins % periodsPerDay;
-
-      // Precalculate period times
-      let cursor = startMin;
-      const timeSlotsMap = new Map<number, { start: string; end: string }>();
-      for (let p = 1; p <= 12; p++) {
-        const pStart = cursor;
-        cursor += periodDuration + (p <= extraMins ? 1 : 0);
-        const pEnd = cursor;
-        if (p === breakAfter) cursor += breakMinutes;
-        if (p === lunchAfter) cursor += lunchMinutes;
-        timeSlotsMap.set(p, { start: formatMinutes(pStart), end: formatMinutes(pEnd) });
-      }
+      // Period times come from the saved bell schedule (one shared source for
+      // the Studio, exports and generation).
+      const timingsByDay = new Map(days.map((day) => [day, periodTimingsForDay(gradeDayConfig, day)]));
 
       // 2. Fetch subject list & configured quotas for this grade
       const [gradeSubjectConfigs, schoolSubjectMasters] = await Promise.all([
@@ -541,7 +530,9 @@ export async function POST(request: Request) {
         for (let idx = 0; idx < daySubjects.length; idx++) {
           const period = idx + 1;
           const subject = daySubjects[idx];
-          const timeSlot = timeSlotsMap.get(period) || { start: '08:00', end: '08:45' };
+          const timing = timingsByDay.get(day)?.find((item) => item.period === period);
+          if (!timing) continue; // never schedule outside the configured bell
+          const timeSlot = { start: timing.startTime, end: timing.endTime };
           classSlots.push({ day, period, subject, timeSlot });
         }
       }

@@ -25,8 +25,10 @@ interface GradeDayConfig {
   perDayPeriods?: Record<string, number>;
   startTime?: string;
   endTime?: string;
+  breakEnabled?: boolean;
   breakAfter?: number;
   breakMinutes?: number;
+  lunchEnabled?: boolean;
   lunchAfter?: number;
   lunchMinutes?: number;
 }
@@ -51,18 +53,21 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
   const [perDay, setPerDay] = useState<Record<string, number>>({});
   const [times, setTimes] = useState({
     startTime: '08:00', endTime: '15:00',
-    breakAfter: 2, breakMinutes: 15, lunchAfter: 4, lunchMinutes: 30,
+    breakEnabled: true, breakAfter: 2, breakMinutes: 15,
+    lunchEnabled: true, lunchAfter: 4, lunchMinutes: 30,
   });
+  // Server-side bell validation messages from the last save attempt.
+  const [bellErrors, setBellErrors] = useState<string[]>([]);
 
   // Base school default snapshot (for reference / reset)
   const [schoolDefault, setSchoolDefault] = useState<{
     workingDays: number;
     perDay: Record<string, number>;
-    times: { startTime: string; endTime: string; breakAfter: number; breakMinutes: number; lunchAfter: number; lunchMinutes: number };
+    times: { startTime: string; endTime: string; breakEnabled: boolean; breakAfter: number; breakMinutes: number; lunchEnabled: boolean; lunchAfter: number; lunchMinutes: number };
   }>({
     workingDays: 6,
     perDay: { Monday: 8, Tuesday: 8, Wednesday: 8, Thursday: 8, Friday: 8, Saturday: 5 },
-    times: { startTime: '08:00', endTime: '15:00', breakAfter: 2, breakMinutes: 15, lunchAfter: 4, lunchMinutes: 30 },
+    times: { startTime: '08:00', endTime: '15:00', breakEnabled: true, breakAfter: 2, breakMinutes: 15, lunchEnabled: true, lunchAfter: 4, lunchMinutes: 30 },
   });
 
   // Batch copy modal state
@@ -101,8 +106,10 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
           times: {
             startTime: sDef.startTime || '08:00',
             endTime: sDef.endTime || '15:00',
+            breakEnabled: sDef.breakEnabled ?? (sDef.breakMinutes ?? 0) > 0,
             breakAfter: sDef.breakAfter ?? 2,
             breakMinutes: sDef.breakMinutes ?? 15,
+            lunchEnabled: sDef.lunchEnabled ?? (sDef.lunchMinutes ?? 0) > 0,
             lunchAfter: sDef.lunchAfter ?? 4,
             lunchMinutes: sDef.lunchMinutes ?? 30,
           },
@@ -122,8 +129,10 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
         setTimes({
           startTime: c.startTime || '08:00',
           endTime: c.endTime || '15:00',
+          breakEnabled: c.breakEnabled ?? (c.breakMinutes ?? 0) > 0,
           breakAfter: c.breakAfter ?? 2,
           breakMinutes: c.breakMinutes ?? 15,
+          lunchEnabled: c.lunchEnabled ?? (c.lunchMinutes ?? 0) > 0,
           lunchAfter: c.lunchAfter ?? 4,
           lunchMinutes: c.lunchMinutes ?? 30,
         });
@@ -209,9 +218,11 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
       });
       const data = await res.json();
       if (!res.ok) {
+        setBellErrors(Array.isArray(data.errors) ? data.errors : data.error ? [data.error] : []);
         toast({ title: 'Not saved', description: data.error, variant: 'destructive' });
         return;
       }
+      setBellErrors([]);
       setConfigured(true);
       toast({
         title: isGradeScope
@@ -546,13 +557,21 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
             <div className="pt-2 border-t border-slate-100 space-y-3">
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Recess &amp; Breaks</p>
               <div className="grid grid-cols-2 gap-3">
+                <div className="col-span-2 flex items-center justify-between">
+                  <Label className="text-xs text-slate-600 font-medium">Short break</Label>
+                  <Switch
+                    checked={times.breakEnabled}
+                    disabled={isGradeScope && !isCustomGrade}
+                    onCheckedChange={(checked) => setTimes({ ...times, breakEnabled: checked })}
+                  />
+                </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600 font-medium">Break after period</Label>
                   <Input
                     type="number"
                     min={1}
                     max={10}
-                    disabled={isGradeScope && !isCustomGrade}
+                    disabled={(isGradeScope && !isCustomGrade) || !times.breakEnabled}
                     value={times.breakAfter}
                     onChange={(e) => setTimes({ ...times, breakAfter: Number(e.target.value) })}
                     className="text-xs rounded-xl h-9"
@@ -562,9 +581,9 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
                   <Label className="text-xs text-slate-600 font-medium">Break duration</Label>
                   <Input
                     type="number"
-                    min={0}
+                    min={1}
                     max={60}
-                    disabled={isGradeScope && !isCustomGrade}
+                    disabled={(isGradeScope && !isCustomGrade) || !times.breakEnabled}
                     value={times.breakMinutes}
                     onChange={(e) => setTimes({ ...times, breakMinutes: Number(e.target.value) })}
                     className="text-xs rounded-xl h-9"
@@ -573,13 +592,21 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="col-span-2 flex items-center justify-between">
+                  <Label className="text-xs text-slate-600 font-medium">Lunch</Label>
+                  <Switch
+                    checked={times.lunchEnabled}
+                    disabled={isGradeScope && !isCustomGrade}
+                    onCheckedChange={(checked) => setTimes({ ...times, lunchEnabled: checked })}
+                  />
+                </div>
                 <div className="space-y-1">
                   <Label className="text-xs text-slate-600 font-medium">Lunch after period</Label>
                   <Input
                     type="number"
                     min={1}
                     max={10}
-                    disabled={isGradeScope && !isCustomGrade}
+                    disabled={(isGradeScope && !isCustomGrade) || !times.lunchEnabled}
                     value={times.lunchAfter}
                     onChange={(e) => setTimes({ ...times, lunchAfter: Number(e.target.value) })}
                     className="text-xs rounded-xl h-9"
@@ -589,15 +616,29 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
                   <Label className="text-xs text-slate-600 font-medium">Lunch duration</Label>
                   <Input
                     type="number"
-                    min={0}
+                    min={1}
                     max={90}
-                    disabled={isGradeScope && !isCustomGrade}
+                    disabled={(isGradeScope && !isCustomGrade) || !times.lunchEnabled}
                     value={times.lunchMinutes}
                     onChange={(e) => setTimes({ ...times, lunchMinutes: Number(e.target.value) })}
                     className="text-xs rounded-xl h-9"
                   />
                 </div>
               </div>
+
+              {/* Same rules the server enforces on save (validateBellConfig). */}
+              {[
+                ...(times.breakEnabled && !(times.breakMinutes > 0) ? ['The short break is on but lasts 0 minutes. Give it a duration or switch it off.'] : []),
+                ...(times.lunchEnabled && !(times.lunchMinutes > 0) ? ['Lunch is on but lasts 0 minutes. Give it a duration or switch it off.'] : []),
+                ...(times.breakEnabled && times.lunchEnabled && times.breakAfter === times.lunchAfter
+                  ? [`The short break and lunch are both after period ${times.breakAfter}. Put them after different periods.`]
+                  : []),
+                ...bellErrors,
+              ].map((message) => (
+                <p key={message} className="flex items-start gap-1.5 text-[11px] text-rose-700">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {message}
+                </p>
+              ))}
             </div>
           </CardContent>
         </Card>

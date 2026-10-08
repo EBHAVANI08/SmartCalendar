@@ -106,67 +106,22 @@ const getSubjectAccent = (subject: string) => {
   }
 };
 
-const calculatePeriods = (
-  start: string,
-  durationStr: string,
-  totalCountStr: string,
-  shortBreakAfterStr: string,
-  lunchBreakAfterStr: string,
-  shortBreakMinsStr: string = '15',
-  lunchBreakMinsStr: string = '30',
-  enableShortBreak: boolean = true,
-  enableLunchBreak: boolean = true
-): PeriodItem[] => {
-  const [startH, startM] = (start || '08:00').split(':').map(Number);
-  let currentMinutes = (startH || 8) * 60 + (startM || 0);
-  const duration = Number(durationStr) || 40;
-  const count = Number(totalCountStr) || 8;
-  const shortAfter = Number(shortBreakAfterStr) || 3;
-  const lunchAfter = Number(lunchBreakAfterStr) || 4;
-  const shortBreakDuration = Number(shortBreakMinsStr) || 15;
-  const lunchBreakDuration = Number(lunchBreakMinsStr) || 30;
+type BellTimelineItem =
+  | { kind: 'period'; period: number; startTime: string; endTime: string }
+  | { kind: 'break' | 'lunch'; after: number; startTime: string; endTime: string };
 
-  const formatTime = (mins: number) => {
-    const h = Math.floor(mins / 60) % 24;
-    const m = mins % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  };
-
-  const list: PeriodItem[] = [];
-  let periodCounter = 1;
-
-  for (let i = 1; i <= count; i++) {
-    const endMins = currentMinutes + duration;
-    list.push({
-      num: periodCounter,
-      time: `${formatTime(currentMinutes)} - ${formatTime(endMins)}`,
-    });
-    currentMinutes = endMins;
-
-    if (enableShortBreak && i === shortAfter) {
-      const breakEndMins = currentMinutes + shortBreakDuration;
-      list.push({
-        num: 'break1',
-        label: 'Short Break',
-        time: `${formatTime(currentMinutes)} - ${formatTime(breakEndMins)}`,
-        isBreak: true,
-      });
-      currentMinutes = breakEndMins;
-    } else if (enableLunchBreak && i === lunchAfter) {
-      const lunchEndMins = currentMinutes + lunchBreakDuration;
-      list.push({
-        num: 'lunch',
-        label: 'Lunch Recess',
-        time: `${formatTime(currentMinutes)} - ${formatTime(lunchEndMins)}`,
-        isBreak: true,
-      });
-      currentMinutes = lunchEndMins;
-    }
-    periodCounter++;
-  }
-
-  return list;
-};
+/** Grid rows from the saved bell schedule (GET /api/school/day-config → bellTimeline). */
+const timelineToPeriodItems = (timeline: BellTimelineItem[]): PeriodItem[] =>
+  timeline.map((item) =>
+    item.kind === 'period'
+      ? { num: item.period, time: `${item.startTime} - ${item.endTime}` }
+      : {
+          num: item.kind === 'break' ? 'break1' : 'lunch',
+          label: item.kind === 'break' ? 'Short Break' : 'Lunch Recess',
+          time: `${item.startTime} - ${item.endTime}`,
+          isBreak: true,
+        }
+  );
 
 export default function TimetablePage() {
   const { toast } = useToast();
@@ -355,24 +310,14 @@ export default function TimetablePage() {
 
   const fetchDayConfig = useCallback(async () => {
     try {
-      const r = await fetch('/api/school/day-config');
+      const r = await fetch(selectedGrade ? `/api/school/day-config?grade=${encodeURIComponent(selectedGrade)}` : '/api/school/day-config');
       if (!r.ok) return;
       const data = await r.json();
       if (data.success && data.config) {
         const c = data.config;
         if (c.configured) {
-          const periods = calculatePeriods(
-            c.startTime || '08:00',
-            '40',
-            String(c.periodsPerDay || 8),
-            String(c.breakAfter || 2),
-            String(c.lunchAfter || 4),
-            String(c.breakMinutes || 15),
-            String(c.lunchMinutes || 30),
-            c.breakMinutes > 0,
-            c.lunchMinutes > 0
-          );
-          setActivePeriods(periods);
+          // Times come from the saved bell schedule, never recomputed here.
+          if (Array.isArray(data.bellTimeline)) setActivePeriods(timelineToPeriodItems(data.bellTimeline));
           setStudioSettings((prev) => ({
             ...prev,
             startTime: c.startTime || prev.startTime,
@@ -384,15 +329,15 @@ export default function TimetablePage() {
             shortBreakMins: String(c.breakMinutes || prev.shortBreakMins),
             lunchBreakAfter: String(c.lunchAfter || prev.lunchBreakAfter),
             lunchBreakMins: String(c.lunchMinutes || prev.lunchBreakMins),
-            enableShortBreak: (c.breakMinutes || 0) > 0,
-            enableLunchBreak: (c.lunchMinutes || 0) > 0,
+            enableShortBreak: Boolean(c.breakEnabled),
+            enableLunchBreak: Boolean(c.lunchEnabled),
           }));
         }
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [selectedGrade]);
 
   const fetchSchoolStructure = useCallback(async () => {
     try {
@@ -498,9 +443,11 @@ export default function TimetablePage() {
         periodsPerDay: parseInt(studioSettings.totalPeriods, 10) || 8,
         saturdayPeriods: parseInt(studioSettings.saturdayPeriods, 10) || 5,
         breakAfter: parseInt(studioSettings.shortBreakAfter, 10) || 3,
-        breakMinutes: studioSettings.enableShortBreak ? (parseInt(studioSettings.shortBreakMins, 10) || 15) : 0,
+        breakEnabled: studioSettings.enableShortBreak,
+        breakMinutes: parseInt(studioSettings.shortBreakMins, 10) || 0,
         lunchAfter: parseInt(studioSettings.lunchBreakAfter, 10) || 4,
-        lunchMinutes: studioSettings.enableLunchBreak ? (parseInt(studioSettings.lunchBreakMins, 10) || 30) : 0,
+        lunchEnabled: studioSettings.enableLunchBreak,
+        lunchMinutes: parseInt(studioSettings.lunchBreakMins, 10) || 0,
         workingDays: studioSettings.saturdayType === 'off' ? 5 : 6,
       };
 
@@ -512,18 +459,9 @@ export default function TimetablePage() {
 
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const newPeriods = calculatePeriods(
-          studioSettings.startTime,
-          studioSettings.periodDuration,
-          studioSettings.totalPeriods,
-          studioSettings.shortBreakAfter,
-          studioSettings.lunchBreakAfter,
-          studioSettings.enableShortBreak ? studioSettings.shortBreakMins : '0',
-          studioSettings.enableLunchBreak ? studioSettings.lunchBreakMins : '0',
-          studioSettings.enableShortBreak,
-          studioSettings.enableLunchBreak
-        );
-        setActivePeriods(newPeriods);
+        // Re-read what was saved (for the selected grade, which may have its own
+        // override) so the grid shows the stored bell, not a local guess.
+        await fetchDayConfig();
         toast({
           title: '✅ Bell Schedule Timings Saved & Applied!',
           description: `Updated Start: ${studioSettings.startTime}, End: ${studioSettings.endTime}, Periods: ${studioSettings.totalPeriods}/day saved and active across your school!`,
@@ -533,8 +471,8 @@ export default function TimetablePage() {
       } else {
         toast({
           variant: 'destructive',
-          title: 'Failed to save bell timings',
-          description: data?.error || 'Could not update day configuration.',
+          title: 'Bell schedule not saved',
+          description: Array.isArray(data?.errors) && data.errors.length ? data.errors.join(' ') : data?.error || 'Could not update day configuration.',
         });
       }
     } catch (e: any) {
@@ -678,8 +616,10 @@ export default function TimetablePage() {
         fetchOccupancy(newVer?.id);
       } else {
         toast({
-          title: 'Generation Notice',
-          description: d.error || d.message || 'Timetable generated from Faculty Directory and saved to database.',
+          title: d.code === 'CAPACITY_EXCEEDED' ? 'Generation blocked' : 'Generation Notice',
+          description: d.code === 'CAPACITY_EXCEEDED' && Array.isArray(d.grades)
+            ? `${d.error} ${d.grades.map((g: { problem: string }) => g.problem).join('; ')}`
+            : d.error || d.message || 'Timetable generated from Faculty Directory and saved to database.',
           variant: r.ok ? 'default' : 'destructive',
         });
         if (r.ok) {
@@ -2242,6 +2182,11 @@ export default function TimetablePage() {
             </div>
           </div>
 
+          {studioSettings.enableShortBreak && studioSettings.enableLunchBreak && studioSettings.shortBreakAfter === studioSettings.lunchBreakAfter && (
+            <p className="text-[11px] font-semibold text-rose-700">
+              The short break and lunch are both after period {studioSettings.shortBreakAfter}. Put them after different periods.
+            </p>
+          )}
           <DialogFooter className="pt-3 flex justify-between items-center border-t border-slate-100">
             <Button variant="outline" onClick={() => setBellTimingsOpen(false)} className="h-10 text-xs font-bold px-4">
               Cancel

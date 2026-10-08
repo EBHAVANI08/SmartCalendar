@@ -115,8 +115,12 @@ model SchoolDayPeriodConfig {
   perDayPeriods String   @default("{}") // JSON: {"Monday":8,...,"Saturday":5}
   startTime     String   @default("08:00")
   endTime       String   @default("15:00")
+  /// Optional: rows saved before these switches existed lack them; a break
+  /// is then on when it has minutes (src/lib/timetable-config.ts).
+  breakEnabled  Boolean? @default(true)
   breakAfter    Int      @default(2)
   breakMinutes  Int      @default(15)
+  lunchEnabled  Boolean? @default(true)
   lunchAfter    Int      @default(4)
   lunchMinutes  Int      @default(30)
   gradeConfigs  String?  @default("{}") // JSON map: { [grade: string]: GradeDayConfig }
