@@ -7,6 +7,8 @@ import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { canonicalGrade, resolveSubjectName, schoolGradeNames, schoolSubjectNames } from '@/lib/master-data';
 import { gradeKey, subjectKey } from '@/lib/name-normalize';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { autofixAfterSave } from '@/lib/autofix';
 
 export async function POST(request: Request) {
   const denied = requireCapability(request, 'subject.write');
@@ -28,7 +30,7 @@ export async function POST(request: Request) {
       distinct: ['grade', 'subject'],
     }),
     db.gradeSubjectConfig.findMany({
-      where: { schoolId },
+      where: { schoolId, AND: [NOT_ARCHIVED] },
       select: { grade: true, subjectName: true },
     }),
   ]);
@@ -89,7 +91,7 @@ export async function POST(request: Request) {
     await db.subjectMaster
       .upsert({
         where: { schoolId_name: { schoolId, name: subject } },
-        update: { active: true },
+        update: { active: true, archivedAt: null },
         create: { schoolId, name: subject, code, category: 'academic' },
       })
       .catch(() => null);
@@ -99,6 +101,7 @@ export async function POST(request: Request) {
     if (!existingConfigSet.has(key)) {
       const created = await db.gradeSubjectConfig.create({
         data: {
+          source: 'sync',
           schoolId,
           grade,
           subjectName: subject,
@@ -117,6 +120,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
+    autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')),
     createdConfigsCount,
     totalDiscoveredPairs: pairMap.size,
     teachersWithoutGrades,

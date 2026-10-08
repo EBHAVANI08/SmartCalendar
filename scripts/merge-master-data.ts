@@ -5,6 +5,9 @@
  *   npx tsx scripts/merge-master-data.ts --all                                  dry run, every school
  *   npx tsx scripts/merge-master-data.ts --school <id> --map "EVS=>Environmental Studies (EVS)" --apply
  *
+ * REPORT ONLY: --apply is retired in favour of scripts/autofix.ts, which
+ * archives instead of deleting and logs every fix for Undo.
+ *
  * Exact duplicates (names that differ only in case, spacing, punctuation,
  * "&"/"and", a grade/class prefix or Roman vs Arabic numerals) are merged into
  * the most-used spelling. Abbreviation and similar-name pairs are only listed;
@@ -64,6 +67,9 @@ function parseArgs(argv: string[]) {
     } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.all === Boolean(options.schoolId)) throw new Error('Pass exactly one of --school <id> or --all.');
+  // Merging now happens through the auto-fix engine, which archives instead of
+  // deleting and logs every change for Undo. This script remains a report.
+  if (options.apply) throw new Error('--apply is retired: use scripts/autofix.ts (archives, never deletes, every fix undoable). This script still prints the dry-run report.');
   if ((options.maps.length || options.keep.length) && options.all) throw new Error('--map and --keep are per school; use them with --school <id>.');
   return options;
 }

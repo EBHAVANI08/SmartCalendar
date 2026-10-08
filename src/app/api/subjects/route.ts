@@ -10,6 +10,8 @@ import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { isKnownRoomType } from '@/lib/room-types';
 import { canonicalGrade, resolveSubjectName, schoolGradeNames, schoolSubjectNames, subjectConflictMessage } from '@/lib/master-data';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { autofixAfterSave } from '@/lib/autofix';
 
 const PRIORITIES = ['Core', 'High', 'Normal', 'Low'];
 
@@ -31,8 +33,8 @@ export async function GET(request: Request) {
   const inGrade = (grade: string) => !target || gradeKey(grade) === target;
 
   const [catalogue, allConfigRows, teachers, scheduleRows, classSections, staffing, capacity] = await Promise.all([
-    db.subjectMaster.findMany({ where: { schoolId }, orderBy: { name: 'asc' } }),
-    db.gradeSubjectConfig.findMany({ where: { schoolId }, orderBy: [{ grade: 'asc' }, { subjectName: 'asc' }] }),
+    db.subjectMaster.findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, orderBy: { name: 'asc' } }),
+    db.gradeSubjectConfig.findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, orderBy: [{ grade: 'asc' }, { subjectName: 'asc' }] }),
     db.teacher.findMany({
       where: { schoolId, role: { not: 'inactive' } },
       select: { id: true, name: true, subject: true, subjects: true, grades: true, sections: true },
@@ -206,7 +208,7 @@ export async function POST(request: Request) {
   await db.subjectMaster
     .upsert({
       where: { schoolId_name: { schoolId, name: subjectName } },
-      update: { active: true },
+      update: { active: true, archivedAt: null },
       create: { schoolId, name: subjectName, code, category: body.category || 'academic' },
     })
     .catch(() => null);
@@ -215,7 +217,7 @@ export async function POST(request: Request) {
   const skippedList: string[] = [];
 
   for (const g of grades) {
-    const existing = await db.gradeSubjectConfig.findFirst({ where: { schoolId, grade: g, subjectName } });
+    const existing = await db.gradeSubjectConfig.findFirst({ where: { schoolId, grade: g, subjectName, AND: [NOT_ARCHIVED] } });
     if (existing) {
       skippedList.push(g);
       continue;
@@ -223,6 +225,7 @@ export async function POST(request: Request) {
 
     const config = await db.gradeSubjectConfig.create({
       data: {
+        source: 'user',
         schoolId,
         grade: g,
         subjectName,
@@ -249,6 +252,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
+    autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')),
     createdCount: createdList.length,
     skippedGrades: skippedList,
     subject: createdList[0],
@@ -283,12 +287,12 @@ export async function PUT(request: Request) {
   }
 
   let current = id && !id.startsWith('virtual-')
-    ? await db.gradeSubjectConfig.findFirst({ where: { id, schoolId } })
+    ? await db.gradeSubjectConfig.findFirst({ where: { id, schoolId, AND: [NOT_ARCHIVED] } })
     : null;
 
   if (!current && subjectName && grade) {
     current = await db.gradeSubjectConfig.findFirst({
-      where: { schoolId, grade, subjectName }
+      where: { schoolId, grade, subjectName, AND: [NOT_ARCHIVED] }
     });
   }
 
@@ -318,13 +322,14 @@ export async function PUT(request: Request) {
     await db.subjectMaster
       .upsert({
         where: { schoolId_name: { schoolId, name: subjectName } },
-        update: { active: true },
+        update: { active: true, archivedAt: null },
         create: { schoolId, name: subjectName, code, category: 'academic' },
       })
       .catch(() => null);
 
     const created = await db.gradeSubjectConfig.create({
       data: {
+        source: 'user',
         schoolId,
         grade,
         subjectName,
@@ -337,7 +342,7 @@ export async function PUT(request: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, subject: created });
+    return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), subject: created });
   }
 
   const updated = await db.gradeSubjectConfig.update({
@@ -356,7 +361,7 @@ export async function PUT(request: Request) {
     },
   });
 
-  return NextResponse.json({ success: true, subject: updated });
+  return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), subject: updated });
 }
 
 export async function DELETE(request: Request) {
@@ -375,7 +380,7 @@ export async function DELETE(request: Request) {
   }
 
   if (id.startsWith('virtual-')) {
-    return NextResponse.json({ success: true, message: 'Subject dismissed.' });
+    return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), message: 'Subject dismissed.' });
   }
 
   const existing = await db.gradeSubjectConfig.findFirst({ where: { id, schoolId } });
@@ -384,5 +389,5 @@ export async function DELETE(request: Request) {
   }
 
   await db.gradeSubjectConfig.delete({ where: { id } });
-  return NextResponse.json({ success: true, message: `Removed ${existing.subjectName} from ${existing.grade}.` });
+  return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), message: `Removed ${existing.subjectName} from ${existing.grade}.` });
 }

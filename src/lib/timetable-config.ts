@@ -2,7 +2,8 @@ import { db } from '@/lib/db';
 import {
   DAY_NAMES,
   DEFAULT_PERIODS_PER_DAY,
-  validateBellConfig,
+  AUTO_FIXABLE_BELL_ISSUES,
+  bellIssues,
   type DayName,
   type DayPeriodConfig,
 } from '@/lib/timetable-constraints';
@@ -277,9 +278,18 @@ function expandPerDay(input: DayConfigInput, workingDays: number, weekday: numbe
 }
 
 /**
+ * Bell problems a save is rejected for. Problems the auto-fix engine corrects
+ * (0-minute breaks, breaks outside the day, break and lunch after the same
+ * period) are saved and then fixed and logged by the engine.
+ */
+function blockingBellErrors(config: StoredDayConfig, label?: string): string[] {
+  return bellIssues(config, label).filter((issue) => !AUTO_FIXABLE_BELL_ISSUES.includes(issue.code)).map((issue) => issue.message);
+}
+
+/**
  * Persist the week shape. Accepts either base school configuration or grade-specific
- * overrides and batch applications. The resulting configuration is validated
- * (bell schedule) before anything is written; invalid settings are rejected.
+ * overrides and batch applications. Bell settings that cannot be corrected
+ * automatically (times out of order, periods too short) are rejected.
  */
 export async function saveDayConfig(schoolId: string, input: DayConfigInput): Promise<SaveDayConfigResult> {
   const existing = await db.schoolDayPeriodConfig.findUnique({ where: { schoolId } }).catch(() => null);
@@ -340,7 +350,7 @@ export async function saveDayConfig(schoolId: string, input: DayConfigInput): Pr
     const planned: DayConfigRow = { ...baseRow, gradeConfigs: JSON.stringify(updatedGradeConfigs) };
     const errors = input.enabled === false
       ? []
-      : targetGrades.flatMap((g) => validateBellConfig(resolveDayConfig(schoolId, planned, g), g));
+      : targetGrades.flatMap((g) => blockingBellErrors(resolveDayConfig(schoolId, planned, g), g));
     if (errors.length > 0) return { ok: false, errors };
 
     await db.schoolDayPeriodConfig.upsert({
@@ -372,7 +382,7 @@ export async function saveDayConfig(schoolId: string, input: DayConfigInput): Pr
     ...(input.gradeConfigs !== undefined ? { gradeConfigs: JSON.stringify(input.gradeConfigs) } : {}),
   };
 
-  const errors = validateBellConfig(resolveDayConfig(schoolId, { ...baseRow, ...data }, null));
+  const errors = blockingBellErrors(resolveDayConfig(schoolId, { ...baseRow, ...data }, null));
   if (errors.length > 0) return { ok: false, errors };
 
   await db.schoolDayPeriodConfig.upsert({

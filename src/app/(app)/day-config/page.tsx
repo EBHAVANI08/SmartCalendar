@@ -626,15 +626,20 @@ export default function DayConfigPage({ onSaved }: { onSaved?: () => void } = {}
                 </div>
               </div>
 
-              {/* Same rules the server enforces on save (validateBellConfig). */}
+              {/* Corrected automatically on save by the auto-fix engine (logged, undoable). */}
               {[
-                ...(times.breakEnabled && !(times.breakMinutes > 0) ? ['The short break is on but lasts 0 minutes. Give it a duration or switch it off.'] : []),
-                ...(times.lunchEnabled && !(times.lunchMinutes > 0) ? ['Lunch is on but lasts 0 minutes. Give it a duration or switch it off.'] : []),
+                ...(times.breakEnabled && !(times.breakMinutes > 0) ? ['The short break is on but lasts 0 minutes; it will be switched off.'] : []),
+                ...(times.lunchEnabled && !(times.lunchMinutes > 0) ? ['Lunch is on but lasts 0 minutes; it will be switched off.'] : []),
                 ...(times.breakEnabled && times.lunchEnabled && times.breakAfter === times.lunchAfter
-                  ? [`The short break and lunch are both after period ${times.breakAfter}. Put them after different periods.`]
+                  ? [`The short break and lunch are both after period ${times.breakAfter}; the shorter one will be switched off.`]
                   : []),
-                ...bellErrors,
               ].map((message) => (
+                <p key={message} className="flex items-start gap-1.5 text-[11px] text-amber-700">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> On save: {message}
+                </p>
+              ))}
+              {/* Problems that cannot be corrected automatically; the save was refused. */}
+              {bellErrors.map((message) => (
                 <p key={message} className="flex items-start gap-1.5 text-[11px] text-rose-700">
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> {message}
                 </p>

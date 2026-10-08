@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
 
 export async function GET(request: Request) {
   try {
@@ -16,7 +17,7 @@ export async function GET(request: Request) {
       db.teacher.count({ where: { schoolId } }),
       db.substitution.count({ where: { schoolId, date: today } }),
       db.schedule.count({ where: { schoolId, teacherId: null } }),
-      db.classSection.findMany({ where: { schoolId }, select: { studentStrength: true } }).catch(() => []),
+      db.classSection.findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, select: { studentStrength: true } }).catch(() => []),
     ]);
 
     const totalStudents = classSections.reduce((sum, section) => sum + (section?.studentStrength || 0), 0);

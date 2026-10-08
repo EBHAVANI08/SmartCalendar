@@ -206,32 +206,41 @@ function toMinutes(time: string): number | null {
  * Problems that make a bell schedule unusable. An empty list means valid.
  * Checked on save (the API rejects invalid settings) and shown in setup.
  */
+export type BellIssueCode = 'TIME_FORMAT' | 'TIME_ORDER' | 'BREAK_ZERO' | 'BREAK_RANGE' | 'SAME_PERIOD' | 'TOO_SHORT';
+
+/** Issues the auto-fix engine corrects by itself (see src/lib/autofix/rules.ts). */
+export const AUTO_FIXABLE_BELL_ISSUES: readonly BellIssueCode[] = ['BREAK_ZERO', 'BREAK_RANGE', 'SAME_PERIOD'];
+
 export function validateBellConfig(config: DayPeriodConfig & BellConfig, label = 'School day'): string[] {
-  const errors: string[] = [];
+  return bellIssues(config, label).map((issue) => issue.message);
+}
+
+export function bellIssues(config: DayPeriodConfig & BellConfig, label = 'School day'): { code: BellIssueCode; message: string }[] {
+  const errors: { code: BellIssueCode; message: string }[] = [];
   const periods = longestDayPeriods(config);
   const start = toMinutes(config.startTime);
   const end = toMinutes(config.endTime);
-  if (start === null || end === null) errors.push(`${label}: start and end times must be HH:MM.`);
-  else if (end <= start) errors.push(`${label}: the day must end after it starts (${config.startTime} – ${config.endTime}).`);
+  if (start === null || end === null) errors.push({ code: 'TIME_FORMAT', message: `${label}: start and end times must be HH:MM.` });
+  else if (end <= start) errors.push({ code: 'TIME_ORDER', message: `${label}: the day must end after it starts (${config.startTime} – ${config.endTime}).` });
 
   const checkBreak = (name: string, enabled: boolean, after: number, minutes: number) => {
     if (!enabled) return;
-    if (!(minutes > 0)) errors.push(`${label}: ${name} is switched on but lasts 0 minutes. Give it a duration or switch it off.`);
+    if (!(minutes > 0)) errors.push({ code: 'BREAK_ZERO', message: `${label}: ${name} is switched on but lasts 0 minutes. Give it a duration or switch it off.` });
     if (!Number.isInteger(after) || after < 1 || after >= periods) {
-      errors.push(`${label}: ${name} must come after a period between 1 and ${periods - 1}.`);
+      errors.push({ code: 'BREAK_RANGE', message: `${label}: ${name} must come after a period between 1 and ${periods - 1}.` });
     }
   };
   checkBreak('the short break', config.breakEnabled, config.breakAfter, config.breakMinutes);
   checkBreak('lunch', config.lunchEnabled, config.lunchAfter, config.lunchMinutes);
   if (config.breakEnabled && config.lunchEnabled && config.breakAfter === config.lunchAfter) {
-    errors.push(`${label}: the short break and lunch are both after period ${config.breakAfter}. Put them after different periods.`);
+    errors.push({ code: 'SAME_PERIOD', message: `${label}: the short break and lunch are both after period ${config.breakAfter}. Put them after different periods.` });
   }
 
   if (start !== null && end !== null && end > start) {
     const breaks = (config.breakEnabled ? Math.max(0, config.breakMinutes) : 0) + (config.lunchEnabled ? Math.max(0, config.lunchMinutes) : 0);
     const perPeriod = Math.floor((end - start - breaks) / periods);
     if (perPeriod < MIN_PERIOD_MINUTES) {
-      errors.push(`${label}: ${periods} periods and the breaks leave only ${Math.max(0, perPeriod)} minutes per period between ${config.startTime} and ${config.endTime}; at least ${MIN_PERIOD_MINUTES} are needed.`);
+      errors.push({ code: 'TOO_SHORT', message: `${label}: ${periods} periods and the breaks leave only ${Math.max(0, perPeriod)} minutes per period between ${config.startTime} and ${config.endTime}; at least ${MIN_PERIOD_MINUTES} are needed.` });
     }
   }
   return errors;

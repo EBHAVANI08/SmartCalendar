@@ -6,6 +6,7 @@ import { requireCapability } from '@/lib/authz';
 import { NextResponse } from 'next/server';
 import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
 import { staffingReport } from '@/lib/staffing';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
 
 /**
  * How far a school is through setting itself up.
@@ -51,7 +52,7 @@ export async function GET(request: Request) {
       }),
       db.schoolDayPeriodConfig.findUnique({ where: { schoolId } }).catch(() => null),
       db.gradeSubjectConfig
-        .findMany({ where: { schoolId }, select: { grade: true, subjectName: true, weeklyPeriods: true, active: true } })
+        .findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, select: { grade: true, subjectName: true, weeklyPeriods: true, active: true } })
         .catch(() => []),
       db.teacher
         .findMany({ where: { schoolId }, select: { role: true, subjects: true, subject: true, grades: true } })
@@ -83,6 +84,16 @@ export async function GET(request: Request) {
   // Rooms only count when the school has started using them at all.
   const roomsInUse = rooms > 0;
 
+  // Problems the auto-fix engine already corrected show as "Auto-fixed: N"
+  // on their step instead of as errors (fixes still applied, not undone).
+  const appliedFixes = await db.autoFixLog.groupBy({ by: ['rule'], where: { schoolId, undoneAt: null }, _count: { _all: true } }).catch(() => []);
+  const fixedCount = (rules: string[]) => appliedFixes.filter((row) => rules.includes(row.rule)).reduce((sum, row) => sum + row._count._all, 0);
+  const autoFixed = (rules: string[]) => {
+    const count = fixedCount(rules);
+    return count ? ` · Auto-fixed: ${count}` : '';
+  };
+  const totalAutoFixed = appliedFixes.reduce((sum, row) => sum + row._count._all, 0);
+
   const steps: Step[] = [
     {
       id: 'profile',
@@ -105,7 +116,7 @@ export async function GET(request: Request) {
       done: Boolean(dayConfig),
       href: '/settings?tab=timetable&sub=days',
       detail: dayConfig
-        ? `${dayConfig.workingDays} working days configured`
+        ? `${dayConfig.workingDays} working days configured${autoFixed(['break_zero_minutes', 'break_out_of_range', 'break_same_period'])}`
         : 'Not configured — generation cannot run without it',
       required: true,
     },
@@ -114,7 +125,7 @@ export async function GET(request: Request) {
       label: 'Grades & sections',
       done: classSet.size > 0,
       href: '/settings?tab=timetable&sub=structure',
-      detail: classSet.size ? `${classSet.size} class(es) known` : 'No grades or sections yet',
+      detail: classSet.size ? `${classSet.size} class(es) known${autoFixed(['duplicate_grade'])}` : 'No grades or sections yet',
       required: true,
     },
     {
@@ -123,7 +134,7 @@ export async function GET(request: Request) {
       done: activeSubjects.length > 0,
       href: '/settings?tab=timetable&sub=subjects',
       detail: activeSubjects.length
-        ? `${activeSubjects.length} subject(s) configured`
+        ? `${activeSubjects.length} subject(s) configured${autoFixed(['duplicate_subject', 'display_name', 'auto_created_rows'])}`
         : 'No subjects with a weekly requirement',
       required: true,
     },
@@ -156,9 +167,17 @@ export async function GET(request: Request) {
         ? 'Configure subjects first'
         : overCapacity.length
           ? overCapacity.map(describeCapacityProblem).join('; ')
-          : `All ${capacity.length} grade(s) fit their week`,
+          : `All ${capacity.length} grade(s) fit their week${autoFixed(['over_capacity', 'daily_cap_too_low'])}`,
       required: true,
       blocking: overCapacity.length > 0,
+    },
+    {
+      id: 'autofix',
+      label: 'Automatic corrections',
+      done: true,
+      href: '/settings?tab=timetable&sub=autofix',
+      detail: totalAutoFixed ? `Auto-fixed: ${totalAutoFixed} — review or undo` : 'Nothing needed correcting',
+      required: false,
     },
     {
       id: 'rooms',

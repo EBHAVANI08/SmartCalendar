@@ -6,6 +6,7 @@ import { getDayConfig, saveDayConfig } from '@/lib/timetable-config';
 import { buildBellTimeline, buildTeachingGrid, periodTimingsForDay, periodsForDay, validateBellConfig, workingDayNames } from '@/lib/timetable-constraints';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { autofixAfterSave } from '@/lib/autofix';
 
 async function getAvailableGrades(schoolId: string): Promise<string[]> {
   const [sections, schedules, subjects] = await Promise.all([
@@ -86,8 +87,14 @@ export async function PUT(request: Request) {
       { status: 400 }
     );
   }
-  const baseConfig = await getDayConfig(schoolId, null);
-  const grades = await getAvailableGrades(schoolId);
+  // Correct what can be corrected (0-minute breaks, breaks outside the day,
+  // break and lunch after the same period); each fix is logged and undoable.
+  const autofix = await autofixAfterSave(schoolId, 'save:dayconfig', request.headers.get('x-user-email'));
+  const [config, baseConfig, grades] = await Promise.all([
+    getDayConfig(schoolId, body?.grade || null),
+    getDayConfig(schoolId, null),
+    getAvailableGrades(schoolId),
+  ]);
 
-  return NextResponse.json(describe(saved.config, baseConfig, grades));
+  return NextResponse.json({ ...describe(config, baseConfig, grades), autofix });
 }

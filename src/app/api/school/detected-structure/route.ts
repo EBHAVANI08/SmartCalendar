@@ -10,6 +10,8 @@ import { readList } from '@/lib/faculty';
 import { NextResponse } from 'next/server';
 import { canonicalGrade, schoolGradeNames } from '@/lib/master-data';
 import { findSameGrade, gradeKey } from '@/lib/name-normalize';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { autofixAfterSave } from '@/lib/autofix';
 
 /**
  * Academic structure inferred from a school's existing timetable.
@@ -182,7 +184,7 @@ export async function POST(request: Request) {
 
     // Check if section already exists
     const existing = await db.classSection.findFirst({
-      where: { schoolId, grade, section },
+      where: { schoolId, grade, section, AND: [NOT_ARCHIVED] },
     });
 
     if (existing) {
@@ -207,6 +209,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      autofix: await autofixAfterSave(schoolId, 'save:structure', request.headers.get('x-user-email')),
       message: `Section ${section} added to ${grade} successfully.`,
       grade,
       section,
@@ -257,7 +260,7 @@ export async function PATCH(request: Request) {
 
     // 1. Update ClassSection rows
     const sections = await db.classSection.findMany({
-      where: { schoolId, grade: oldGrade },
+      where: { schoolId, grade: oldGrade, AND: [NOT_ARCHIVED] },
     });
     for (const s of sections) {
       const newCode = `${newGrade.replace(/\s+/g, '')}-${s.section}`;
@@ -305,6 +308,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({
       success: true,
+      autofix: await autofixAfterSave(schoolId, 'save:structure', request.headers.get('x-user-email')),
       message: `Grade renamed from "${oldGrade}" to "${newGrade}" successfully.`,
       oldGrade,
       newGrade,
@@ -393,6 +397,7 @@ export async function DELETE(request: Request) {
 
       return NextResponse.json({
         success: true,
+        autofix: await autofixAfterSave(schoolId, 'save:structure', request.headers.get('x-user-email')),
         message: `Grade "${grade}" and all associated sections and schedules were deleted successfully.`,
         grade,
         deletedSections: csDeleted.count,
@@ -420,6 +425,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({
       success: true,
+      autofix: await autofixAfterSave(schoolId, 'save:structure', request.headers.get('x-user-email')),
       message: `Section ${section} removed from ${grade}.`,
       grade,
       section,

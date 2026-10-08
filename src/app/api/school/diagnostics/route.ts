@@ -8,6 +8,7 @@ import { requireCapability } from '@/lib/authz';
 import { NextResponse } from 'next/server';
 import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
 import { staffingReport } from '@/lib/staffing';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
 
 export async function GET(request: Request) {
   const denied = requireCapability(request, 'school.settings.read');
@@ -33,9 +34,9 @@ export async function GET(request: Request) {
       select: { id: true, name: true, code: true, email: true, board: true, phone: true, address: true, contactName: true },
     }),
     getDayConfig(schoolId).catch(() => null),
-    db.classSection.findMany({ where: { schoolId }, select: { grade: true, section: true } }).catch(() => []),
+    db.classSection.findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, select: { grade: true, section: true } }).catch(() => []),
     db.gradeSubjectConfig.findMany({
-      where: { schoolId },
+      where: { schoolId, AND: [NOT_ARCHIVED] },
       select: { grade: true, subjectName: true, weeklyPeriods: true, active: true },
     }).catch(() => []),
     db.teacher.findMany({

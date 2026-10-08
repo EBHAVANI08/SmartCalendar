@@ -6,6 +6,8 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { canonicalGrade, resolveSubjectName, schoolGradeNames, schoolSubjectNames, subjectConflictMessage } from '@/lib/master-data';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { autofixAfterSave } from '@/lib/autofix';
 
 /**
  * Map a teacher to a grade+subject, or unmap them.
@@ -116,11 +118,12 @@ export async function POST(request: Request) {
   // Also ensure GradeSubjectConfig has this subject if mapped
   if (!remove && grade) {
     const existingConfig = await db.gradeSubjectConfig.findFirst({
-      where: { schoolId, grade, subjectName },
+      where: { schoolId, grade, subjectName, AND: [NOT_ARCHIVED] },
     });
     if (!existingConfig) {
       await db.gradeSubjectConfig.create({
         data: {
+          source: 'sync',
           schoolId,
           grade,
           subjectName,
@@ -138,6 +141,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
+    autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')),
     message: remove
       ? `${teacher.name} is no longer mapped to ${subjectName}${grade ? ` for ${grade}` : ''}.`
       : `${teacher.name} is now mapped to teach ${subjectName}${grade ? ` for ${grade}` : ''}.`,

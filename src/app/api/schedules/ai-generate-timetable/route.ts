@@ -7,6 +7,7 @@ import { periodsForDay, workingDayNames, buildTeachingGrid, periodTimingsForDay 
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
+import { runAutofix } from '@/lib/autofix';
 
 const MAX_PERIODS_PER_TEACHER_DAY = 6;
 
@@ -305,17 +306,25 @@ export async function POST(request: Request) {
       targetClasses = [{ grade: String(grade).trim(), section: String(section).trim().toUpperCase() }];
     }
 
-    // Refuse before touching any version: a grade whose subject quotas exceed
-    // its teaching week cannot be timetabled, and padding or dropping periods
-    // would hide that from the school.
+    // Correct setup mistakes first (logged, undoable), then refuse before
+    // touching any version if a target grade still cannot be timetabled:
+    // padding or dropping periods would hide that from the school.
+    const autofix = await runAutofix(schoolId, { apply: true, trigger: 'generation', actor: request.headers.get('x-user-email') });
     const targetGradeNames = new Set(targetClasses.map((tc) => tc.grade));
+    const blocking = autofix.unfixable.filter((item) => item.blocking && (!item.grade || targetGradeNames.has(item.grade)));
     const overCapacity = (await gradeCapacityReport(schoolId)).filter((c) => targetGradeNames.has(c.grade) && !c.ok);
-    if (overCapacity.length > 0) {
+    if (blocking.length > 0 || overCapacity.length > 0) {
       return NextResponse.json(
         {
-          error: `Cannot generate: ${overCapacity.length} grade(s) need more periods than their week has. Fix the subject quotas or the day & period setup first.`,
+          error: `Cannot generate: ${blocking.length + overCapacity.length} setup problem(s) could not be fixed automatically.`,
           code: 'CAPACITY_EXCEEDED',
-          grades: overCapacity.map((c) => ({ grade: c.grade, demand: c.demand, slots: c.slots, problem: describeCapacityProblem(c) })),
+          autoFixed: autofix.fixes.map((fix) => fix.summary),
+          grades: [
+            ...blocking.map((item) => ({ grade: item.grade ?? 'All grades', problem: item.message })),
+            ...overCapacity
+              .filter((c) => !blocking.some((item) => item.grade === c.grade))
+              .map((c) => ({ grade: c.grade, demand: c.demand, slots: c.slots, problem: describeCapacityProblem(c) })),
+          ],
         },
         { status: 422 }
       );
@@ -765,6 +774,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      autoFixed: autofix.fixes.map((fix) => fix.summary),
       message: `AI Timetable Generator completed: Generated ${createdCount} clash-free periods across ${targetClasses.length} section(s). Zero teacher double-bookings!`,
       stats: {
         totalClasses: targetClasses.length,

@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { compareSubjects, gradeKey, subjectKey } from '@/lib/name-normalize';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
 
 /**
  * One canonical spelling per grade and per subject within a school.
@@ -11,16 +12,16 @@ import { compareSubjects, gradeKey, subjectKey } from '@/lib/name-normalize';
 
 export async function schoolGradeNames(schoolId: string): Promise<string[]> {
   const [sections, configs] = await Promise.all([
-    db.classSection.findMany({ where: { schoolId }, select: { grade: true }, distinct: ['grade'] }),
-    db.gradeSubjectConfig.findMany({ where: { schoolId }, select: { grade: true }, distinct: ['grade'] }),
+    db.classSection.findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, select: { grade: true }, distinct: ['grade'] }),
+    db.gradeSubjectConfig.findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, select: { grade: true }, distinct: ['grade'] }),
   ]);
   return [...new Set([...sections, ...configs].map((row) => row.grade.trim()).filter(Boolean))];
 }
 
 export async function schoolSubjectNames(schoolId: string): Promise<string[]> {
   const [masters, configs] = await Promise.all([
-    db.subjectMaster.findMany({ where: { schoolId }, select: { name: true } }),
-    db.gradeSubjectConfig.findMany({ where: { schoolId }, select: { subjectName: true }, distinct: ['subjectName'] }),
+    db.subjectMaster.findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, select: { name: true } }),
+    db.gradeSubjectConfig.findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, select: { subjectName: true }, distinct: ['subjectName'] }),
   ]);
   return [...new Set([...masters.map((row) => row.name), ...configs.map((row) => row.subjectName)].map((name) => name.trim()).filter(Boolean))];
 }

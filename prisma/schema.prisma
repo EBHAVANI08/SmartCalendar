@@ -144,6 +144,12 @@ model GradeSubjectConfig {
   /// Null means any room. Data, so lab requirements are never hardcoded.
   requiredRoomType   String?
   active             Boolean  @default(true)
+  /// Soft delete: set (with active = false) when an auto-fix merges this row
+  /// into another. Archived rows are never read as live setup.
+  archivedAt         DateTime?
+  /// Who created the row: "user", "sync" (from Faculty Directory) or "import".
+  /// Null for rows created before this was recorded.
+  source             String?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -463,6 +469,8 @@ model ClassSection {
   classTeacherId  String?
   homeRoomId      String?
   active          Boolean  @default(true)
+  /// Soft delete by auto-fix (see GradeSubjectConfig.archivedAt).
+  archivedAt      DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -479,6 +487,8 @@ model SubjectMaster {
   difficulty Int      @default(1)
   active     Boolean  @default(true)
   aliases    Json?
+  /// Soft delete by auto-fix (see GradeSubjectConfig.archivedAt).
+  archivedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -1151,4 +1161,36 @@ model TenantMessage {
   school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, createdAt])
+}
+
+/// One automatic setup correction. `changes` holds the exact field values
+/// before and after for every row touched, so the fix can be undone.
+model AutoFixLog {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId    String    @db.ObjectId
+  /// Groups the fixes made by one engine run.
+  runId       String
+  /// What started the run: "save:subjects", "save:structure", "save:dayconfig", "generation", "script".
+  trigger     String
+  rule        String
+  /// 1 = silent, 2 = applied and shown to the admin with Undo.
+  tier        Int
+  /// The thing that was fixed, e.g. "grade:Grade 1" or "subject:Information Technology".
+  entity      String
+  summary     String
+  before      Json
+  after       Json
+  /// [{ model, id, before: {...}, after: {...} }]
+  changes     Json
+  /// Same issue on the same data = same key; an undone fix suppresses re-applying it.
+  suppressKey String
+  appliedAt   DateTime  @default(now())
+  appliedBy   String?
+  undoneAt    DateTime?
+  undoneBy    String?
+  /// Tier 2 notice dismissed by an admin (the fix stays applied).
+  acknowledgedAt DateTime?
+
+  @@index([schoolId, appliedAt])
+  @@index([schoolId, suppressKey])
 }

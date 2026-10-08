@@ -24,6 +24,7 @@ import { VersionBanner } from '@/components/timetable/version-banner';
 import { SlotEditor } from '@/components/timetable/slot-editor';
 import { ImportPreviewDialog, type ImportReport } from '@/components/timetable/import-preview';
 import { readList, teacherTeachesSection, formatTeacherQualifications } from '@/lib/faculty';
+import { AutoFixNotices } from '@/components/autofix-notices';
 
 interface Teacher {
   id: string;
@@ -835,6 +836,7 @@ export default function TimetablePage() {
       {userRole !== 'teacher' && (
         <>
           <VersionBanner onChanged={fetchSchedules} />
+          <AutoFixNotices />
           <GenerationResult result={genResult} onDismiss={() => setGenResult(null)} />
         </>
       )}
@@ -2183,8 +2185,8 @@ export default function TimetablePage() {
           </div>
 
           {studioSettings.enableShortBreak && studioSettings.enableLunchBreak && studioSettings.shortBreakAfter === studioSettings.lunchBreakAfter && (
-            <p className="text-[11px] font-semibold text-rose-700">
-              The short break and lunch are both after period {studioSettings.shortBreakAfter}. Put them after different periods.
+            <p className="text-[11px] font-semibold text-amber-700">
+              The short break and lunch are both after period {studioSettings.shortBreakAfter}; on save the shorter one is switched off automatically.
             </p>
           )}
           <DialogFooter className="pt-3 flex justify-between items-center border-t border-slate-100">
