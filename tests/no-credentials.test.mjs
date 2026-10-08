@@ -122,9 +122,26 @@ const live = {
   email: process.env.SC_TEST_LOGIN_EMAIL,
   password: process.env.SC_TEST_LOGIN_PASSWORD,
 };
+// Production is whatever .env points at; the live check refuses that database
+// (same host and database name), whatever the current shell's DATABASE_URL is.
+async function productionDatabaseUrl() {
+  try {
+    const text = await readFile(join(root, '.env'), 'utf8');
+    const line = text.split(/\r?\n/).find((entry) => /^\s*DATABASE_URL\s*=/.test(entry));
+    return line ? line.replace(/^\s*DATABASE_URL\s*=\s*/, '').replace(/^["']|["']$/g, '').trim() : null;
+  } catch {
+    return null;
+  }
+}
+const identity = (uri) => {
+  const match = /^mongodb(?:\+srv)?:\/\/(?:[^@/]*@)?([^/?]+)\/?([^?]*)/i.exec(String(uri || '').trim());
+  return match ? `${match[1].toLowerCase()}/${match[2]}` : String(uri || '');
+};
+const production = await productionDatabaseUrl();
 const liveReason =
   !live.database ? 'SC_TEST_DATABASE_URL not set (live check never runs against production)'
-  : process.env.DATABASE_URL && live.database === process.env.DATABASE_URL ? 'SC_TEST_DATABASE_URL equals DATABASE_URL; refusing to run'
+  : !production ? 'cannot read .env DATABASE_URL to rule out production; refusing to run'
+  : identity(live.database) === identity(production) ? 'SC_TEST_DATABASE_URL is the production database from .env; refusing to run'
   : !live.base || !live.email || !live.password ? 'SC_BASE_URL / SC_TEST_LOGIN_EMAIL / SC_TEST_LOGIN_PASSWORD not set'
   : null;
 
