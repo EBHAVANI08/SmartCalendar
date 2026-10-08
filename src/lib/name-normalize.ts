@@ -91,25 +91,60 @@ export function sameSubject(a: unknown, b: unknown): boolean {
 }
 
 /** How two subject names relate, for duplicate reports. */
-export type SubjectMatch = 'exact' | 'alias' | 'similar' | null;
+export type SubjectMatch = 'exact' | 'alias' | 'similar' | 'spelling' | null;
+
+const significantWords = (value: unknown) => subjectKey(value).split(' ').filter((word) => word && word !== 'and');
+
+/** True when `short` is written in capitals and spells the initials of `long` ("VE" / "Value Education"). */
+function isInitialism(short: unknown, long: unknown): boolean {
+  const raw = String(short ?? '').trim();
+  if (!/^[A-Z]{2,6}$/.test(raw)) return false;
+  const words = significantWords(long);
+  return words.length >= 2 && words.map((word) => word[0]).join('') === raw.toLowerCase();
+}
+
+/** Levenshtein distance, stopping early once it exceeds `limit`. */
+function editDistance(a: string, b: string, limit: number): number {
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    let rowMin = i;
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      rowMin = Math.min(rowMin, current[j]);
+    }
+    if (rowMin > limit) return limit + 1;
+    previous = current;
+  }
+  return previous[b.length];
+}
 
 /**
  * - exact: same key (case/spacing/punctuation/"&" only). Safe to merge automatically.
- * - alias: one is the bracketed abbreviation or long form of the other.
+ * - alias: a bracketed abbreviation, or capitals spelling the other's initials.
  * - similar: one name's words start the other's ("Art" / "Art & Craft").
+ * - spelling: one letter apart (two in names of 10+ letters), e.g. a typo.
  * Only "exact" is ever merged without confirmation.
  */
 export function compareSubjects(a: unknown, b: unknown): SubjectMatch {
-  if (subjectKey(a) && subjectKey(a) === subjectKey(b)) return 'exact';
-  if (sameSubject(a, b)) return 'alias';
+  const keyA = subjectKey(a);
+  const keyB = subjectKey(b);
+  if (keyA && keyA === keyB) return 'exact';
+  if (sameSubject(a, b) || isInitialism(a, b) || isInitialism(b, a)) return 'alias';
   // Similar: the shorter name is the start of the longer one ("Art" / "Art &
   // Craft"). A shared trailing word ("Science" / "Social Science") is not.
-  const words = (value: unknown) => subjectKey(value).split(' ').filter((word) => word && word !== 'and');
-  const left = words(a);
-  const right = words(b);
+  const left = significantWords(a);
+  const right = significantWords(b);
   if (!left.length || !right.length) return null;
   const [short, long] = left.length <= right.length ? [left, right] : [right, left];
-  return short.every((word, index) => long[index] === word) ? 'similar' : null;
+  if (short.every((word, index) => long[index] === word)) return 'similar';
+  const length = Math.min(keyA.length, keyB.length);
+  if (length >= 5) {
+    const limit = length >= 10 ? 2 : 1;
+    if (editDistance(keyA, keyB, limit) <= limit) return 'spelling';
+  }
+  return null;
 }
 
 /** First existing name that is the same grade as `candidate`, if any. */

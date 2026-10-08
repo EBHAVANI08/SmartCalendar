@@ -9,18 +9,25 @@
  * "&"/"and", a grade/class prefix or Roman vs Arabic numerals) are merged into
  * the most-used spelling. Abbreviation and similar-name pairs are only listed;
  * they merge only when confirmed with --map "From=>To" (repeatable; subjects or
- * grades). Dry run is the default. --apply runs one transaction per school.
+ * grades). --keep "A|B" records a pair the school decided to keep separate;
+ * it is listed as decided instead of suggested. Dry run is the default.
+ * --apply runs one transaction per school. --capacity also prints each grade's
+ * weekly demand as it will be after the merge, with the subject quotas of every
+ * grade that is over capacity.
  *
  * References remapped: ClassSection, Schedule, GradeSubjectConfig, Substitution,
  * LessonPlan (via the school's teachers), ValidationIssue, Teacher subject/
  * subjects/grades/sections, TeacherQualification, SubjectRequirement,
  * TimetableSlot, SubjectMaster, Room.supportedSubjects and per-grade day-config
- * keys. Where both spellings hold the same row (same timetable slot, same
- * grade+subject config), the canonical row is kept and the duplicate removed;
- * the dry run lists each such collision first.
+ * keys. Where both spellings hold the same row: for a timetable slot the
+ * canonical row is kept; for a grade+subject config the row in use (active,
+ * weekly periods > 0) is kept, else the canonical one. The dry run lists each
+ * collision first.
  */
 import { Prisma, PrismaClient } from '@prisma/client';
 import { compareSubjects, gradeKey, subjectKey } from '../src/lib/name-normalize';
+import { evaluateGradeCapacity } from '../src/lib/timetable-capacity';
+import { getDayConfig } from '../src/lib/timetable-config';
 
 type Kind = 'grade' | 'subject';
 type Tx = Prisma.TransactionClient;
@@ -31,21 +38,33 @@ const TRANSACTION_TIMEOUT_MS = 120_000;
 // ── arguments ────────────────────────────────────────────────────────────────
 
 function parseArgs(argv: string[]) {
-  const options = { schoolId: '', all: false, apply: false, maps: [] as { from: string; to: string }[] };
+  const options = {
+    schoolId: '',
+    all: false,
+    apply: false,
+    capacity: false,
+    maps: [] as { from: string; to: string }[],
+    keep: [] as [string, string][],
+  };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--school') options.schoolId = argv[++index] ?? '';
     else if (arg === '--all') options.all = true;
     else if (arg === '--apply') options.apply = true;
     else if (arg === '--dry-run') options.apply = false;
-    else if (arg === '--map') {
+    else if (arg === '--capacity') options.capacity = true;
+    else if (arg === '--keep') {
+      const [a, b] = String(argv[++index] ?? '').split('|').map((part) => part.trim());
+      if (!a || !b) throw new Error('--keep expects "A|B".');
+      options.keep.push([a, b]);
+    } else if (arg === '--map') {
       const [from, to] = String(argv[++index] ?? '').split('=>').map((part) => part.trim());
       if (!from || !to) throw new Error('--map expects "From=>To".');
       options.maps.push({ from, to });
     } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (options.all === Boolean(options.schoolId)) throw new Error('Pass exactly one of --school <id> or --all.');
-  if (options.maps.length && options.all) throw new Error('--map is per school; use it with --school <id>.');
+  if ((options.maps.length || options.keep.length) && options.all) throw new Error('--map and --keep are per school; use them with --school <id>.');
   return options;
 }
 
@@ -199,11 +218,11 @@ function plan(usage: { grades: Usage; subjects: Usage }, maps: { from: string; t
   // After exact merges, list abbreviation/similar subject pairs for confirmation.
   const renamedAway = new Set(renames.filter((r) => r.kind === 'subject').map((r) => r.from));
   const subjectNames = [...usage.subjects.keys()].filter((name) => !renamedAway.has(name));
-  const suggestions: { a: string; b: string; match: 'alias' | 'similar' }[] = [];
+  const suggestions: { a: string; b: string; match: 'alias' | 'similar' | 'spelling' }[] = [];
   for (let i = 0; i < subjectNames.length; i++) {
     for (let j = i + 1; j < subjectNames.length; j++) {
       const match = compareSubjects(subjectNames[i], subjectNames[j]);
-      if (match === 'alias' || match === 'similar') suggestions.push({ a: subjectNames[i], b: subjectNames[j], match });
+      if (match === 'alias' || match === 'similar' || match === 'spelling') suggestions.push({ a: subjectNames[i], b: subjectNames[j], match });
     }
   }
 
@@ -225,6 +244,9 @@ function plan(usage: { grades: Usage; subjects: Usage }, maps: { from: string; t
   }
   return { renames, exactGroups, suggestions };
 }
+
+/** A config row the school is actually using: active with a weekly quota. */
+const inUse = (c: { weeklyPeriods: number; active: boolean }) => c.active && c.weeklyPeriods > 0;
 
 // ── collisions (rows that exist under both names) ────────────────────────────
 
@@ -255,7 +277,6 @@ async function collisions(db: PrismaClient | Tx, schoolId: string, rename: Renam
   ]);
   const settings = (c: { weeklyPeriods: number; maxPeriodsPerDay: number; active: boolean }) =>
     `${c.weeklyPeriods}/wk, max ${c.maxPeriodsPerDay}/day${c.active ? '' : ', inactive'}`;
-  const inUse = (c: { weeklyPeriods: number; active: boolean }) => c.active && c.weeklyPeriods > 0;
   for (const config of fromConfigs) {
     const twin = toConfigs.find((candidate) => candidate[other] === config[other]);
     if (!twin) {
@@ -264,9 +285,11 @@ async function collisions(db: PrismaClient | Tx, schoolId: string, rename: Renam
       continue;
     }
     const differs = twin.weeklyPeriods !== config.weeklyPeriods || twin.maxPeriodsPerDay !== config.maxPeriodsPerDay || twin.active !== config.active;
-    const warn = !inUse(twin) && inUse(config) ? '  ⚠ the kept row is not in use but the removed one is; edit it afterwards if the removed settings were right' : '';
+    // The row in use wins; otherwise the canonical name's row is kept.
+    const keepDuplicate = inUse(config) && !inUse(twin);
+    const [kept, removed] = keepDuplicate ? [config, twin] : [twin, config];
     out.push(`GradeSubjectConfig ${config[other]}: both names configured${differs
-      ? `; keeping "${rename.to}" (${settings(twin)}) over "${rename.from}" (${settings(config)})${warn}`
+      ? `; keeping ${settings(kept)} over ${settings(removed)}${keepDuplicate ? ' (the in-use row, stored under the canonical name)' : ''}`
       : ' with identical settings'}`);
   }
   return out;
@@ -386,8 +409,13 @@ async function mergeConfigs(tx: Tx, schoolId: string, field: 'grade' | 'subjectN
   const other = field === 'grade' ? 'subjectName' : 'grade';
   for (const config of await tx.gradeSubjectConfig.findMany({ where: { schoolId, [field]: from } })) {
     const twin = await tx.gradeSubjectConfig.findFirst({ where: { schoolId, [field]: to, [other]: config[other] } });
-    if (twin) await tx.gradeSubjectConfig.delete({ where: { id: config.id } });
-    else await tx.gradeSubjectConfig.update({ where: { id: config.id }, data: { [field]: to } });
+    if (twin && !(inUse(config) && !inUse(twin))) {
+      await tx.gradeSubjectConfig.delete({ where: { id: config.id } });
+      continue;
+    }
+    // No twin, or the duplicate is the row in use: it takes the canonical name.
+    if (twin) await tx.gradeSubjectConfig.delete({ where: { id: twin.id } });
+    await tx.gradeSubjectConfig.update({ where: { id: config.id }, data: { [field]: to } });
   }
 }
 
@@ -409,8 +437,17 @@ async function reportSchool(db: PrismaClient, schoolId: string, label: string, o
     }
   }
 
-  console.log(`\nPossible duplicate subjects (NOT merged unless confirmed with --map): ${suggestions.length ? '' : 'none'}`);
-  for (const { a, b, match } of suggestions) {
+  const keptApart = (a: string, b: string) =>
+    options.keep.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
+  const decided = suggestions.filter(({ a, b }) => keptApart(a, b));
+  const open = suggestions.filter(({ a, b }) => !keptApart(a, b)
+    && !renames.some((r) => r.reason === 'confirmed' && ((r.from === a && r.to === b) || (r.from === b && r.to === a))));
+  if (decided.length) {
+    console.log('\nKept separate by decision (--keep):');
+    for (const { a, b } of decided) console.log(`  "${a}" and "${b}"`);
+  }
+  console.log(`\nPossible duplicate subjects still undecided (NOT merged unless confirmed with --map): ${open.length ? '' : 'none'}`);
+  for (const { a, b, match } of open) {
     console.log(`  [${match}] "${a}" (${describe(usage.subjects.get(a))})`);
     console.log(`          "${b}" (${describe(usage.subjects.get(b))})`);
     console.log(`          to merge: --map "${a}=>${b}"  or  --map "${b}=>${a}"`);
@@ -430,6 +467,8 @@ async function reportSchool(db: PrismaClient, schoolId: string, label: string, o
     }
     if (!any) console.log('  none');
   }
+
+  if (options.capacity) await reportProjectedCapacity(db, schoolId, renames);
 
   if (!options.apply || renames.length === 0) {
     console.log(renames.length ? `\n${renames.length} rename(s) planned. Re-run with --apply to write.` : '\nNothing to merge.');
@@ -451,6 +490,59 @@ async function reportSchool(db: PrismaClient, schoolId: string, label: string, o
   for (const rename of renames) {
     const left = (rename.kind === 'grade' ? after.grades : after.subjects).get(rename.from);
     if (left) console.log(`  warning: "${rename.from}" still referenced: ${describe(left)}`);
+  }
+}
+
+/**
+ * Grade capacity as it will be after these renames, computed in memory (no
+ * writes) with the same collision rule as --apply.
+ */
+async function reportProjectedCapacity(db: PrismaClient, schoolId: string, renames: Rename[]) {
+  const finalName = (kind: Kind, name: string) => renames.find((r) => r.kind === kind && r.from === name)?.to ?? name;
+  const rows = (await db.gradeSubjectConfig.findMany({
+    where: { schoolId },
+    select: { grade: true, subjectName: true, weeklyPeriods: true, maxPeriodsPerDay: true, active: true },
+  })).map((row) => ({
+    ...row,
+    renamed: finalName('grade', row.grade) !== row.grade || finalName('subject', row.subjectName) !== row.subjectName,
+    grade: finalName('grade', row.grade),
+    subjectName: finalName('subject', row.subjectName),
+  }));
+  // Rows under a name that was already canonical are considered first, then
+  // the in-use rule decides, exactly as mergeConfigs does.
+  const merged = new Map<string, (typeof rows)[number]>();
+  for (const row of [...rows].sort((a, b) => Number(a.renamed) - Number(b.renamed))) {
+    const key = `${row.grade}|${row.subjectName}`;
+    const current = merged.get(key);
+    if (!current || (inUse(row) && !inUse(current))) merged.set(key, row);
+  }
+  const byGrade = new Map<string, (typeof rows)[number][]>();
+  for (const row of merged.values()) {
+    if (!byGrade.has(row.grade)) byGrade.set(row.grade, []);
+    byGrade.get(row.grade)!.push(row);
+  }
+
+  console.log('\nWeekly capacity after this merge (projected, nothing written):');
+  const over: { grade: string; rows: (typeof rows)[number][] }[] = [];
+  for (const grade of [...byGrade.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))) {
+    const gradeRows = byGrade.get(grade)!;
+    const week = await getDayConfig(schoolId, grade);
+    const result = evaluateGradeCapacity(grade, gradeRows.filter((row) => row.active), week);
+    const status = !week.configured ? 'day setup missing' : result.ok ? 'fits' : [
+      result.overBy > 0 ? `${result.overBy} over` : '',
+      ...result.subjectIssues.map((issue) => `${issue.subjectName} ${issue.weeklyPeriods}/wk > ${issue.maxPlaceable} possible`),
+    ].filter(Boolean).join('; ');
+    console.log(`  ${(result.ok && week.configured) ? 'ok ' : 'ERR'} ${grade.padEnd(12)} demand ${String(result.demand).padStart(3)} / ${result.slots} slots  ${status}`);
+    if (!result.ok || !week.configured) over.push({ grade, rows: gradeRows });
+  }
+
+  for (const { grade, rows: gradeRows } of over) {
+    console.log(`\n  ${grade} — subject quotas (active rows count toward demand):`);
+    console.log(`    ${'Subject'.padEnd(28)} ${'Weekly'.padStart(6)} ${'Max/day'.padStart(7)}  Active`);
+    const sorted = [...gradeRows].sort((a, b) => Number(b.active) - Number(a.active) || b.weeklyPeriods - a.weeklyPeriods || a.subjectName.localeCompare(b.subjectName));
+    for (const row of sorted) {
+      console.log(`    ${row.subjectName.padEnd(28)} ${String(row.weeklyPeriods).padStart(6)} ${String(row.maxPeriodsPerDay).padStart(7)}  ${row.active ? 'yes' : 'no'}`);
+    }
   }
 }
 

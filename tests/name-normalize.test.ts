@@ -31,4 +31,10 @@ test('subject comparison classes', () => {
   // A shared last word does not make two subjects related.
   assert.equal(compareSubjects('Science', 'Social Science'), null);
   assert.equal(compareSubjects('Science', 'Computer Science'), null);
+  // Initials and one-letter spelling variants are suggestions, never automatic.
+  assert.equal(compareSubjects('VE', 'Value Education'), 'alias');
+  assert.equal(compareSubjects('Ve', 'Value Education'), null);
+  assert.equal(compareSubjects('Kaushal Bodh', 'Koushal Bodh'), 'spelling');
+  assert.equal(compareSubjects('Biology', 'Geology'), null);
+  assert.equal(compareSubjects('Music', 'Magic'), null);
 });

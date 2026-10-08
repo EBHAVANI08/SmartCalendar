@@ -15,6 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "typecheck:smart-calendar": "tsc -p tsconfig.smart-calendar.json",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json",
     "test:smart-calendar": "node --test tests/smart-calendar.test.mjs",
     "test:credentials": "node --test tests/no-credentials.test.mjs",
     "test:setup": "node --import tsx --test tests/name-normalize.test.ts tests/capacity.test.ts tests/bell.test.ts",
