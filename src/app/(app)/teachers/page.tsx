@@ -28,6 +28,7 @@ import {
   serializeSubjectGradeSectionsMap,
   type SubjectGradeMapping,
 } from '@/lib/faculty';
+import { OneTimePasswordDialog, type IssuedPassword } from '@/components/auth/one-time-password-dialog';
 
 interface ScheduleSlot {
   id: string;
@@ -162,6 +163,8 @@ export default function TeachersPage() {
   const [schoolName, setSchoolName] = useState('');
   // Temporary passwords returned by create/bulk upload. Held only in memory and
   // shown once; the server stores only their hashes.
+  // Single-use setup link, shown when no email could be sent.
+  const [setupLink, setSetupLink] = useState<IssuedPassword | null>(null);
   const [issuedCredentials, setIssuedCredentials] = useState<{ name: string; email: string; temporaryPassword: string; emailSent?: boolean }[]>([]);
   const [search, setSearch] = useState('');
   const [subjectFilter, setSubjectFilter] = useState('all');
@@ -1217,9 +1220,10 @@ export default function TeachersPage() {
       const data = await res.json();
       if (res.ok && data.success) {
         toast({
-          title: 'Password Setup Email Sent',
+          title: data.emailSent ? 'Password Setup Email Sent' : 'Email not sent',
           description: data.message || `Invitation email sent to ${teacher.email}.`,
         });
+        if (!data.emailSent && data.setupUrl) setSetupLink({ label: `${teacher.name} (${teacher.email})`, password: data.setupUrl });
       } else {
         toast({
           title: 'Delivery Notice',
@@ -3274,6 +3278,12 @@ export default function TeachersPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <OneTimePasswordDialog
+        issued={setupLink}
+        onClose={() => setSetupLink(null)}
+        title="Password setup link"
+        description="No email was sent. Share this link with the teacher privately; it works once and expires in 7 days."
+      />
     </div>
   );
 }

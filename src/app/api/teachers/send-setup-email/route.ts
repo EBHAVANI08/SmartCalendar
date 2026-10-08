@@ -44,9 +44,15 @@ export async function POST(request: Request) {
       requestOrigin: origin,
     });
 
+    // When no email actually went out (no SMTP configured, or delivery failed)
+    // the Admin gets the single-use link to share privately instead.
+    const emailSent = Boolean(result.success && !result.simulated);
     return NextResponse.json({
-      success: true,
-      message: `Password setup email sent to ${teacher.email}.`,
+      success: Boolean(result.setupUrl),
+      emailSent,
+      message: emailSent
+        ? `Password setup email sent to ${teacher.email}.`
+        : `No email was sent to ${teacher.email}. Share the setup link with the teacher privately.`,
       simulated: result.simulated,
       setupUrl: result.setupUrl,
     });
