@@ -1,6 +1,8 @@
 import { db } from '@/lib/db';
 import { gradeKey, subjectKey } from '@/lib/name-normalize';
+import { specialRoomType } from '@/lib/room-types';
 import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { teacherRequirementOf, type TeacherRequirement } from '@/lib/teacher-requirement';
 import { getDayConfig } from '@/lib/timetable-config';
 import { DAY_NAMES, periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
 
@@ -64,6 +66,8 @@ export interface AuditSubjectRule {
   maxPeriodsPerDay: number | null;
   allowConsecutive: boolean;
   requiredRoomType: string | null;
+  /** Unset means "required": a lesson without a teacher is an error. */
+  teacherRequirement?: TeacherRequirement | null;
   active: boolean;
 }
 
@@ -83,7 +87,8 @@ export interface AuditInput {
   sections: { grade: string; section: string }[];
   subjectRules: AuditSubjectRule[];
   teachers: AuditTeacher[];
-  rooms: { id: string; name: string; type: string }[];
+  /** maxParallelClasses: classes allowed in the room at once (unset = 1). */
+  rooms: { id: string; name: string; type: string; maxParallelClasses?: number | null }[];
   /** Teaching periods per day for each grade name, from the day configuration. */
   periodsByGrade: Record<string, Partial<Record<string, number>>>;
 }
@@ -156,7 +161,7 @@ export function auditTimetable(input: AuditInput): AuditIssue[] {
       issues.push({ rule: 'outside_bell', severity: 'error', grade: slot.grade, section: slot.section, day: slot.day, slotIds: [slot.id],
         message: `${classLabel(slot.grade, slot.section)}: ${slot.subject} on ${slot.day} P${slot.period}, but ${limit === undefined ? `${slot.day} is not a teaching day` : `${slot.day} has ${limit} periods`}` });
     }
-    if (!slot.teacherId) {
+    if (!slot.teacherId && teacherRequirementOf(ruleFor(slot.grade, slot.subject)?.teacherRequirement) === 'required') {
       issues.push({ rule: 'no_teacher', severity: 'error', grade: slot.grade, section: slot.section, day: slot.day, slotIds: [slot.id],
         message: `${classLabel(slot.grade, slot.section)}: ${slot.subject} on ${slot.day} P${slot.period} has no teacher` });
     }
@@ -169,10 +174,12 @@ export function auditTimetable(input: AuditInput): AuditIssue[] {
   }
   const realRoomSlots = input.slots.filter((s) => s.roomId && roomById.has(s.roomId));
   for (const rows of groupBy(realRoomSlots, (s) => `${s.roomId}|${s.day}|${s.period}`).values()) {
-    if (rows.length < 2) continue;
-    const { roomId, day, period } = rows[0];
+    const room = roomById.get(rows[0].roomId!)!;
+    const capacity = Math.max(1, room.maxParallelClasses ?? 1);
+    if (rows.length <= capacity) continue;
+    const { day, period } = rows[0];
     issues.push({ rule: 'room_slot', severity: 'error', day, slotIds: rows.map((r) => r.id),
-      message: `Room ${roomById.get(roomId!)!.name}: ${rows.length} classes on ${day} P${period} (${rows.map((r) => classLabel(r.grade, r.section)).join(', ')})` });
+      message: `Room ${room.name}: ${rows.length} classes on ${day} P${period}, room holds ${capacity} (${rows.map((r) => classLabel(r.grade, r.section)).join(', ')})` });
   }
   const unknownRooms = input.slots.filter((s) => s.roomId && !roomById.has(s.roomId));
   if (unknownRooms.length) {
@@ -233,7 +240,7 @@ export function auditTimetable(input: AuditInput): AuditIssue[] {
 
   // 6. Specialised rooms.
   for (const slot of input.slots) {
-    const needed = ruleFor(slot.grade, slot.subject)?.requiredRoomType;
+    const needed = specialRoomType(ruleFor(slot.grade, slot.subject)?.requiredRoomType);
     if (!needed) continue;
     const room = slot.roomId ? roomById.get(slot.roomId) : undefined;
     if (room && room.type === needed) continue;
@@ -300,7 +307,7 @@ export async function loadAuditInput(schoolId: string, versionId: string): Promi
     db.teacherWorkloadRule.findMany({ where: { schoolId, OR: [{ timetableVersionId: versionId }, { timetableVersionId: null }, { timetableVersionId: { isSet: false } }] } }),
     db.schoolPreferences.findUnique({ where: { schoolId } }),
     db.teacherAvailabilitySlot.findMany({ where: { schoolId, timetableVersionId: versionId } }),
-    db.room.findMany({ where: { schoolId, active: true }, select: { id: true, name: true, type: true } }),
+    db.room.findMany({ where: { schoolId, active: true }, select: { id: true, name: true, type: true, maxParallelClasses: true } }),
   ]);
 
   const gradeNames = [...new Set([...slots.map((s) => s.grade), ...sections.map((s) => s.grade), ...configs.map((c) => c.grade)])];
@@ -347,6 +354,7 @@ export async function loadAuditInput(schoolId: string, versionId: string): Promi
       maxPeriodsPerDay: c.maxPeriodsPerDay ?? null,
       allowConsecutive: c.allowConsecutive,
       requiredRoomType: c.requiredRoomType ?? null,
+      teacherRequirement: teacherRequirementOf(c.teacherRequirement),
       active: c.active,
     })),
     teachers: auditTeachers,

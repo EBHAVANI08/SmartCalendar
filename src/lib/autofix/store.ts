@@ -38,10 +38,11 @@ export async function loadSnapshot(schoolId: string, options: { protectedConfigI
     db.teacherQualification.findMany({ where: { schoolId, teacherId: { in: teacherIds } }, select: { id: true, teacherId: true, subjectId: true } }),
     db.autoFixLog.findMany({ where: { schoolId, undoneAt: { not: null } }, select: { suppressKey: true } }),
   ]);
-  const [mergeRules, gradeCounts, subjectCounts] = await Promise.all([
+  const [mergeRules, gradeCounts, subjectCounts, rooms] = await Promise.all([
     db.mergeRule.findMany({ where: { schoolId }, select: { id: true, kind: true, from: true, to: true }, orderBy: { createdAt: 'asc' } }),
     db.schedule.groupBy({ by: ['grade'], where: { schoolId }, _count: { _all: true } }),
     db.schedule.groupBy({ by: ['subject'], where: { schoolId }, _count: { _all: true } }),
+    db.room.findMany({ where: { schoolId, active: true }, select: { type: true } }),
   ]);
 
   return {
@@ -71,6 +72,7 @@ export async function loadSnapshot(schoolId: string, options: { protectedConfigI
       priority: c.priority,
       allowConsecutive: c.allowConsecutive,
       requiredRoomType: c.requiredRoomType ?? null,
+      teacherRequirement: c.teacherRequirement ?? null,
       active: c.active,
       archivedAt: iso(c.archivedAt),
       source: c.source ?? null,
@@ -91,6 +93,7 @@ export async function loadSnapshot(schoolId: string, options: { protectedConfigI
       subjects: Object.fromEntries(subjectCounts.map((row) => [row.subject, row._count._all])),
     },
     protectedConfigIds: options.protectedConfigIds ?? [],
+    roomTypes: [...new Set(rooms.map((r) => r.type))],
   };
 }
 

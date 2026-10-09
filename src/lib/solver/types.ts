@@ -1,3 +1,5 @@
+import type { TeacherRequirement } from '@/lib/teacher-requirement';
+
 /**
  * Solver input and output. Everything a school decides arrives here as data
  * (week shape, quotas, daily limits, double-period permission, room needs,
@@ -28,6 +30,8 @@ export interface SolverRequirement {
   core: boolean;
   /** Teachers allowed to teach this class this subject, in preference order. */
   teacherIds: string[];
+  /** "none": no teacher and no room; "optional": a teacher when one is free. */
+  teacherRequirement: TeacherRequirement;
 }
 
 export interface SolverTeacher {
@@ -43,6 +47,8 @@ export interface SolverTeacher {
 export interface SolverRoom {
   id: string;
   type: string;
+  /** Classes that may use the room in the same period; unset means 1. */
+  maxParallelClasses?: number | null;
 }
 
 export interface SolverLesson {
@@ -50,7 +56,8 @@ export interface SolverLesson {
   day: string;
   period: number;
   subject: string;
-  teacherId: string;
+  /** Null only for subjects whose teacherRequirement is not "required". */
+  teacherId: string | null;
   roomId: string | null;
   locked: boolean;
 }

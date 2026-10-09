@@ -25,6 +25,20 @@ export const ROOM_TYPES = [
 
 export type RoomTypeId = (typeof ROOM_TYPES)[number]['id'];
 
+/**
+ * The ordinary room type. A subject that "requires" it has no special room
+ * need: its lessons use the class's own room (or none), like any subject
+ * without a requirement. Auto-fix resets impossible requirements to it.
+ */
+export const ORDINARY_ROOM_TYPE: RoomTypeId = 'classroom';
+
+/** The room type a lesson really needs, or null when any ordinary room will do. */
+export function specialRoomType(requiredRoomType: string | null | undefined): string | null {
+  const value = requiredRoomType?.trim();
+  return value && value !== ORDINARY_ROOM_TYPE ? value : null;
+}
+
+
 const TYPE_IDS = new Set<string>(ROOM_TYPES.map((t) => t.id));
 
 export function isKnownRoomType(value: string | null | undefined): value is RoomTypeId {

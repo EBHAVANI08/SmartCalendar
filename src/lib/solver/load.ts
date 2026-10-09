@@ -1,8 +1,10 @@
 import { db } from '@/lib/db';
 import { teacherTeachesSection } from '@/lib/faculty';
 import { gradeKey, subjectKey } from '@/lib/name-normalize';
+import { specialRoomType } from '@/lib/room-types';
 import { NOT_ARCHIVED } from '@/lib/soft-delete';
 import { teacherQualifiedFor } from '@/lib/staffing';
+import { teacherRequirementOf } from '@/lib/teacher-requirement';
 import { getDayConfig } from '@/lib/timetable-config';
 import { DAY_NAMES, periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
 import type { SolverClass, SolverInput, SolverLesson, SolverRequirement, SolverTeacher } from '@/lib/solver/types';
@@ -52,7 +54,7 @@ export async function loadSolverInput(schoolId: string, options: LoadOptions = {
     }),
     db.schoolPreferences.findUnique({ where: { schoolId } }),
     versionId ? db.teacherAvailabilitySlot.findMany({ where: { schoolId, timetableVersionId: versionId } }) : Promise.resolve([]),
-    db.room.findMany({ where: { schoolId, active: true }, select: { id: true, type: true } }),
+    db.room.findMany({ where: { schoolId, active: true }, select: { id: true, type: true, maxParallelClasses: true } }),
     versionId
       ? db.schedule.findMany({ where: { schoolId, timetableVersionId: versionId, locked: true }, select: { grade: true, section: true, day: true, period: true, subject: true, teacherId: true, roomId: true } })
       : Promise.resolve([]),
@@ -99,15 +101,17 @@ export async function loadSolverInput(schoolId: string, options: LoadOptions = {
     const own = rulesFor(cls.grade);
     if (!own.length) skipped.push({ grade: cls.grade, section: cls.section, reason: 'No active subject has a weekly quota for this grade.' });
     for (const rule of own) {
+      const teacherRequirement = teacherRequirementOf(rule.teacherRequirement);
       requirements.push({
         classKey: cls.key,
         subject: rule.subjectName,
         weeklyPeriods: rule.weeklyPeriods,
         maxPerDay: rule.maxPeriodsPerDay ?? 1,
         allowConsecutive: Boolean(rule.allowConsecutive),
-        requiredRoomType: rule.requiredRoomType ?? null,
+        requiredRoomType: teacherRequirement === 'none' ? null : specialRoomType(rule.requiredRoomType),
+        teacherRequirement,
         core: String(rule.priority ?? '').toLowerCase() === 'core',
-        teacherIds: teachers
+        teacherIds: teacherRequirement === 'none' ? [] : teachers
           .filter((t) => teacherQualifiedFor(t, rule.subjectName, cls.grade) && teacherTeachesSection(t.sections, cls.grade, cls.section, rule.subjectName))
           .map((t) => t.id),
       });
@@ -142,12 +146,12 @@ export async function loadSolverInput(schoolId: string, options: LoadOptions = {
   // ── Locked rows of the version, kept exactly ──────────────────────────────
   const classKeys = new Set(classes.map((c) => c.key));
   const locked: SolverLesson[] = lockedRows
-    .filter((row) => row.teacherId && classKeys.has(`${row.grade}|${row.section}`))
+    .filter((row) => classKeys.has(`${row.grade}|${row.section}`))
     .map((row) => {
       const classKey = `${row.grade}|${row.section}`;
       // Count the locked row against its quota even when spelled differently.
       const subject = requirements.find((r) => r.classKey === classKey && subjectKey(r.subject) === subjectKey(row.subject))?.subject ?? row.subject;
-      return { classKey, day: row.day, period: row.period, subject, teacherId: row.teacherId!, roomId: row.roomId ?? null, locked: true };
+      return { classKey, day: row.day, period: row.period, subject, teacherId: row.teacherId ?? null, roomId: row.roomId ?? null, locked: true };
     });
 
   return { input: { classes, requirements, teachers: solverTeachers, rooms, locked }, skipped, assumedTeachers };

@@ -35,7 +35,8 @@ export type RuleId =
   | 'break_zero_minutes'
   | 'break_out_of_range'
   | 'break_same_period'
-  | 'over_capacity';
+  | 'over_capacity'
+  | 'room_type_missing';
 
 export interface Fix {
   rule: RuleId;
@@ -74,6 +75,8 @@ export interface SubjectConfigRow {
   allowConsecutive: boolean;
   /** Room type the subject needs (lab etc.); null means any room. */
   requiredRoomType: string | null;
+  /** Read only: "required" (default), "optional" or "none". */
+  teacherRequirement?: string | null;
   active: boolean;
   archivedAt: string | null;
   source: string | null;
@@ -167,6 +170,8 @@ export interface Snapshot {
   scheduleCounts: { grades: Record<string, number>; subjects: Record<string, number> };
   /** Config rows the caller says must not be changed (e.g. the row an admin just edited). */
   protectedConfigIds: string[];
+  /** Types of the school's active rooms (read only). */
+  roomTypes: string[];
 }
 
 export interface EngineResult {

@@ -10,8 +10,10 @@ import type {
  * per class+subject per day at most maxPerDay; exactly weeklyPeriods (never
  * more; anything that cannot be placed is reported, never padded); teacher
  * weekly/daily/consecutive caps and unavailable slots; double periods only
- * when allowed and only as pairs; specialised rooms of the required type;
- * locked lessons untouched.
+ * when allowed and only as pairs; specialised rooms of the required type,
+ * at most maxParallelClasses classes per room; locked lessons untouched.
+ * Subjects whose teacherRequirement is "none" get no teacher and no room;
+ * "optional" ones get a qualified free teacher when there is one.
  *
  * Soft goals (scored): spread a subject over distinct days, vary the period
  * number, few teacher gaps, balanced teacher days, core subjects earlier.
@@ -64,6 +66,7 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   const rand = random(seed);
   const classByKey = new Map(input.classes.map((c) => [c.key, c]));
   const teacherById = new Map(input.teachers.map((t) => [t.id, t]));
+  const roomCapacity = new Map(input.rooms.map((r) => [r.id, Math.max(1, r.maxParallelClasses ?? 1)]));
   const roomsByType = new Map<string, string[]>();
   for (const room of input.rooms) {
     if (!roomsByType.has(room.type)) roomsByType.set(room.type, []);
@@ -74,7 +77,7 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   const lessons: (SolverLesson | null)[] = [];
   const classSlot = new Map<string, number>();        // class|day|period → lesson index
   const teacherSlot = new Map<string, number>();      // teacher|day|period → lesson index
-  const roomSlot = new Map<string, number>();         // room|day|period → lesson index
+  const roomUse = new Map<string, number>();          // room|day|period → classes in it
   const teacherDayPeriods = new Map<string, number[]>(); // teacher|day → periods
   const teacherWeek = new Map<string, number>();
   const subjectDayPeriods = new Map<string, number[]>(); // class|subject|day → periods
@@ -97,10 +100,12 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   function index_(lesson: SolverLesson, index: number) {
     const k = slotKey(lesson.day, lesson.period);
     classSlot.set(`${lesson.classKey}|${k}`, index);
-    teacherSlot.set(`${lesson.teacherId}|${k}`, index);
-    if (lesson.roomId) roomSlot.set(`${lesson.roomId}|${k}`, index);
-    pushTo(teacherDayPeriods, `${lesson.teacherId}|${lesson.day}`, lesson.period);
-    teacherWeek.set(lesson.teacherId, (teacherWeek.get(lesson.teacherId) ?? 0) + 1);
+    if (lesson.roomId) roomUse.set(`${lesson.roomId}|${k}`, (roomUse.get(`${lesson.roomId}|${k}`) ?? 0) + 1);
+    if (lesson.teacherId) {
+      teacherSlot.set(`${lesson.teacherId}|${k}`, index);
+      pushTo(teacherDayPeriods, `${lesson.teacherId}|${lesson.day}`, lesson.period);
+      teacherWeek.set(lesson.teacherId, (teacherWeek.get(lesson.teacherId) ?? 0) + 1);
+    }
     pushTo(subjectDayPeriods, `${lesson.classKey}|${lesson.subject}|${lesson.day}`, lesson.period);
     const use = subjectPeriodUse.get(`${lesson.classKey}|${lesson.subject}`) ?? new Set<number>();
     use.add(lesson.period);
@@ -110,10 +115,12 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
     const lesson = lessons[index]!;
     const k = slotKey(lesson.day, lesson.period);
     classSlot.delete(`${lesson.classKey}|${k}`);
-    teacherSlot.delete(`${lesson.teacherId}|${k}`);
-    if (lesson.roomId) roomSlot.delete(`${lesson.roomId}|${k}`);
-    removeFrom(teacherDayPeriods, `${lesson.teacherId}|${lesson.day}`, lesson.period);
-    teacherWeek.set(lesson.teacherId, (teacherWeek.get(lesson.teacherId) ?? 1) - 1);
+    if (lesson.roomId) roomUse.set(`${lesson.roomId}|${k}`, (roomUse.get(`${lesson.roomId}|${k}`) ?? 1) - 1);
+    if (lesson.teacherId) {
+      teacherSlot.delete(`${lesson.teacherId}|${k}`);
+      removeFrom(teacherDayPeriods, `${lesson.teacherId}|${lesson.day}`, lesson.period);
+      teacherWeek.set(lesson.teacherId, (teacherWeek.get(lesson.teacherId) ?? 1) - 1);
+    }
     removeFrom(subjectDayPeriods, `${lesson.classKey}|${lesson.subject}|${lesson.day}`, lesson.period);
     const stillUsed = lessons.some((other, i) => i !== index && other && other.classKey === lesson.classKey && other.subject === lesson.subject && other.period === lesson.period);
     if (!stillUsed) subjectPeriodUse.get(`${lesson.classKey}|${lesson.subject}`)?.delete(lesson.period);
@@ -128,27 +135,32 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   // ── Hard checks ───────────────────────────────────────────────────────────
   /** The room a lesson would use at this slot, or undefined when none is free. */
   function roomFor(req: SolverRequirement, day: string, period: number): string | null | undefined {
+    if (req.teacherRequirement === 'none') return null;
     const k = slotKey(day, period);
-    if (req.requiredRoomType) {
-      return (roomsByType.get(req.requiredRoomType) ?? []).find((id) => !roomSlot.has(`${id}|${k}`));
-    }
+    const free = (id: string) => (roomUse.get(`${id}|${k}`) ?? 0) < (roomCapacity.get(id) ?? 1);
+    if (req.requiredRoomType) return (roomsByType.get(req.requiredRoomType) ?? []).find(free);
     const home = classByKey.get(req.classKey)?.homeRoomId ?? null;
-    return home && !roomSlot.has(`${home}|${k}`) ? home : null;
+    return home && free(home) ? home : null;
   }
 
-  function feasible(req: SolverRequirement, teacherId: string, day: string, period: number): { ok: true; roomId: string | null } | { ok: false } {
+  /** teacherId null: a lesson without a teacher (subjects that do not require one). */
+  function feasible(req: SolverRequirement, teacherId: string | null, day: string, period: number): { ok: true; roomId: string | null } | { ok: false } {
     const cls = classByKey.get(req.classKey);
     const dayShape = cls?.days.find((d) => d.day === day);
     if (!dayShape || period < 1 || period > dayShape.periods) return { ok: false };
     const k = slotKey(day, period);
     if (classSlot.has(`${req.classKey}|${k}`)) return { ok: false };
-    if (teacherSlot.has(`${teacherId}|${k}`) || unavailable.has(`${teacherId}|${k}`)) return { ok: false };
-    const teacher = teacherById.get(teacherId);
-    if (!teacher || !hasCaps(teacher)) return { ok: false };
-    if (teacher.maxWeekly !== null && (teacherWeek.get(teacherId) ?? 0) >= teacher.maxWeekly) return { ok: false };
-    const dayPeriods = teacherDayPeriods.get(`${teacherId}|${day}`) ?? [];
-    if (teacher.maxDaily !== null && dayPeriods.length >= teacher.maxDaily) return { ok: false };
-    if (teacher.maxConsecutive !== null && longestRun([...dayPeriods, period]) > teacher.maxConsecutive) return { ok: false };
+    if (teacherId) {
+      if (teacherSlot.has(`${teacherId}|${k}`) || unavailable.has(`${teacherId}|${k}`)) return { ok: false };
+      const teacher = teacherById.get(teacherId);
+      if (!teacher || !hasCaps(teacher)) return { ok: false };
+      if (teacher.maxWeekly !== null && (teacherWeek.get(teacherId) ?? 0) >= teacher.maxWeekly) return { ok: false };
+      const dayPeriods = teacherDayPeriods.get(`${teacherId}|${day}`) ?? [];
+      if (teacher.maxDaily !== null && dayPeriods.length >= teacher.maxDaily) return { ok: false };
+      if (teacher.maxConsecutive !== null && longestRun([...dayPeriods, period]) > teacher.maxConsecutive) return { ok: false };
+    } else if (req.teacherRequirement === 'required') {
+      return { ok: false };
+    }
     const subjectPeriods = subjectDayPeriods.get(`${req.classKey}|${req.subject}|${day}`) ?? [];
     if (subjectPeriods.length >= req.maxPerDay) return { ok: false };
     const adjacent = subjectPeriods.some((p) => Math.abs(p - period) === 1);
@@ -159,12 +171,12 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   }
 
   // ── Soft score ────────────────────────────────────────────────────────────
-  function score(req: SolverRequirement, teacherId: string, day: string, period: number, maxPeriods: number): number {
+  function score(req: SolverRequirement, teacherId: string | null, day: string, period: number, maxPeriods: number): number {
     let value = 0;
     const sameDay = subjectDayPeriods.get(`${req.classKey}|${req.subject}|${day}`)?.length ?? 0;
     value += sameDay === 0 ? 50 : -40;                                     // spread over distinct days
     if (subjectPeriodUse.get(`${req.classKey}|${req.subject}`)?.has(period)) value -= 12; // vary the period number
-    const dayPeriods = teacherDayPeriods.get(`${teacherId}|${day}`) ?? [];
+    const dayPeriods = teacherId ? teacherDayPeriods.get(`${teacherId}|${day}`) ?? [] : [];
     if (dayPeriods.length) {
       const gaps = (list: number[]) => (list.length < 2 ? 0 : Math.max(...list) - Math.min(...list) + 1 - list.length);
       value -= 8 * (gaps([...dayPeriods, period]) - gaps(dayPeriods));     // fewer teacher gaps
@@ -181,11 +193,13 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
 
   // ── Teacher per class+subject: one teacher, within weekly capacity ─────────
   const unallocated: Unallocated[] = [];
-  const primary = new Map<SolverRequirement, string>();
+  const primary = new Map<SolverRequirement, string | null>();
   const planned = new Map<string, number>(input.teachers.map((t) => [t.id, teacherWeek.get(t.id) ?? 0]));
   const usable = (req: SolverRequirement) => req.teacherIds.filter((id) => { const t = teacherById.get(id); return t && hasCaps(t); });
   const need = (req: SolverRequirement) => Math.max(0, req.weeklyPeriods - (lockedCount.get(`${req.classKey}|${req.subject}`) ?? 0));
+  const needsTeacher = (req: SolverRequirement) => req.teacherRequirement === 'required';
   const ordered = [...input.requirements].sort((a, b) =>
+    Number(needsTeacher(b)) - Number(needsTeacher(a)) ||
     Number(Boolean(b.requiredRoomType)) - Number(Boolean(a.requiredRoomType))
     || usable(a).length - usable(b).length
     || need(b) - need(a)
@@ -194,6 +208,11 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   for (const req of ordered) {
     const count = need(req);
     if (!count) continue;
+    if (req.teacherRequirement === 'none' || (req.teacherRequirement === 'optional' && !usable(req).length)) {
+      primary.set(req, null);
+      active.push(req);
+      continue;
+    }
     if (!req.teacherIds.length) {
       unallocated.push({ classKey: req.classKey, subject: req.subject, periods: count, reason: 'no_qualified_teacher', detail: 'No teacher in the Faculty Directory is qualified for this subject in this class.' });
       continue;
@@ -216,9 +235,11 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   const remaining = new Map(active.map((req) => [req, need(req)]));
   const failed = new Map<SolverRequirement, number>();
 
-  function teachersFor(req: SolverRequirement): string[] {
-    const first = primary.get(req)!;
-    return [first, ...usable(req).filter((id) => id !== first)];
+  /** Teachers to try, in order; null (no teacher) comes last and only when the subject allows it. */
+  function teachersFor(req: SolverRequirement, first: string | null = primary.get(req) ?? null): (string | null)[] {
+    if (req.teacherRequirement === 'none') return [null];
+    const ids = [...(first ? [first] : []), ...usable(req).filter((id) => id !== first)];
+    return req.teacherRequirement === 'optional' ? [...ids, null] : ids;
   }
 
   function placeBest(req: SolverRequirement): boolean {
@@ -248,7 +269,7 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
     const req = input.requirements.find((r) => r.classKey === lesson.classKey && r.subject === lesson.subject);
     if (!req) return false;
     const cls = classByKey.get(req.classKey)!;
-    for (const teacherId of [lesson.teacherId, ...usable(req).filter((id) => id !== lesson.teacherId)]) {
+    for (const teacherId of teachersFor(req, lesson.teacherId)) {
       for (const { day, periods } of cls.days) {
         for (let period = 1; period <= periods; period++) {
           if (day === lesson.day && period === lesson.period) continue;
@@ -272,7 +293,7 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
         for (let period = 1; period <= periods; period++) {
           if (attempts++ > SOLVER_REPAIR_ATTEMPTS_PER_LESSON) return false;
           const k = slotKey(day, period);
-          const blockers = [...new Set([classSlot.get(`${req.classKey}|${k}`), teacherSlot.get(`${teacherId}|${k}`)].filter((i): i is number => i !== undefined))];
+          const blockers = [...new Set([classSlot.get(`${req.classKey}|${k}`), teacherId ? teacherSlot.get(`${teacherId}|${k}`) : undefined].filter((i): i is number => i !== undefined))];
           if (!blockers.length || blockers.some((i) => lessons[i]!.locked)) continue;
           const removed = blockers.map((i) => ({ index: i, lesson: remove(i) }));
           const check = feasible(req, teacherId, day, period);
@@ -322,7 +343,7 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
     } else if (req.requiredRoomType && !(roomsByType.get(req.requiredRoomType)?.length)) {
       reason = 'no_room_of_type';
       detail = `The school has no room of type "${req.requiredRoomType}".`;
-    } else if (usable(req).every((id) => { const t = teacherById.get(id)!; return t.maxWeekly !== null && (teacherWeek.get(id) ?? 0) >= t.maxWeekly; })) {
+    } else if (needsTeacher(req) && usable(req).every((id) => { const t = teacherById.get(id)!; return t.maxWeekly !== null && (teacherWeek.get(id) ?? 0) >= t.maxWeekly; })) {
       reason = 'teacher_capacity';
       detail = 'Every qualified teacher is at their weekly limit.';
     }

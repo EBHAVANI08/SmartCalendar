@@ -18,6 +18,7 @@ import { auditTimetable, auditVersion, loadAuditInput, type AuditIssue } from '.
 import { loadSolverInput } from '../src/lib/solver/load';
 import { solve } from '../src/lib/solver/solve';
 import { toAuditInput } from '../src/lib/solver/to-audit';
+import { timetableMetrics, type TimetableMetrics } from '../src/lib/timetable-metrics';
 
 function parseArgs(argv: string[]) {
   const options = {
@@ -76,6 +77,7 @@ async function main() {
   const result = solve(loaded.input, { seed: options.seed });
   const elapsed = ((Date.now() - started) / 1000).toFixed(1);
   const auditInput = await loadAuditInput(options.schoolId, version.id);
+  const publishedSlots = auditInput.slots;
   auditInput.slots = toAuditInput(loaded.input, result).slots;
   if (options.assumeDefaults) {
     const assumed = new Set(loaded.assumedTeachers);
@@ -118,6 +120,28 @@ async function main() {
     byRule,
     issues,
   }, options.limit);
+
+  // Same rules and caps for both columns; only the lessons differ.
+  const before = timetableMetrics({ ...auditInput, slots: publishedSlots });
+  const after = timetableMetrics(auditInput);
+  const rows: [string, (m: TimetableMetrics) => string][] = [
+    ['lessons placed', (m) => String(m.lessons)],
+    ['same subject 2+ times a day (cases)', (m) => String(m.repeatCases)],
+    ['  of which 3+ times', (m) => String(m.repeatCases3)],
+    ['max times one subject in a day', (m) => String(m.maxRepeat)],
+    ['teachers over weekly cap', (m) => String(m.teachersOverWeekly)],
+    ['teachers over daily cap', (m) => String(m.teachersOverDaily)],
+    ['teachers over consecutive cap', (m) => String(m.teachersOverConsecutive)],
+    ['teachers over any cap', (m) => String(m.teachersOverAnyCap)],
+    ['teachers with no caps at all', (m) => String(m.teachersWithoutCaps)],
+    ['max consecutive (any teacher)', (m) => String(m.maxConsecutive)],
+    ['periods without a required teacher', (m) => String(m.missingRequiredTeacher)],
+    ['classes covered', (m) => `${m.classesCovered} of ${m.classesTotal}`],
+    ['subject quotas met exactly', (m) => `${m.quotasExact} of ${m.quotasTotal}`],
+  ];
+  console.log(`\nCOMPARISON (same rules and caps): v${version.version} as stored vs simulation`);
+  console.log(`  ${'metric'.padEnd(38)} ${('v' + version.version).padStart(10)} ${'simulated'.padStart(12)}`);
+  for (const [label, value] of rows) console.log(`  ${label.padEnd(38)} ${value(before).padStart(10)} ${value(after).padStart(12)}`);
 
   console.log(`\nUNALLOCATED (${unplaced} period(s)) by reason:`);
   const byReason = new Map<string, typeof result.unallocated>();

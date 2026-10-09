@@ -31,7 +31,7 @@ function snapshot(partial: Partial<Snapshot> = {}): Snapshot {
       startTime: '09:00', endTime: '14:00', breakEnabled: true, breakAfter: 2, breakMinutes: 10, lunchEnabled: true, lunchAfter: 4, lunchMinutes: 30, gradeConfigs: '{}',
     },
     subjectConfigs: [], subjectMasters: [], classSections: [], teachers: [], editableSchedules: [], teacherQualifications: [],
-    frozenGrades: [], suppressed: [], mergeRules: [], scheduleCounts: { grades: {}, subjects: {} }, protectedConfigIds: [],
+    frozenGrades: [], suppressed: [], mergeRules: [], scheduleCounts: { grades: {}, subjects: {} }, protectedConfigIds: [], roomTypes: [],
     ...partial,
   };
 }
@@ -323,4 +323,15 @@ test('tier 3: auto-fix can never write credentials, roles or timetable assignmen
   assert.throws(() => assertWritable({ model: 'teacher', id: 't', before: {}, after: { role: 'admin' } }));
   assert.throws(() => assertWritable({ model: 'schedule', id: 'r', before: {}, after: { teacherId: 'x' } }));
   assert.doesNotThrow(() => assertWritable({ model: 'schedule', id: 'r', before: {}, after: { subject: 'x' } }));
+});
+
+test('a required room type the school has none of is reset to an ordinary classroom (tier 2)', () => {
+  const lab = { ...config('Grade 1', 'Alpha', 2), requiredRoomType: 'lab_x' };
+  const ok = { ...config('Grade 1', 'Beta', 2), requiredRoomType: 'hall_y' };
+  const result = runEngine(snapshot({ subjectConfigs: [lab, ok], roomTypes: ['hall_y'] }), { now: NOW });
+  const fixes = result.fixes.filter((f) => f.rule === 'room_type_missing');
+  assert.equal(fixes.length, 1);
+  assert.equal(fixes[0].tier, 2);
+  assert.deepEqual(fixes[0].changes[0].after, { requiredRoomType: 'classroom' });
+  assert.equal(result.after.subjectConfigs.find((c) => c.subjectName === 'Beta')!.requiredRoomType, 'hall_y');
 });

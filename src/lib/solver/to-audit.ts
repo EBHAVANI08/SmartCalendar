@@ -22,13 +22,14 @@ export function toAuditInput(input: SolverInput, result: SolverResult, rooms?: A
       maxPeriodsPerDay: r.maxPerDay,
       allowConsecutive: r.allowConsecutive,
       requiredRoomType: r.requiredRoomType,
+      teacherRequirement: r.teacherRequirement,
       active: true,
     })),
     teachers: input.teachers.map((t) => ({
       ...t,
       limitSource: t.maxWeekly !== null || t.maxDaily !== null || t.maxConsecutive !== null ? 'personal' as const : 'missing' as const,
     })),
-    rooms: rooms ?? input.rooms.map((r) => ({ id: r.id, name: r.id, type: r.type })),
+    rooms: rooms ?? input.rooms.map((r) => ({ id: r.id, name: r.id, type: r.type, maxParallelClasses: r.maxParallelClasses })),
     periodsByGrade,
   };
 }

@@ -145,6 +145,10 @@ model GradeSubjectConfig {
   /// Room type this subject requires for this grade, e.g. "physics_lab".
   /// Null means any room. Data, so lab requirements are never hardcoded.
   requiredRoomType   String?
+  /// Whether a lesson of this subject needs a teacher: "required" (default),
+  /// "optional" (a qualified free teacher if any, else none) or "none" (e.g. a
+  /// free period: no teacher, no room). Null means "required".
+  teacherRequirement String?  @default("required")
   active             Boolean  @default(true)
   /// Soft delete: set (with active = false) when an auto-fix merges this row
   /// into another. Archived rows are never read as live setup.
@@ -596,6 +600,9 @@ model Room {
   /// JSON map of day -> period numbers the room cannot be used (maintenance,
   /// assembly, external booking). Null means always available.
   unavailablePeriods Json?
+  /// Classes that may use the room in the same period (a hall or ground can
+  /// hold several). Null means 1.
+  maxParallelClasses Int?    @default(1)
   active            Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

@@ -30,6 +30,7 @@ const RULE_LABELS: Record<string, string> = {
   break_out_of_range: 'Break position',
   break_same_period: 'Break and lunch together',
   over_capacity: 'Weekly periods balanced',
+  room_type_missing: 'Room type not available',
   merge_rule: 'School merge rule',
 };
 

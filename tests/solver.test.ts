@@ -15,6 +15,7 @@ interface SubjectSpec {
   allowConsecutive?: boolean;
   roomType?: string;
   core?: boolean;
+  teacherRequirement?: 'required' | 'optional' | 'none';
   /** Number of teachers and each one's caps. */
   teachers: number;
   caps: { maxWeekly: number; maxDaily: number; maxConsecutive: number };
@@ -25,7 +26,7 @@ function school(options: {
   sections: string[];
   days: { day: string; periods: number }[];
   subjects: SubjectSpec[];
-  rooms?: { id: string; type: string }[];
+  rooms?: { id: string; type: string; maxParallelClasses?: number }[];
   homeRooms?: boolean;
 }): SolverInput {
   const classes = options.grades.flatMap((grade) => options.sections.map((section) => ({
@@ -36,7 +37,7 @@ function school(options: {
   })));
   const requirements = classes.flatMap((c) => options.subjects.map((s) => ({
     classKey: c.key, subject: s.name, weeklyPeriods: s.weekly, maxPerDay: s.maxPerDay, allowConsecutive: Boolean(s.allowConsecutive),
-    requiredRoomType: s.roomType ?? null, core: Boolean(s.core), teacherIds: teachers.filter((t) => t.id.startsWith(`${s.name}-t`)).map((t) => t.id),
+    requiredRoomType: s.roomType ?? null, core: Boolean(s.core), teacherRequirement: s.teacherRequirement ?? 'required' as const, teacherIds: teachers.filter((t) => t.id.startsWith(`${s.name}-t`)).map((t) => t.id),
   })));
   const rooms = [
     ...(options.rooms ?? []),
@@ -139,9 +140,9 @@ test('impossible demands are listed with a reason, never padded or forced', () =
     ],
   });
   input.teachers.push({ id: 'norule', name: 'No rule', maxWeekly: null, maxDaily: null, maxConsecutive: null, unavailable: [] });
-  input.requirements.push({ classKey: 'G1|A', subject: 'Reading', weeklyPeriods: 1, maxPerDay: 1, allowConsecutive: false, requiredRoomType: null, core: false, teacherIds: ['norule'] });
-  input.requirements.push({ classKey: 'G1|A', subject: 'Writing', weeklyPeriods: 6, maxPerDay: 1, allowConsecutive: false, requiredRoomType: null, core: false, teacherIds: ['Maths-t1'] });
-  input.requirements.push({ classKey: 'G1|A', subject: 'Dance', weeklyPeriods: 1, maxPerDay: 1, allowConsecutive: false, requiredRoomType: null, core: false, teacherIds: [] });
+  input.requirements.push({ classKey: 'G1|A', subject: 'Reading', weeklyPeriods: 1, maxPerDay: 1, allowConsecutive: false, requiredRoomType: null, core: false, teacherRequirement: 'required' as const, teacherIds: ['norule'] });
+  input.requirements.push({ classKey: 'G1|A', subject: 'Writing', weeklyPeriods: 6, maxPerDay: 1, allowConsecutive: false, requiredRoomType: null, core: false, teacherRequirement: 'required' as const, teacherIds: ['Maths-t1'] });
+  input.requirements.push({ classKey: 'G1|A', subject: 'Dance', weeklyPeriods: 1, maxPerDay: 1, allowConsecutive: false, requiredRoomType: null, core: false, teacherRequirement: 'required' as const, teacherIds: [] });
   const result = solve(input);
   const reasons = Object.fromEntries(result.unallocated.map((u) => [u.subject, u.reason]));
   assert.equal(reasons.Science, 'no_room_of_type');
@@ -176,4 +177,43 @@ test('same seed gives the same timetable', () => {
     { name: 'Arts', weekly: 5, maxPerDay: 1, teachers: 2, caps: caps(20, 5, 3) },
   ] });
   assert.deepEqual(solve(input, { seed: 7 }).lessons, solve(input, { seed: 7 }).lessons);
+});
+
+test('subjects without a required teacher, and rooms that hold several classes', () => {
+  const input = school({
+    grades: ['G1'], sections: ['A', 'B', 'C'], days: weekdays(6), homeRooms: true,
+    rooms: [{ id: 'hall-1', type: 'hall', maxParallelClasses: 3 }],
+    subjects: [
+      { name: 'Maths', weekly: 6, maxPerDay: 2, teachers: 2, caps: caps(20, 5, 3) },
+      { name: 'Assembly', weekly: 5, maxPerDay: 1, roomType: 'hall', teachers: 3, caps: caps(20, 5, 3) },
+      { name: 'Free', weekly: 4, maxPerDay: 1, teacherRequirement: 'none', teachers: 0, caps: caps(1, 1, 1) },
+      { name: 'Reading', weekly: 5, maxPerDay: 1, teacherRequirement: 'optional', teachers: 1, caps: caps(6, 2, 2) },
+    ],
+  });
+  const result = solve(input);
+  assert.deepEqual(hardViolations(input, result).map((v) => v.message), []);
+  assert.equal(result.unallocated.length, 0, JSON.stringify(result.unallocated));
+  const free = result.lessons.filter((l) => l.subject === 'Free');
+  assert.equal(free.length, 12);
+  assert.ok(free.every((l) => l.teacherId === null && l.roomId === null), 'no teacher and no room');
+  const reading = result.lessons.filter((l) => l.subject === 'Reading');
+  assert.equal(reading.filter((l) => l.teacherId).length, 6, 'the optional teacher is used up to their cap');
+  assert.equal(reading.filter((l) => !l.teacherId).length, 9, 'the rest are placed without a teacher');
+  const perHallSlot = new Map<string, number>();
+  for (const l of result.lessons.filter((l) => l.roomId === 'hall-1')) perHallSlot.set(`${l.day}|${l.period}`, (perHallSlot.get(`${l.day}|${l.period}`) ?? 0) + 1);
+  assert.ok([...perHallSlot.values()].every((n) => n <= 3));
+});
+
+test('the validator flags a missing teacher only when the subject requires one', () => {
+  const input = school({ grades: ['G1'], sections: ['A'], days: weekdays(2), subjects: [
+    { name: 'Maths', weekly: 5, maxPerDay: 1, teachers: 1, caps: caps(20, 5, 3) },
+    { name: 'Free', weekly: 5, maxPerDay: 1, teacherRequirement: 'none', teachers: 0, caps: caps(1, 1, 1) },
+  ] });
+  const lessons = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'].flatMap((day) => [
+    { classKey: 'G1|A', day, period: 1, subject: 'Maths', teacherId: null, roomId: null, locked: false },
+    { classKey: 'G1|A', day, period: 2, subject: 'Free', teacherId: null, roomId: null, locked: false },
+  ]);
+  const issues = auditTimetable(toAuditInput(input, { lessons, unallocated: [], score: 0, stats: { placed: 10, required: 10, repairs: 0 } }));
+  assert.deepEqual([...new Set(issues.map((i) => i.rule))], ['no_teacher']);
+  assert.equal(issues.length, 5, 'only the Maths lessons');
 });

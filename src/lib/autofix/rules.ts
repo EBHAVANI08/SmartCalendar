@@ -5,6 +5,8 @@ import { renameListColumn, type NameKind } from '@/lib/autofix/rename';
 import { AUTO_CREATED_MIN_ROWS, UNEDITED_TOLERANCE_MS } from '@/lib/scheduling-constants';
 import { buildTeachingGrid, longestDayPeriods, validateBellConfig, workingDayNames } from '@/lib/timetable-constraints';
 import { planGradeMove, planSubjectMove } from '@/lib/autofix/moves';
+import { ORDINARY_ROOM_TYPE, roomTypeLabel, specialRoomType } from '@/lib/room-types';
+import { teacherRequirementOf } from '@/lib/teacher-requirement';
 import { inUse, isLive, shortHash, tidyName, weekFor } from '@/lib/autofix/snapshot-ops';
 import type { Change, Fix, Snapshot, SubjectConfigRow, Unfixable } from '@/lib/autofix/types';
 
@@ -539,9 +541,10 @@ const overCapacity: Rule = {
         weeklyPeriods: row.weeklyPeriods,
         priority: row.priority,
         edited: Boolean(row.quotaEditedAt),
-        signal: !teachers.some((t) => teacherQualifiedFor(t, row.subjectName, grade))
+        // A subject that needs no teacher is not "unstaffed".
+        signal: teacherRequirementOf(row.teacherRequirement) === 'required' && !teachers.some((t) => teacherQualifiedFor(t, row.subjectName, grade))
           ? 'no_teacher'
-          : row.requiredRoomType ? 'needs_room' : 'staffed',
+          : specialRoomType(row.requiredRoomType) ? 'needs_room' : 'staffed',
       }));
       const { targets, remaining } = planBalance(balanceRows, demand - slots);
       if (remaining > 0) {
@@ -578,4 +581,35 @@ const overCapacity: Rule = {
 };
 
 /** Run order matters: the school's own merge rules, placeholders, names, then limits. */
-export const RULES: Rule[] = [mergeRules, autoCreatedRows, duplicateGrades, duplicateSubjects, displayNames, dailyCapTooLow, bellRules, overCapacity];
+// ── Tier 2: a subject needs a room type the school does not have ─────────────
+
+/**
+ * Such a subject can never be scheduled. Its requirement is reset to an
+ * ordinary classroom and the admin is told (tier 2, with Undo); adding a room
+ * of that type and undoing restores it.
+ */
+const roomTypeMissing: Rule = {
+  id: 'room_type_missing',
+  tier: 2,
+  run(s) {
+    const fixes: Fix[] = [];
+    const available = new Set(s.roomTypes);
+    for (const config of liveConfigs(s).filter((c) => c.active && c.weeklyPeriods > 0)) {
+      const needed = specialRoomType(config.requiredRoomType);
+      if (!needed || available.has(needed)) continue;
+      fixes.push({
+        rule: 'room_type_missing',
+        tier: 2,
+        entity: `subject:${config.grade}/${config.subjectName}`,
+        summary: `${config.grade} ${config.subjectName} requires room type "${roomTypeLabel(needed)}" but the school has no such room, so it could never be scheduled; it now uses an ordinary classroom. Add a room of that type in Rooms, then Undo this to restore the requirement.`,
+        before: { requiredRoomType: config.requiredRoomType },
+        after: { requiredRoomType: ORDINARY_ROOM_TYPE },
+        changes: [{ model: 'gradeSubjectConfig', id: config.id, before: { requiredRoomType: config.requiredRoomType }, after: { requiredRoomType: ORDINARY_ROOM_TYPE } }],
+        suppressKey: `room_type_missing:${config.id}:${needed}`,
+      });
+    }
+    return { fixes, unfixable: [] };
+  },
+};
+
+export const RULES: Rule[] = [mergeRules, autoCreatedRows, duplicateGrades, duplicateSubjects, displayNames, dailyCapTooLow, bellRules, overCapacity, roomTypeMissing];
