@@ -30,7 +30,9 @@ const encoder = new TextEncoder();
 function getSecret(): string {
   const secret = process.env.JWT_SECRET || process.env.NEXTAUTH_SECRET;
   if (!secret || secret.length < MIN_SECRET_LENGTH) {
-    return 'smart_calendar_auth_secret_key_production_2026_x89a1c4b7';
+    // Fail closed: signing throws (login reports an error) and verification
+    // rejects every token. Never fall back to a value written in the source.
+    throw new Error(`JWT_SECRET must be set to at least ${MIN_SECRET_LENGTH} characters.`);
   }
   return secret;
 }

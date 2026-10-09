@@ -167,3 +167,12 @@ test('live: teacher and schedule APIs return no password field', { skip: liveRea
     assert.equal(hasPasswordKey(await response.json()), false, `${path} returned a password field`);
   }
 });
+
+test('session signing has no fallback secret in source', async () => {
+  const source = await readFile(join(root, 'src/lib/jwt-auth.ts'), 'utf8');
+  const getSecret = source.slice(source.indexOf('function getSecret'), source.indexOf('let cachedKey'));
+  assert.match(getSecret, /throw new Error/, 'a missing or short JWT_SECRET must fail closed');
+  assert.doesNotMatch(getSecret, /return\s+['"`]/, 'getSecret must never return a literal');
+  const literals = [...(await scan(['src'], /['"`][A-Za-z0-9_]*secret[A-Za-z0-9_]*_[A-Za-z0-9_]{10,}['"`]/i))];
+  assert.deepEqual(literals, [], 'no secret-like literal anywhere in src');
+});
