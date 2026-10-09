@@ -116,6 +116,15 @@ test('school list is not exposed to tenant users', async () => {
   assert.match(route, /isSuperAdminRequest/);
 });
 
+test('email links use the configured app address, never a hardcoded domain', async () => {
+  for (const file of ['src/lib/mailer.ts', 'src/app/(app)/settings/page.tsx']) {
+    const text = await readFile(join(root, file), 'utf8');
+    assert.doesNotMatch(text, /https:\/\/[a-z0-9.-]+\.(school|app|com|in)\b/i, `${file} must read the domain from APP_URL / NEXT_PUBLIC_APP_URL`);
+  }
+  const mailer = await readFile(join(root, 'src/lib/mailer.ts'), 'utf8');
+  assert.match(mailer, /process\.env\.APP_URL/);
+});
+
 function hasPasswordKey(value) {
   if (Array.isArray(value)) return value.some(hasPasswordKey);
   if (value && typeof value === 'object') {

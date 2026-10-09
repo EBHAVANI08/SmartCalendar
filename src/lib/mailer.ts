@@ -85,6 +85,27 @@ export async function verifyPasswordSetupToken(token: string): Promise<{
 /**
  * Get configured nodemailer transporter or null if not configured.
  */
+/**
+ * The app's public address for links in emails, from configuration only:
+ * APP_URL (or NEXT_PUBLIC_APP_URL / NEXTAUTH_URL). In development without one,
+ * the request's own origin is used. In production without one, no link is
+ * built: guessing a domain is how setup links pointed at the wrong site.
+ */
+export function appBaseUrl(requestOrigin?: string | null): string | null {
+  const configured = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || process.env.NEXTAUTH_URL;
+  if (configured && /^https?:\/\//.test(configured)) return configured.replace(/\/+$/, '');
+  if (process.env.NODE_ENV !== 'production' && requestOrigin) return requestOrigin.replace(/\/+$/, '');
+  return null;
+}
+
+/** Sender for system emails: SMTP_FROM/EMAIL_FROM, else the SMTP mailbox, else noreply@ the app's own host. */
+function senderAddress(displayName: string): string | null {
+  if (process.env.SMTP_FROM || process.env.EMAIL_FROM) return (process.env.SMTP_FROM || process.env.EMAIL_FROM) as string;
+  const base = appBaseUrl();
+  const mailbox = process.env.SMTP_USER || (base ? `noreply@${new URL(base).hostname}` : null);
+  return mailbox ? `"${displayName}" <${mailbox}>` : null;
+}
+
 function getTransporter() {
   const host = process.env.SMTP_HOST || process.env.EMAIL_SERVER_HOST;
   const port = Number(process.env.SMTP_PORT || process.env.EMAIL_SERVER_PORT || 587);
@@ -228,21 +249,17 @@ export async function sendTeacherPasswordSetupEmail(options: SendSetupEmailOptio
     };
   }
 
-  // Derive origin — APP_URL always wins so emails never contain localhost
-  const baseUrl =
-    process.env.APP_URL ||
-    process.env.NEXTAUTH_URL ||
-    requestOrigin ||
-    (process.env.NODE_ENV === 'development' ? 'http://localhost:3005' : 'https://smartcalendar.learnx.school');
+  const baseUrl = appBaseUrl(requestOrigin);
+  if (!baseUrl) {
+    console.error('[MAILER] APP_URL is not set: cannot build a password setup link. Set APP_URL in the server .env.');
+    return { success: false, setupUrl: '', error: 'The app address (APP_URL) is not configured on the server.' };
+  }
 
   const token = await generatePasswordSetupToken(teacherId, teacherEmail);
-  const setupUrl = `${baseUrl.replace(/\/+$/, '')}/setup-password?token=${encodeURIComponent(token)}`;
+  const setupUrl = `${baseUrl}/setup-password?token=${encodeURIComponent(token)}`;
 
   const transporter = getTransporter();
-  const from =
-    process.env.SMTP_FROM ||
-    process.env.EMAIL_FROM ||
-    `"${schoolName}" <${process.env.SMTP_USER || 'noreply@smartcalendar.learnx.school'}>`;
+  const from = senderAddress(schoolName) ?? '';
 
   const subject = `Welcome to ${schoolName} - Set Up Your Teacher Account Password`;
   const html = buildPasswordSetupHtml({
@@ -305,10 +322,7 @@ export async function sendPasswordResetOtpEmail(options: {
   const { email, name, otp, schoolName = 'Smart Calendar' } = options;
 
   const transporter = getTransporter();
-  const from =
-    process.env.SMTP_FROM ||
-    process.env.EMAIL_FROM ||
-    `"${schoolName}" <${process.env.SMTP_USER || 'noreply@smartcalendar.learnx.school'}>`;
+  const from = senderAddress(schoolName) ?? '';
   const subject = `Your Password Reset OTP: ${otp} - ${schoolName}`;
 
   const html = `<!DOCTYPE html>

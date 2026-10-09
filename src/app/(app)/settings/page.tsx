@@ -249,10 +249,10 @@ function SchoolSettingsContent({
     }
   };
 
+  // The configured public address wins; otherwise the address this page was opened on.
   const originUrl =
-    typeof window !== 'undefined'
-      ? window.location.origin
-      : (process.env.NEXT_PUBLIC_APP_URL || 'https://smartcalendar.learnx.school');
+    (process.env.NEXT_PUBLIC_APP_URL || '').replace(/\/+$/, '') ||
+    (typeof window !== 'undefined' ? window.location.origin : '');
   const feedUrl = `${originUrl}/api/calendar/feed/live-ics?schoolId=${profile?.id || 'school'}`;
 
   const dirty = Boolean(
