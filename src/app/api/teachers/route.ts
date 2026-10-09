@@ -48,8 +48,11 @@ export async function GET(request: Request) {
       orderBy: { name: 'asc' },
     });
 
-    // Check if any teachers have empty schedules and enrich them from all schedules or TimetableSlot
-    const teachersNeedingSchedules = teachers.filter((t) => !t.schedules || t.schedules.length === 0);
+    // Schools without a versioned timetable: enrich empty teachers from legacy rows
+    // or TimetableSlot. With a version in use, a teacher with no lessons in it
+    // really has none; borrowing rows from other versions inflated their load.
+    const versioned = Boolean(operational && 'timetableVersionId' in operational && operational.timetableVersionId);
+    const teachersNeedingSchedules = versioned ? [] : teachers.filter((t) => !t.schedules || t.schedules.length === 0);
     if (teachersNeedingSchedules.length > 0) {
       const teacherIds = teachersNeedingSchedules.map((t) => t.id);
       

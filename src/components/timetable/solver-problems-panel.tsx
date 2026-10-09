@@ -157,7 +157,15 @@ export function SolverProblemsPanel({ versionId, refreshKey, onIssues }: {
                 <p className="text-[11px] font-semibold text-slate-800">
                   {REASON_LABELS[reason] ?? reason} — {items.reduce((s, u) => s + u.periods, 0)} period(s)
                 </p>
-                <p className="text-[10px] text-slate-500 mb-1">{items[0].detail}</p>
+                <p className="text-[10px] text-slate-500 mb-1">
+                  {items[0].detail}
+                  {reason === 'workload_rule_missing' && (
+                    <> <a href="/settings?tab=timetable&sub=workload" className="underline font-semibold text-blue-700">Set workload limits in School Setup</a></>
+                  )}
+                  {(reason === 'no_qualified_teacher' || reason === 'teacher_capacity') && (
+                    <> <a href="/teachers" className="underline font-semibold text-blue-700">Open the Faculty Directory</a></>
+                  )}
+                </p>
                 <ul className="text-[11px] text-slate-700 grid sm:grid-cols-2 gap-x-4">
                   {items.map((u) => <li key={`${u.grade}|${u.section}|${u.subject}`}>{u.grade} {u.section}: {u.subject} ({u.periods})</li>)}
                 </ul>

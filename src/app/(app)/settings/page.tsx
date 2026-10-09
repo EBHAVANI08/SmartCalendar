@@ -26,6 +26,7 @@ import { SetupChecklistFull } from '@/components/dashboard/setup-checklist';
 import { CapacitySummary } from '@/components/school-setup/capacity-summary';
 import { AutoFixPanel } from '@/components/school-setup/autofix-panel';
 import { AutoFixNotices } from '@/components/autofix-notices';
+import { WorkloadDefaults } from '@/components/school-setup/workload-defaults';
 
 interface SchoolProfile {
   id: string;
@@ -92,7 +93,7 @@ function ReadOnlyRow({ label, value }: { label: string; value: React.ReactNode }
 }
 
 export type SettingsTabId = 'profile' | 'timetable' | 'automation' | 'integrations' | 'security';
-export type TimetableSubTabId = 'days' | 'structure' | 'subjects' | 'rooms' | 'summary' | 'autofix';
+export type TimetableSubTabId = 'days' | 'structure' | 'subjects' | 'workload' | 'rooms' | 'summary' | 'autofix';
 
 function SchoolSettingsContent({
   pageTitle = 'School Settings',
@@ -127,7 +128,7 @@ function SchoolSettingsContent({
       setTimetableSubTab(t as TimetableSubTabId);
     } else if (t === 'timetable') {
       setActiveTab('timetable');
-      if (s && ['days', 'structure', 'subjects', 'rooms', 'summary', 'autofix'].includes(s)) {
+      if (s && ['days', 'structure', 'subjects', 'workload', 'rooms', 'summary', 'autofix'].includes(s)) {
         setTimetableSubTab(s as TimetableSubTabId);
       }
     } else if (t === 'profile' || t === 'automation' || t === 'integrations' || t === 'security') {
@@ -597,6 +598,7 @@ function SchoolSettingsContent({
                 { id: 'days', label: 'Days & Periods', icon: CalendarClock, desc: 'Working days & breaks' },
                 { id: 'structure', label: 'Academic Structure', icon: Layers, desc: 'Grades & sections' },
                 { id: 'subjects', label: 'Subjects', icon: BookOpen, desc: 'Subject rules & allocation' },
+                { id: 'workload', label: 'Teacher Workload', icon: User, desc: 'Default teaching limits' },
                 { id: 'rooms', label: 'Rooms', icon: DoorOpen, desc: 'Capacity & types' },
                 { id: 'summary', label: 'Weekly Summary', icon: Info, desc: 'Teaching hours overview' },
                 { id: 'autofix', label: 'Auto-fixes', icon: Sparkles, desc: 'Automatic corrections, with Undo' },
@@ -629,6 +631,7 @@ function SchoolSettingsContent({
           {timetableSubTab === 'days' && <DayConfigPage onSaved={load} />}
           {timetableSubTab === 'structure' && <DetectedStructure />}
           {timetableSubTab === 'subjects' && <SubjectManagementPage />}
+          {timetableSubTab === 'workload' && <WorkloadDefaults />}
           {timetableSubTab === 'rooms' && <RoomsPage />}
           {timetableSubTab === 'autofix' && <AutoFixPanel />}
           {timetableSubTab === 'summary' && (

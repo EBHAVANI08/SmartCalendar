@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { TeacherWorkloadEditor } from '@/components/faculty/teacher-workload-editor';
 import { DedupReview, DataIssues } from '@/components/faculty/dedup-review';
 import {
   readList,
@@ -56,8 +57,21 @@ interface Teacher {
   _count?: { schedules: number; absentSubstitutions: number };
 }
 
-/** Maximum allowed periods per teacher per week institutional benchmark */
-const MAX_ALLOWED_WEEKLY_PERIODS = 24;
+/** Workload per teacher from GET /api/teachers/workload (the school's own limits). */
+interface WorkloadInfo {
+  id: string;
+  limits: { maxWeekly: number | null; maxDaily: number | null; maxConsecutive: number | null; source: 'personal' | 'school' | 'missing' };
+  load: { weekly: number };
+  problems: string[];
+  overloaded: boolean;
+}
+interface WorkloadReport {
+  defaults: { maxWeekly: number | null; maxDaily: number | null; maxConsecutive: number | null };
+  defaultsSet: boolean;
+  teachers: WorkloadInfo[];
+}
+const limitsLabel = (l: WorkloadInfo['limits']) =>
+  l.source === 'missing' ? 'Not set' : `${l.maxWeekly ?? '–'}/wk · ${l.maxDaily ?? '–'}/day · ${l.maxConsecutive ?? '–'} in a row`;
 
 const ALL_STANDARD_GRADES = Array.from({ length: 12 }, (_, i) => `Grade ${i + 1}`);
 const DEFAULT_SECTIONS = ['A', 'B', 'C', 'D'];
@@ -313,21 +327,37 @@ export default function TeachersPage() {
     fetchSchoolSetupData();
   }, [fetchSchoolSetupData]);
 
-  // Compute workload and overloaded status for each faculty
+  // Each teacher's own limits (personal rule, school default or not set) and
+  // the limits they break, from the timetable teachers use now.
+  const [workloadReport, setWorkloadReport] = useState<WorkloadReport | null>(null);
+  const fetchWorkload = useCallback(async () => {
+    try {
+      const r = await fetch('/api/teachers/workload');
+      if (r.ok) setWorkloadReport(await r.json());
+    } catch {
+      // The directory still works; limits show as unknown.
+    }
+  }, []);
+  useEffect(() => { fetchWorkload(); }, [fetchWorkload, teachers]);
+  const workloadById = useMemo(() => new Map((workloadReport?.teachers ?? []).map((w) => [w.id, w])), [workloadReport]);
+
   const facultyWorkloads = useMemo(() => {
     return teachers.map((teacher) => {
-      const scheduleCount = teacher.schedules?.length || teacher._count?.schedules || 0;
-      const difference = scheduleCount - MAX_ALLOWED_WEEKLY_PERIODS;
-      const isOverloaded = difference > 0;
+      const info = workloadById.get(teacher.id);
+      const scheduleCount = info?.load.weekly ?? (teacher.schedules?.length || teacher._count?.schedules || 0);
+      const maxAllowed = info?.limits.maxWeekly ?? null;
       return {
         teacher,
         scheduleCount,
-        maxAllowed: MAX_ALLOWED_WEEKLY_PERIODS,
-        difference,
-        isOverloaded,
+        maxAllowed,
+        difference: maxAllowed === null ? null : scheduleCount - maxAllowed,
+        isOverloaded: Boolean(info?.overloaded),
+        problems: info?.problems ?? [],
+        limits: info?.limits ?? null,
       };
     });
-  }, [teachers]);
+  }, [teachers, workloadById]);
+  const workloadOf = (id: string) => facultyWorkloads.find((w) => w.teacher.id === id);
 
   const overloadedTeachers = useMemo(() => {
     return facultyWorkloads.filter((w) => w.isOverloaded);
@@ -985,8 +1015,8 @@ export default function TeachersPage() {
         toast({ title: 'Update Failed', description: d.error || 'Could not save profile changes.', variant: 'destructive' });
       }
     } catch {
-      toast({ title: 'Faculty Profile Updated', description: `Saved changes for ${editForm.name}.` });
-      setEditOpen(false);
+      // A network failure is not a save: keep the dialog open with the edits.
+      toast({ title: 'Update Failed', description: 'Could not reach the server. Your changes were not saved; please try again.', variant: 'destructive' });
     } finally {
       setSaving(false);
     }
@@ -1755,9 +1785,10 @@ export default function TeachersPage() {
                 const initials = teacher.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase();
                 const gradesStr = gradesDisplay(teacher.grades, teacher.sections, teacher.subjects, teacher.subject);
                 const subjs = subjectsDisplay(teacher.subjects, teacher.subject);
-                const scheduleCount = teacher.schedules?.length || teacher._count?.schedules || 0;
+                const workload = workloadOf(teacher.id);
+                const scheduleCount = workload?.scheduleCount ?? 0;
                 const isInactive = teacher.role === 'inactive';
-                const isOverloaded = scheduleCount > MAX_ALLOWED_WEEKLY_PERIODS;
+                const isOverloaded = Boolean(workload?.isOverloaded);
 
                 return (
                   <Card
@@ -1813,7 +1844,7 @@ export default function TeachersPage() {
                                 <UserX className="w-2.5 h-2.5 mr-0.5" /> Inactive
                               </Badge>
                             ) : isOverloaded ? (
-                              <Badge variant="outline" className="text-[9px] font-bold bg-amber-50 text-amber-800 border-amber-300 shrink-0 flex items-center gap-0.5">
+                              <Badge variant="outline" title={workload?.problems.join('; ')} className="text-[9px] font-bold bg-amber-50 text-amber-800 border-amber-300 shrink-0 flex items-center gap-0.5">
                                 <Flame className="w-2.5 h-2.5 text-amber-600" /> Overloaded
                               </Badge>
                             ) : (
@@ -1846,7 +1877,7 @@ export default function TeachersPage() {
                               : 'bg-blue-50 text-blue-900 border-blue-200'
                           }`}
                         >
-                          {scheduleCount} Periods / Wk
+                          {scheduleCount}{workload?.maxAllowed != null ? ` / ${workload.maxAllowed}` : ''} Periods / Wk
                         </Badge>
                       </div>
 
@@ -2621,6 +2652,14 @@ export default function TeachersPage() {
                 editForm.subjectMapping
               )}
             </div>
+
+            {/* Workload limits and unavailable periods (saved separately) */}
+            {editForm.id && (
+              <div className="pt-3 border-t border-slate-100">
+                <p className="text-xs font-bold text-slate-800 mb-2">Workload limits</p>
+                <TeacherWorkloadEditor teacherId={editForm.id} teacherName={editForm.name} onSaved={fetchWorkload} />
+              </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2 sm:justify-between items-center">
@@ -2654,7 +2693,7 @@ export default function TeachersPage() {
 
       {/* ── Overloaded Teachers Drill-Down Modal & Table ── */}
       <Dialog open={overloadModalOpen} onOpenChange={setOverloadModalOpen}>
-        <DialogContent className="max-w-3xl max-h-[88vh] overflow-y-auto">
+        <DialogContent className="max-w-5xl sm:max-w-5xl max-h-[88vh] overflow-y-auto">
           <DialogHeader className="border-b border-slate-100 pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2.5">
@@ -2666,13 +2705,19 @@ export default function TeachersPage() {
                     Faculty Workload & Overload Drill-Down
                   </DialogTitle>
                   <DialogDescription className="text-xs text-slate-500">
-                    Calculated in real-time from published master timetable schedule occupancy.
+                    From the timetable teachers use now, checked against each teacher's own limits (personal, or the school defaults).
                   </DialogDescription>
                 </div>
               </div>
-              <Badge className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-xs px-3 py-1">
-                Max Allowed: {MAX_ALLOWED_WEEKLY_PERIODS} Periods / Wk
-              </Badge>
+              {workloadReport?.defaultsSet ? (
+                <Badge className="bg-amber-100 text-amber-900 border border-amber-300 font-black text-xs px-3 py-1">
+                  School default: {limitsLabel({ ...workloadReport.defaults, source: 'school' })}
+                </Badge>
+              ) : (
+                <a href="/settings?tab=timetable&sub=workload" className="text-xs font-bold text-amber-800 underline">
+                  No school limits set — set them in School Setup
+                </a>
+              )}
             </div>
           </DialogHeader>
 
@@ -2741,8 +2786,8 @@ export default function TeachersPage() {
                       <th className="p-3">Teacher</th>
                       <th className="p-3">Subject / Dept</th>
                       <th className="p-3 text-center">Weekly Periods</th>
-                      <th className="p-3 text-center">Max Allowed</th>
-                      <th className="p-3 text-center">Difference</th>
+                      <th className="p-3 text-center">Limits</th>
+                      <th className="p-3">Status</th>
                       <th className="p-3 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -2772,21 +2817,20 @@ export default function TeachersPage() {
                           <td className="p-3 text-center font-bold text-slate-900">
                             {w.scheduleCount} Periods
                           </td>
-                          <td className="p-3 text-center text-slate-500 font-medium">
-                            {w.maxAllowed} Periods
+                          <td className="p-3 text-center text-slate-500 font-medium whitespace-nowrap text-[11px]">
+                            {w.limits ? limitsLabel(w.limits) : '—'}
+                            {w.limits?.source === 'personal' && <div className="text-[9px] text-blue-700">personal</div>}
                           </td>
-                          <td className="p-3 text-center">
-                            {w.difference > 0 ? (
-                              <Badge className="bg-rose-100 text-rose-800 border border-rose-300 font-black text-[10px]">
-                                +{w.difference} Overloaded
-                              </Badge>
-                            ) : w.difference === 0 ? (
-                              <Badge className="bg-amber-50 text-amber-800 border border-amber-200 font-bold text-[10px]">
-                                At Capacity
-                              </Badge>
+                          <td className="p-3">
+                            {w.problems.length > 0 ? (
+                              <ul className="text-[10px] text-rose-800 font-semibold list-disc list-inside">
+                                {w.problems.map((p) => <li key={p}>{p}</li>)}
+                              </ul>
+                            ) : w.limits?.source === 'missing' ? (
+                              <Badge className="bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[10px]">No limits set</Badge>
                             ) : (
                               <Badge className="bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold text-[10px]">
-                                {w.difference} Avail
+                                Within limits{w.difference !== null && w.difference < 0 ? ` · ${-w.difference} free` : ''}
                               </Badge>
                             )}
                           </td>
