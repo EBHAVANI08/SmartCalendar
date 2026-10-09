@@ -9,6 +9,10 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const { schoolId, reason, clearTeachers = false } = body;
+    // A missing or "all" school id used to wipe every school's timetable.
+    if (!schoolId || schoolId === 'all') {
+      return NextResponse.json({ error: 'Name one school (schoolId). Resetting every school at once is not allowed.' }, { status: 400 });
+    }
 
     const where: { schoolId?: string } = {};
     if (schoolId && schoolId !== 'all') {

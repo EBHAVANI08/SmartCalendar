@@ -5,7 +5,7 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
 import { getDayConfig } from '@/lib/timetable-config';
 import { periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
-import { ensureAcademicYear } from '@/lib/timetable-lifecycle';
+import { editableScheduleScope, ensureAcademicYear } from '@/lib/timetable-lifecycle';
 import { readList } from '@/lib/faculty';
 import { NextResponse } from 'next/server';
 import { canonicalGrade, schoolGradeNames } from '@/lib/master-data';
@@ -270,11 +270,15 @@ export async function PATCH(request: Request) {
       });
     }
 
-    // 2. Update Schedule rows
+    // 2. Update Schedule rows that may still change. Approved, published and
+    // superseded versions are history: they keep the old name until the next
+    // version is published (the timetable views match grades by normalised name).
+    const editableRows = await editableScheduleScope(schoolId);
     const scheduleUpdate = await db.schedule.updateMany({
-      where: { schoolId, grade: oldGrade },
+      where: { ...editableRows, grade: oldGrade },
       data: { grade: newGrade },
     });
+    const historyRows = await db.schedule.count({ where: { schoolId, grade: oldGrade } });
 
     // 3. Update GradeSubjectConfig rows
     const subjectConfigUpdate = await db.gradeSubjectConfig.updateMany({
@@ -317,6 +321,8 @@ export async function PATCH(request: Request) {
       updatedSubjectConfigs: subjectConfigUpdate.count,
       updatedSubstitutions: substitutionUpdate.count,
       updatedTeachers: teacherUpdatedCount,
+      // Rows of approved/published/superseded versions left unchanged.
+      historyRowsKept: historyRows,
     });
   } catch (error) {
     console.error('Error renaming grade:', error);
@@ -364,9 +370,10 @@ export async function DELETE(request: Request) {
         where: { schoolId, grade },
       });
 
-      // 2. Delete Schedule records
+      // 2. Delete timetable rows that may still change. The published timetable
+      // and version history keep theirs; the next published version drops them.
       const schedulesDeleted = await db.schedule.deleteMany({
-        where: { schoolId, grade },
+        where: { ...(await editableScheduleScope(schoolId)), grade },
       });
 
       // 3. Delete GradeSubjectConfig records
@@ -374,10 +381,8 @@ export async function DELETE(request: Request) {
         where: { schoolId, grade },
       });
 
-      // 4. Delete Substitution records
-      const substitutionsDeleted = await db.substitution.deleteMany({
-        where: { schoolId, grade },
-      });
+      // 4. Substitution records are attendance history and are kept.
+      const substitutionsDeleted = { count: 0 };
 
       // 5. Remove grade from Teacher.grades
       const teachers = await db.teacher.findMany({
@@ -418,9 +423,9 @@ export async function DELETE(request: Request) {
       where: { schoolId, grade, section },
     });
 
-    // 2. Delete schedule rows for this class
+    // 2. Delete this class's timetable rows that may still change (history is kept)
     const schedulesDeleted = await db.schedule.deleteMany({
-      where: { schoolId, grade, section },
+      where: { ...(await editableScheduleScope(schoolId)), grade, section },
     });
 
     return NextResponse.json({

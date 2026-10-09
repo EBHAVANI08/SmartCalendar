@@ -24,6 +24,7 @@ import { VersionBanner } from '@/components/timetable/version-banner';
 import { SlotEditor } from '@/components/timetable/slot-editor';
 import { ImportPreviewDialog, type ImportReport } from '@/components/timetable/import-preview';
 import { readList, teacherTeachesSection, formatTeacherQualifications } from '@/lib/faculty';
+import { gradeKey } from '@/lib/name-normalize';
 import { AutoFixNotices } from '@/components/autofix-notices';
 import { SolverProblemsPanel, type PanelIssue } from '@/components/timetable/solver-problems-panel';
 
@@ -848,7 +849,7 @@ export default function TimetablePage() {
       (s) =>
         s.day === day &&
         s.period === periodNum &&
-        s.grade === selectedGrade &&
+        gradeKey(s.grade) === gradeKey(selectedGrade) &&
         s.section === selectedSection
     );
 

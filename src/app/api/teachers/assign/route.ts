@@ -3,8 +3,10 @@ import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { readList } from '@/lib/faculty';
 import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
+import { getTenantSchoolId } from '@/lib/school-helper';
+import { isScheduleRowEditable } from '@/lib/timetable-lifecycle';
+import { capViolations, effectiveWorkloads, teacherLoad } from '@/lib/workload';
 
-const MAX_PERIODS_PER_DAY = 8;
 
 export async function POST(request: Request) {
   const denied = requireCapability(request, 'faculty.write');
@@ -17,19 +19,30 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'teacherId and scheduleId are required' }, { status: 400 });
     }
 
-    const teacher = await db.teacher.findUnique({ where: { id: teacherId } });
+    // Both must belong to the caller's school; ids alone were trusted before.
+    const schoolId = await getTenantSchoolId(request);
+    if (!schoolId) return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
+    const teacher = await db.teacher.findFirst({ where: { id: teacherId, schoolId } });
     if (!teacher) {
       return NextResponse.json({ error: 'Teacher not found' }, { status: 404 });
     }
 
-    const schedule = await db.schedule.findUnique({ where: { id: scheduleId } });
+    const schedule = await db.schedule.findFirst({ where: { id: scheduleId, schoolId } });
     if (!schedule) {
       return NextResponse.json({ error: 'Schedule not found' }, { status: 404 });
+    }
+    if (!(await isScheduleRowEditable(schoolId, schedule.timetableVersionId))) {
+      return NextResponse.json({ error: 'This lesson belongs to an approved or published timetable, which cannot be edited. Create a revision and edit the draft.', code: 'VERSION_READ_ONLY' }, { status: 409 });
     }
 
     // CRITICAL: Check if teacher is already assigned to another grade/section at the same day+period
     const conflictingSchedule = await db.schedule.findFirst({
       where: {
+        schoolId,
+        // Same timetable version only: other versions hold copies of the same slot.
+        ...(schedule.timetableVersionId
+          ? { timetableVersionId: schedule.timetableVersionId }
+          : { OR: [{ timetableVersionId: null }, { timetableVersionId: { isSet: false } }] }),
         teacherId,
         day: schedule.day,
         period: schedule.period,
@@ -50,20 +63,26 @@ export async function POST(request: Request) {
       }, { status: 409 });
     }
 
-    // Check if teacher already has max periods that day
-    const dayScheduleCount = await db.schedule.count({
+    // The teacher's own limits (personal rule, else school defaults), counted
+    // within this timetable version. With none set, nothing is assumed.
+    const limits = (await effectiveWorkloads(schoolId, [teacherId])).get(teacherId)!;
+    if (limits.unavailable.some((u) => u.day === schedule.day && u.period === schedule.period)) {
+      return NextResponse.json({ error: `UNAVAILABLE: ${teacher.name} is marked unavailable on ${schedule.day} P${schedule.period}.` }, { status: 409 });
+    }
+    const otherLessons = await db.schedule.findMany({
       where: {
+        schoolId,
+        ...(schedule.timetableVersionId
+          ? { timetableVersionId: schedule.timetableVersionId }
+          : { OR: [{ timetableVersionId: null }, { timetableVersionId: { isSet: false } }] }),
         teacherId,
-        day: schedule.day,
         id: { not: scheduleId },
       },
+      select: { day: true, period: true },
     });
-
-    if (dayScheduleCount >= MAX_PERIODS_PER_DAY) {
-      return NextResponse.json({
-        error: `WORKLOAD LIMIT: ${teacher.name} already has ${dayScheduleCount} periods on ${schedule.day}. Maximum is ${MAX_PERIODS_PER_DAY} periods per day.`,
-        dayWorkload: dayScheduleCount,
-      }, { status: 409 });
+    const problems = capViolations(teacherLoad([...otherLessons, { day: schedule.day, period: schedule.period }]), limits);
+    if (problems.length) {
+      return NextResponse.json({ error: `WORKLOAD LIMIT: ${teacher.name} would have ${problems.join('; ')}.`, problems }, { status: 409 });
     }
 
     // Strictly verify teacher teaches the right subject, grade, and section for this schedule
@@ -108,8 +127,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       ...updated,
-      warning: dayScheduleCount >= 5
-        ? `Warning: ${teacher.name} now has ${dayScheduleCount + 1} periods on ${schedule.day}. Consider workload balancing.`
+      warning: limits.source === 'missing'
+        ? `${teacher.name} has no workload limits (personal or school defaults), so none were checked.`
         : undefined,
       matchInfo: {
         subjectMatch,
