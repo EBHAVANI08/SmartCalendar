@@ -3,7 +3,82 @@ export const dynamic = 'force-dynamic';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { ensureAcademicYear, getPublishedVersion } from '@/lib/timetable-lifecycle';
+import { requireCapability } from '@/lib/authz';
+import { isSolverV2Enabled } from '@/lib/solver/flags';
+import { assessPublishability } from '@/lib/timetable-audit';
 import { NextResponse } from 'next/server';
+
+/** Issues returned with a blocked publish; the Studio's Problems panel has the full list. */
+const BLOCKED_ISSUE_SAMPLE = 50;
+
+/**
+ * Gated publish (solverV2Enabled schools): only an approved version, and only
+ * when the independent validator finds no error. The previous published
+ * version is superseded, never rewritten.
+ */
+async function publishApproved(request: Request, schoolId: string, actor: string, notes: string) {
+  const approved = await db.timetableVersion.findFirst({
+    where: { schoolId, status: 'approved' },
+    orderBy: { version: 'desc' },
+  });
+  if (!approved) {
+    const draft = await db.timetableVersion.findFirst({ where: { schoolId, status: { in: ['draft', 'review'] } }, select: { version: true } });
+    return NextResponse.json({
+      error: draft ? `Draft v${draft.version} must be approved before it can be published.` : 'There is no approved timetable to publish.',
+      code: 'APPROVAL_REQUIRED',
+    }, { status: 409 });
+  }
+
+  const check = await assessPublishability(schoolId, approved.id);
+  if (!check.ok) {
+    return NextResponse.json({
+      error: `Publication blocked: the validator found ${check.summary.errors} problem(s) in v${approved.version}`
+        + (check.requiredTeacherGaps ? `, including ${check.requiredTeacherGaps} required-teacher gap(s)` : '') + '.',
+      code: 'VALIDATION_BLOCKED',
+      errors: check.summary.errors,
+      byRule: check.summary.byRule,
+      issues: check.summary.issues.filter((i) => i.severity === 'error').slice(0, BLOCKED_ISSUE_SAMPLE),
+    }, { status: 409 });
+  }
+
+  const previous = await getPublishedVersion(schoolId);
+  const published = await db.$transaction(async (tx) => {
+    if (previous && previous.id !== approved.id) {
+      await tx.timetableVersion.update({
+        where: { id: previous.id },
+        data: { status: 'superseded', supersededById: approved.id, supersededAt: new Date() },
+      });
+    }
+    const version = await tx.timetableVersion.update({
+      where: { id: approved.id },
+      data: { status: 'published', publishedBy: actor, publishedAt: new Date(), changeNotes: notes },
+    });
+    await tx.auditLog.create({
+      data: {
+        schoolId,
+        actorId: actor,
+        actorRole: request.headers.get('x-user-role') || 'school',
+        action: 'timetable.publish',
+        entityType: 'TimetableVersion',
+        entityId: version.id,
+        before: previous ? { version: previous.version, id: previous.id } : undefined,
+        after: { status: 'published', version: version.version, id: version.id, validatorErrors: 0, warnings: check.summary.warnings },
+        reason: notes,
+      },
+    });
+    return version;
+  });
+
+  const rowCount = await db.schedule.count({ where: { schoolId, timetableVersionId: published.id } });
+  return NextResponse.json({
+    success: true,
+    message: `Master Timetable v${published.version} published. v${previous?.version ?? '-'} is kept in Version History.`,
+    version: published,
+    previousVersion: previous,
+    rowCount,
+    warnings: check.summary.warnings,
+  });
+}
 
 export async function GET(request: Request) {
   const schoolId = await getTenantSchoolId(request);
@@ -17,6 +92,7 @@ export async function GET(request: Request) {
     orderBy: { version: 'desc' },
   });
 
+  const solverV2Enabled = await isSolverV2Enabled(schoolId);
   const latest = activeDraft || published || (await db.timetableVersion.findFirst({
     where: { schoolId },
     orderBy: { version: 'desc' },
@@ -34,10 +110,16 @@ export async function GET(request: Request) {
     version: activeDraft || published || latest || null,
     publishedVersion: published || null,
     totalSchedules,
+    // The Studio shows the solver's Problems panel and the approve → publish gate.
+    solverV2Enabled,
   });
 }
 
 export async function POST(request: Request) {
+  // Publishing was open to any signed-in user of the school.
+  const denied = requireCapability(request, 'timetable.version.transition');
+  if (denied) return denied;
+
   const schoolId = await getTenantSchoolId(request);
   if (!schoolId) {
     return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
@@ -51,6 +133,8 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const notes = body.notes || 'Finalized and published via Timetable Studio';
+
+  if (await isSolverV2Enabled(schoolId)) return publishApproved(request, schoolId, actor, notes);
 
   // 1. Fetch current published version
   const currentPublished = await getPublishedVersion(schoolId);

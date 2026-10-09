@@ -30,7 +30,8 @@ interface Version {
  * edited. A published timetable is the official one and is never edited in
  * place - the only route to a permanent change is a revision.
  */
-export function VersionBanner({ onChanged }: { onChanged?: () => void }) {
+/** refreshKey: reload when the caller's version changes (e.g. after publishing). */
+export function VersionBanner({ onChanged, refreshKey }: { onChanged?: () => void; refreshKey?: unknown }) {
   // Adoption is a platform-owner action; school admins never see the control.
   const [isOwner, setIsOwner] = useState(false);
   useEffect(() => {
@@ -63,7 +64,7 @@ export function VersionBanner({ onChanged }: { onChanged?: () => void }) {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   /** Move the active version through the lifecycle from inside the Studio. */
   const transition = async (id: string, action: string) => {

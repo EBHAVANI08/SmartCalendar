@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
+import { withRoomNames } from '@/lib/room-names';
 import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 import { NextResponse } from 'next/server';
@@ -129,7 +130,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json(schedules);
+    return NextResponse.json(await withRoomNames(schoolId, schedules));
   } catch (error) {
     console.error('Error fetching schedules:', error);
     return NextResponse.json({ error: 'Failed to fetch schedules' }, { status: 500 });

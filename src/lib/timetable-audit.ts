@@ -386,3 +386,22 @@ export async function auditVersion(schoolId: string, versionId: string): Promise
     issues,
   };
 }
+
+export interface PublishCheck {
+  ok: boolean;
+  summary: AuditSummary;
+  /** Lessons of teacher-required subjects without a teacher, plus required periods never placed. */
+  requiredTeacherGaps: number;
+}
+
+/**
+ * The publish gate: a version may go live only when the validator finds no
+ * error at all (clashes, caps, quotas, daily limits, rooms, missing required
+ * teachers). Warnings do not block.
+ */
+export async function assessPublishability(schoolId: string, versionId: string): Promise<PublishCheck> {
+  const summary = await auditVersion(schoolId, versionId);
+  const requiredTeacherGaps = summary.issues.filter((i) => i.rule === 'no_teacher').length
+    + summary.issues.filter((i) => i.rule === 'weekly_quota' && /missing\)$/.test(i.message)).length;
+  return { ok: summary.errors === 0, summary, requiredTeacherGaps };
+}

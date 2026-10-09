@@ -307,6 +307,10 @@ model SchoolFeatureFlags {
   /// previews. Schools created after the engine existed get true; existing
   /// schools are switched on deliberately by the owner.
   autofixEnabled          Boolean?
+  /// Timetable generation by the constraint solver (src/lib/solver) with the
+  /// validator publish gate. Null/false: the legacy generator and publish flow.
+  /// Existing schools are switched on deliberately; new schools start on.
+  solverV2Enabled         Boolean?
   // Limits
   maxGrades               Int      @default(12)
   maxTeachers             Int      @default(200)

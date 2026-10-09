@@ -72,7 +72,7 @@ export async function POST(request: Request) {
         },
       });
       // New schools get automatic setup fixes from the start.
-      await db.schoolFeatureFlags.create({ data: { schoolId: school.id, autofixEnabled: true } }).catch(() => null);
+      await db.schoolFeatureFlags.create({ data: { schoolId: school.id, autofixEnabled: true, solverV2Enabled: true } }).catch(() => null);
 
       return NextResponse.json(
         {

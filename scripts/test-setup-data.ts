@@ -5,7 +5,8 @@
  * these values itself in School Setup.
  *
  *   npx tsx scripts/test-setup-data.ts --target-db <test db name> --school <id> \
- *     [--defaults W,D,C] [--teacher-requirement "Subject=none|optional|required"]... [--apply]
+ *     [--defaults W,D,C] [--teacher-requirement "Subject=none|optional|required"]...
+ *     [--flag autofixEnabled=true|false] [--flag solverV2Enabled=true|false] [--apply]
  *
  * Dry run by default: prints before/after. --apply writes in one transaction.
  */
@@ -21,6 +22,7 @@ function parseArgs(argv: string[]) {
     targetDb: '', schoolId: '', apply: false,
     defaults: null as { maxWeekly: number; maxDaily: number; maxConsecutive: number } | null,
     requirements: [] as { subject: string; value: TeacherRequirement }[],
+    flags: {} as Partial<Record<'autofixEnabled' | 'solverV2Enabled', boolean>>,
   };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -35,6 +37,10 @@ function parseArgs(argv: string[]) {
       const [subject, value] = String(argv[++index] ?? '').split('=').map((part) => part.trim());
       if (!subject || !['none', 'optional', 'required'].includes(value)) throw new Error('--teacher-requirement expects "Subject=none|optional|required"');
       options.requirements.push({ subject, value: value as TeacherRequirement });
+    } else if (arg === '--flag') {
+      const [name, value] = String(argv[++index] ?? '').split('=').map((part) => part.trim());
+      if (!['autofixEnabled', 'solverV2Enabled'].includes(name) || !['true', 'false'].includes(value)) throw new Error('--flag expects autofixEnabled=true|false or solverV2Enabled=true|false');
+      options.flags[name as 'autofixEnabled' | 'solverV2Enabled'] = value === 'true';
     } else throw new Error(`Unknown argument: ${arg}`);
   }
   if (!options.targetDb) throw new Error('--target-db <test database name> is required.');
@@ -65,6 +71,12 @@ async function main() {
       const ids = rows.filter((r) => teacherRequirementOf(r.teacherRequirement) !== value).map((r) => r.id);
       if (ids.length) writes.push((tx) => tx.gradeSubjectConfig.updateMany({ where: { schoolId: school.id, id: { in: ids } }, data: { teacherRequirement: value } }));
     }
+  }
+
+  if (Object.keys(options.flags).length) {
+    const before = await db.schoolFeatureFlags.findUnique({ where: { schoolId: school.id }, select: { autofixEnabled: true, solverV2Enabled: true } });
+    for (const [name, value] of Object.entries(options.flags)) console.log(`\nFeature ${name}: ${before?.[name as 'autofixEnabled'] ?? 'unset'} → ${value}`);
+    writes.push((tx) => tx.schoolFeatureFlags.upsert({ where: { schoolId: school.id }, update: options.flags, create: { schoolId: school.id, ...options.flags } }));
   }
 
   if (!options.apply) {

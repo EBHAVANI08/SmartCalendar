@@ -8,6 +8,8 @@ import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
 import { isAutofixEnabled, runAutofix } from '@/lib/autofix';
+import { isSolverV2Enabled } from '@/lib/solver/flags';
+import { generateDraft } from '@/lib/solver/generate';
 
 const MAX_PERIODS_PER_TEACHER_DAY = 6;
 
@@ -210,6 +212,20 @@ export async function POST(request: Request) {
     // Extract Grade Scope Parameters (fromGrade / toGrade)
     const fromGrade = body.fromGrade || body.startGrade || body.setup?.fromGrade || body.setup?.startGrade;
     const toGrade = body.toGrade || body.endGrade || body.setup?.toGrade || body.setup?.endGrade;
+
+    // Schools on the constraint solver: auto-fix → solve → write the draft only.
+    // Everything below is the legacy generator, unchanged for other schools.
+    if (await isSolverV2Enabled(schoolId)) {
+      if (dryRun) return NextResponse.json({ error: 'Use scripts/audit-timetable.ts --simulate for a dry run.', code: 'DRY_RUN_UNSUPPORTED' }, { status: 400 });
+      const result = await generateDraft({
+        schoolId,
+        actor: request.headers.get('x-user-email') || 'School Admin',
+        scope: fromGrade && toGrade ? { fromGrade: String(fromGrade), toGrade: String(toGrade) }
+          : bulkAll ? null
+          : { grade: String(grade ?? ''), section: String(section ?? '') },
+      });
+      return NextResponse.json(result.body, { status: result.status });
+    }
 
     // Fetch all active class sections in school setup, existing distinct schedule sections, and subject configs
     const [classSections, existingSchedules, gradeConfigs] = await Promise.all([

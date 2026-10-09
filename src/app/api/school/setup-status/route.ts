@@ -8,6 +8,7 @@ import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-ca
 import { staffingReport } from '@/lib/staffing';
 import { NOT_ARCHIVED } from '@/lib/soft-delete';
 import { isAutofixEnabled } from '@/lib/autofix';
+import { gradeKey } from '@/lib/name-normalize';
 
 /**
  * How far a school is through setting itself up.
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
   }
 
-  const [school, dayConfig, subjectConfigs, teachers, rooms, scheduleCount, publishedVersion] =
+  const [school, dayConfig, subjectConfigs, teachers, rooms, scheduleCount, publishedVersion, sections] =
     await Promise.all([
       db.school.findUnique({
         where: { id: schoolId },
@@ -61,19 +62,20 @@ export async function GET(request: Request) {
       db.room.count({ where: { schoolId, active: true } }).catch(() => 0),
       db.schedule.count({ where: { schoolId } }),
       db.timetableVersion.findFirst({ where: { schoolId, status: 'published' }, select: { id: true } }).catch(() => null),
+      db.classSection.findMany({ where: { schoolId, active: true, AND: [NOT_ARCHIVED] }, select: { grade: true } }),
     ]);
 
   if (!school) {
     return NextResponse.json({ error: 'School not found.' }, { status: 404 });
   }
 
-  // A legacy school proves its grades and sections through its existing
-  // timetable, not only through subject configuration.
-  const scheduleGrades = scheduleCount
-    ? await db.schedule.findMany({ where: { schoolId }, select: { grade: true, section: true, subject: true }, take: 3000 })
-    : [];
-  const classSet = new Set(scheduleGrades.map((r) => `${r.grade}|${r.section}`));
-  for (const c of subjectConfigs) classSet.add(`${c.grade}|`);
+  // Classes are the active sections, nothing else: timetable rows of old
+  // versions and grades that only have subject rules are not classes.
+  const sectionGrades = new Set(sections.map((s) => gradeKey(s.grade)));
+  const rulesWithoutSections = [...new Set(subjectConfigs
+    .filter((c) => c.active !== false && (c.weeklyPeriods ?? 0) > 0 && !sectionGrades.has(gradeKey(c.grade)))
+    .map((c) => c.grade))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const activeTeachers = teachers.filter((t) => t.role !== 'inactive');
 
@@ -125,9 +127,10 @@ export async function GET(request: Request) {
     {
       id: 'classes',
       label: 'Grades & sections',
-      done: classSet.size > 0,
+      done: sections.length > 0,
       href: '/settings?tab=timetable&sub=structure',
-      detail: classSet.size ? `${classSet.size} class(es) known${autoFixed(['duplicate_grade'])}` : 'No grades or sections yet',
+      detail: (sections.length ? `${sections.length} active section(s)${autoFixed(['duplicate_grade'])}` : 'No active sections yet')
+        + (rulesWithoutSections.length ? ` · Subject rules for grades with no sections (not counted): ${rulesWithoutSections.join(', ')}` : ''),
       required: true,
     },
     {
