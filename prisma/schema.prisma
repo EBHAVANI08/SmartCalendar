@@ -92,6 +92,8 @@ model Schedule {
   // Binds this row to a TimetableVersion so draft/published lifecycle applies.
   // Null means a legacy row created before versioning; those keep working.
   timetableVersionId String?
+  /// Frozen by an admin: the solver keeps this slot exactly as it is.
+  locked    Boolean? @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
@@ -268,6 +270,11 @@ model SchoolPreferences {
   autoSubstituteRecommendations Boolean @default(true)
   /// Show substitutes the lesson context for the period they are covering.
   lessonContextEnabled        Boolean  @default(true)
+  /// School-wide teacher caps used when a teacher has no personal rule.
+  /// Null: not set; the solver then reports "rule missing" instead of guessing.
+  defaultMaxWeekly            Int?
+  defaultMaxDaily             Int?
+  defaultMaxConsecutive       Int?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 }
@@ -543,7 +550,8 @@ model TeacherQualification {
 model TeacherWorkloadRule {
   id                 String   @id @default(auto()) @map("_id") @db.ObjectId
   schoolId           String
-  timetableVersionId String
+  /// Null: the teacher's standing rule, used by every timetable version.
+  timetableVersionId String?
   teacherId          String
   employmentType     String   @default("full_time")
   homeCampusId       String?
@@ -551,10 +559,13 @@ model TeacherWorkloadRule {
   maxDaily           Int      @default(6)
   maxConsecutive     Int      @default(3)
   minPlanning        Int      @default(0)
+  /// [{ "day": "Monday", "period": 3 }, ...] the teacher cannot teach.
+  unavailableSlots   Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@unique([timetableVersionId, teacherId])
+  @@index([schoolId, teacherId])
 }
 
 model TeacherAvailabilitySlot {

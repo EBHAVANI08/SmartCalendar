@@ -35,3 +35,16 @@ export const AUTOFIX_TRANSACTION_ATTEMPTS = 4;
 
 /** Auto-fix: pause before a retry, multiplied by the attempt number. */
 export const AUTOFIX_RETRY_DELAY_MS = 750;
+
+/**
+ * Solver: how many slots the repair step may try (moving the lessons that
+ * block a slot elsewhere) for one lesson that found no free slot. Bounds run
+ * time; a lesson still unplaced after this is reported as unallocated.
+ */
+export const SOLVER_REPAIR_ATTEMPTS_PER_LESSON = 400;
+
+/**
+ * Solver: independent attempts (different seeds) per generation; the attempt
+ * that places the most lessons wins. Stops early once everything is placed.
+ */
+export const SOLVER_RESTARTS = 8;

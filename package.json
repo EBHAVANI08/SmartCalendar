@@ -19,6 +19,7 @@
     "test:smart-calendar": "node --test tests/smart-calendar.test.mjs",
     "test:credentials": "node --test tests/no-credentials.test.mjs",
     "test:setup": "node --import tsx --test tests/name-normalize.test.ts tests/capacity.test.ts tests/bell.test.ts tests/autofix.test.ts",
+    "test:solver": "node --import tsx --test tests/solver.test.ts",
     "postinstall": "prisma generate",
     "test:integration": "node --env-file=.env --test tests/integration.test.mjs",
     "test:authz": "node --env-file=.env --test tests/authz.test.mjs",

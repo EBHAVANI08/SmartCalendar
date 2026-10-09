@@ -38,3 +38,12 @@ test('subject comparison classes', () => {
   assert.equal(compareSubjects('Biology', 'Geology'), null);
   assert.equal(compareSubjects('Music', 'Magic'), null);
 });
+
+test('section scoping matches Roman and Arabic grade names', async () => {
+  const { teacherTeachesSection } = await import('../src/lib/faculty');
+  const sections = JSON.stringify(['English::Grade I:SECTION-X', 'Maths::Grade 2:SECTION-Y']);
+  assert.equal(teacherTeachesSection(sections, 'Grade 1', 'SECTION-X', 'English'), true);
+  assert.equal(teacherTeachesSection(sections, 'Grade II', 'SECTION-Y', 'Maths'), true);
+  assert.equal(teacherTeachesSection(sections, 'Grade 1', 'SECTION-Y', 'English'), false);
+  assert.equal(teacherTeachesSection(sections, 'Grade 11', 'SECTION-X', 'English'), false);
+});
