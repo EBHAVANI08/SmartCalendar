@@ -24,6 +24,9 @@ import { VersionBanner } from '@/components/timetable/version-banner';
 import { SlotEditor } from '@/components/timetable/slot-editor';
 import { ImportPreviewDialog, type ImportReport } from '@/components/timetable/import-preview';
 import { readList, teacherTeachesSection, formatTeacherQualifications } from '@/lib/faculty';
+import { gradeKey } from '@/lib/name-normalize';
+import { AutoFixNotices } from '@/components/autofix-notices';
+import { SolverProblemsPanel, type PanelIssue, type RegenerateMode } from '@/components/timetable/solver-problems-panel';
 
 interface Teacher {
   id: string;
@@ -106,67 +109,22 @@ const getSubjectAccent = (subject: string) => {
   }
 };
 
-const calculatePeriods = (
-  start: string,
-  durationStr: string,
-  totalCountStr: string,
-  shortBreakAfterStr: string,
-  lunchBreakAfterStr: string,
-  shortBreakMinsStr: string = '15',
-  lunchBreakMinsStr: string = '30',
-  enableShortBreak: boolean = true,
-  enableLunchBreak: boolean = true
-): PeriodItem[] => {
-  const [startH, startM] = (start || '08:00').split(':').map(Number);
-  let currentMinutes = (startH || 8) * 60 + (startM || 0);
-  const duration = Number(durationStr) || 40;
-  const count = Number(totalCountStr) || 8;
-  const shortAfter = Number(shortBreakAfterStr) || 3;
-  const lunchAfter = Number(lunchBreakAfterStr) || 4;
-  const shortBreakDuration = Number(shortBreakMinsStr) || 15;
-  const lunchBreakDuration = Number(lunchBreakMinsStr) || 30;
+type BellTimelineItem =
+  | { kind: 'period'; period: number; startTime: string; endTime: string }
+  | { kind: 'break' | 'lunch'; after: number; startTime: string; endTime: string };
 
-  const formatTime = (mins: number) => {
-    const h = Math.floor(mins / 60) % 24;
-    const m = mins % 60;
-    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
-  };
-
-  const list: PeriodItem[] = [];
-  let periodCounter = 1;
-
-  for (let i = 1; i <= count; i++) {
-    const endMins = currentMinutes + duration;
-    list.push({
-      num: periodCounter,
-      time: `${formatTime(currentMinutes)} - ${formatTime(endMins)}`,
-    });
-    currentMinutes = endMins;
-
-    if (enableShortBreak && i === shortAfter) {
-      const breakEndMins = currentMinutes + shortBreakDuration;
-      list.push({
-        num: 'break1',
-        label: 'Short Break',
-        time: `${formatTime(currentMinutes)} - ${formatTime(breakEndMins)}`,
-        isBreak: true,
-      });
-      currentMinutes = breakEndMins;
-    } else if (enableLunchBreak && i === lunchAfter) {
-      const lunchEndMins = currentMinutes + lunchBreakDuration;
-      list.push({
-        num: 'lunch',
-        label: 'Lunch Recess',
-        time: `${formatTime(currentMinutes)} - ${formatTime(lunchEndMins)}`,
-        isBreak: true,
-      });
-      currentMinutes = lunchEndMins;
-    }
-    periodCounter++;
-  }
-
-  return list;
-};
+/** Grid rows from the saved bell schedule (GET /api/school/day-config → bellTimeline). */
+const timelineToPeriodItems = (timeline: BellTimelineItem[]): PeriodItem[] =>
+  timeline.map((item) =>
+    item.kind === 'period'
+      ? { num: item.period, time: `${item.startTime} - ${item.endTime}` }
+      : {
+          num: item.kind === 'break' ? 'break1' : 'lunch',
+          label: item.kind === 'break' ? 'Short Break' : 'Lunch Recess',
+          time: `${item.startTime} - ${item.endTime}`,
+          isBreak: true,
+        }
+  );
 
 export default function TimetablePage() {
   const { toast } = useToast();
@@ -188,6 +146,21 @@ export default function TimetablePage() {
 
   // Dynamic Period Timings State
   const [activePeriods, setActivePeriods] = useState<PeriodItem[]>(PERIODS);
+  // Working days and their period counts from the saved day configuration.
+  const [dayShapes, setDayShapes] = useState<{ day: string; periods: number }[]>([]);
+  // Solver schools: Problems panel, red cells and the approve → publish gate.
+  const [solverV2Enabled, setSolverV2Enabled] = useState(false);
+  const [issuesBySlot, setIssuesBySlot] = useState<Record<string, string[]>>({});
+  const [problemsRefresh, setProblemsRefresh] = useState(0);
+  const [isApproving, setIsApproving] = useState(false);
+  const handleIssues = useCallback((issues: PanelIssue[]) => {
+    const map: Record<string, string[]> = {};
+    for (const issue of issues) {
+      if (issue.severity !== 'error') continue;
+      for (const id of issue.slotIds) (map[id] ||= []).push(issue.message);
+    }
+    setIssuesBySlot(map);
+  }, []);
 
   // Resolve user role & session
   useEffect(() => {
@@ -355,24 +328,15 @@ export default function TimetablePage() {
 
   const fetchDayConfig = useCallback(async () => {
     try {
-      const r = await fetch('/api/school/day-config');
+      const r = await fetch(selectedGrade ? `/api/school/day-config?grade=${encodeURIComponent(selectedGrade)}` : '/api/school/day-config');
       if (!r.ok) return;
       const data = await r.json();
       if (data.success && data.config) {
         const c = data.config;
         if (c.configured) {
-          const periods = calculatePeriods(
-            c.startTime || '08:00',
-            '40',
-            String(c.periodsPerDay || 8),
-            String(c.breakAfter || 2),
-            String(c.lunchAfter || 4),
-            String(c.breakMinutes || 15),
-            String(c.lunchMinutes || 30),
-            c.breakMinutes > 0,
-            c.lunchMinutes > 0
-          );
-          setActivePeriods(periods);
+          // Times come from the saved bell schedule, never recomputed here.
+          if (Array.isArray(data.bellTimeline)) setActivePeriods(timelineToPeriodItems(data.bellTimeline));
+          if (Array.isArray(data.days)) setDayShapes(data.days.map((d: { day: string; periods: number }) => ({ day: d.day, periods: d.periods })));
           setStudioSettings((prev) => ({
             ...prev,
             startTime: c.startTime || prev.startTime,
@@ -384,15 +348,15 @@ export default function TimetablePage() {
             shortBreakMins: String(c.breakMinutes || prev.shortBreakMins),
             lunchBreakAfter: String(c.lunchAfter || prev.lunchBreakAfter),
             lunchBreakMins: String(c.lunchMinutes || prev.lunchBreakMins),
-            enableShortBreak: (c.breakMinutes || 0) > 0,
-            enableLunchBreak: (c.lunchMinutes || 0) > 0,
+            enableShortBreak: Boolean(c.breakEnabled),
+            enableLunchBreak: Boolean(c.lunchEnabled),
           }));
         }
       }
     } catch {
       // ignore
     }
-  }, []);
+  }, [selectedGrade]);
 
   const fetchSchoolStructure = useCallback(async () => {
     try {
@@ -440,6 +404,7 @@ export default function TimetablePage() {
         if (data.success) {
           setTimetableStatus(data.currentStatus || (data.isPublished ? 'published' : 'draft'));
           setVersionInfo(data.version || null);
+          setSolverV2Enabled(Boolean(data.solverV2Enabled));
           return data.version;
         }
       }
@@ -471,10 +436,11 @@ export default function TimetablePage() {
         fetchSchedules(data.version?.id);
         fetchOccupancy(data.version?.id);
         fetchTimetableStatus();
+        setProblemsRefresh((n) => n + 1);
       } else {
         toast({
           variant: 'destructive',
-          title: 'Failed to Publish Timetable',
+          title: data.code === 'VALIDATION_BLOCKED' ? 'Publishing blocked' : data.code === 'APPROVAL_REQUIRED' ? 'Approval needed' : 'Failed to Publish Timetable',
           description: data.error || 'An unexpected error occurred while publishing.',
         });
       }
@@ -489,6 +455,47 @@ export default function TimetablePage() {
     }
   };
 
+  /** Solver schools: draft → approved (the publish gate requires it). */
+  /** Solver schools: fix only the lessons that no longer fit the settings, or rebuild the draft. */
+  const handleRegenerate = async (mode: RegenerateMode) => {
+    try {
+      const res = await fetch('/api/schedules/ai-generate-timetable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mode === 'repair' ? { mode: 'repair' } : { bulkAll: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      toast({ title: mode === 'repair' ? 'Affected lessons fixed' : `Draft v${data.version?.version ?? ''} regenerated`, description: data.message });
+      const newVer = await fetchTimetableStatus();
+      fetchSchedules(newVer?.id);
+      fetchOccupancy(newVer?.id);
+      setProblemsRefresh((n) => n + 1);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not update the draft', description: err instanceof Error ? err.message : 'Unexpected error' });
+    }
+  };
+
+  const handleApprove = async () => {
+    if (!versionInfo?.id) return;
+    setIsApproving(true);
+    try {
+      const res = await fetch(`/api/timetable/versions/${encodeURIComponent(versionInfo.id)}/workflow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve', note: 'Approved in Timetable Studio' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      toast({ title: `v${versionInfo.version} approved`, description: 'It can now be published.' });
+      await fetchTimetableStatus();
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not approve', description: err instanceof Error ? err.message : 'Unexpected error' });
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
   const handleSaveBellTimings = async () => {
     setIsSavingBell(true);
     try {
@@ -498,9 +505,11 @@ export default function TimetablePage() {
         periodsPerDay: parseInt(studioSettings.totalPeriods, 10) || 8,
         saturdayPeriods: parseInt(studioSettings.saturdayPeriods, 10) || 5,
         breakAfter: parseInt(studioSettings.shortBreakAfter, 10) || 3,
-        breakMinutes: studioSettings.enableShortBreak ? (parseInt(studioSettings.shortBreakMins, 10) || 15) : 0,
+        breakEnabled: studioSettings.enableShortBreak,
+        breakMinutes: parseInt(studioSettings.shortBreakMins, 10) || 0,
         lunchAfter: parseInt(studioSettings.lunchBreakAfter, 10) || 4,
-        lunchMinutes: studioSettings.enableLunchBreak ? (parseInt(studioSettings.lunchBreakMins, 10) || 30) : 0,
+        lunchEnabled: studioSettings.enableLunchBreak,
+        lunchMinutes: parseInt(studioSettings.lunchBreakMins, 10) || 0,
         workingDays: studioSettings.saturdayType === 'off' ? 5 : 6,
       };
 
@@ -512,18 +521,9 @@ export default function TimetablePage() {
 
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        const newPeriods = calculatePeriods(
-          studioSettings.startTime,
-          studioSettings.periodDuration,
-          studioSettings.totalPeriods,
-          studioSettings.shortBreakAfter,
-          studioSettings.lunchBreakAfter,
-          studioSettings.enableShortBreak ? studioSettings.shortBreakMins : '0',
-          studioSettings.enableLunchBreak ? studioSettings.lunchBreakMins : '0',
-          studioSettings.enableShortBreak,
-          studioSettings.enableLunchBreak
-        );
-        setActivePeriods(newPeriods);
+        // Re-read what was saved (for the selected grade, which may have its own
+        // override) so the grid shows the stored bell, not a local guess.
+        await fetchDayConfig();
         toast({
           title: '✅ Bell Schedule Timings Saved & Applied!',
           description: `Updated Start: ${studioSettings.startTime}, End: ${studioSettings.endTime}, Periods: ${studioSettings.totalPeriods}/day saved and active across your school!`,
@@ -533,8 +533,8 @@ export default function TimetablePage() {
       } else {
         toast({
           variant: 'destructive',
-          title: 'Failed to save bell timings',
-          description: data?.error || 'Could not update day configuration.',
+          title: 'Bell schedule not saved',
+          description: Array.isArray(data?.errors) && data.errors.length ? data.errors.join(' ') : data?.error || 'Could not update day configuration.',
         });
       }
     } catch (e: any) {
@@ -667,10 +667,13 @@ export default function TimetablePage() {
       const d = await r.json();
       setGenResult(d);
       if (r.ok && d.success) {
-        toast({
-          title: 'Master Timetable Generated & Published!',
-          description: `Generated ${d.stats?.totalGenerated || 'all'} clash-free periods for ${scopeLabel} directly from Faculty Directory!`,
-        });
+        toast(d.engine === 'solver-v2'
+          ? { title: `Draft v${d.version?.version ?? ''} generated`, description: d.message }
+          : {
+            title: 'Master Timetable Generated & Published!',
+            description: `Generated ${d.stats?.totalGenerated || 'all'} clash-free periods for ${scopeLabel} directly from Faculty Directory!`,
+          });
+        setProblemsRefresh((n) => n + 1);
         setStudioOpen(false);
         setStudioStep(1);
         const newVer = await fetchTimetableStatus();
@@ -678,8 +681,10 @@ export default function TimetablePage() {
         fetchOccupancy(newVer?.id);
       } else {
         toast({
-          title: 'Generation Notice',
-          description: d.error || d.message || 'Timetable generated from Faculty Directory and saved to database.',
+          title: d.code === 'CAPACITY_EXCEEDED' ? 'Generation blocked' : 'Generation Notice',
+          description: d.code === 'CAPACITY_EXCEEDED' && Array.isArray(d.grades)
+            ? `${d.error} ${d.grades.map((g: { problem: string }) => g.problem).join('; ')}`
+            : d.error || d.message || 'Timetable generated from Faculty Directory and saved to database.',
           variant: r.ok ? 'default' : 'destructive',
         });
         if (r.ok) {
@@ -849,6 +854,13 @@ export default function TimetablePage() {
 
 
   // Helper to get slot info for Day & Period purely from DB
+  // Rows are the configured working days; a day with fewer periods (e.g. a
+  // short Saturday) shows its later periods as "no period".
+  const gridDays = dayShapes.length ? dayShapes.map((d) => d.day) : DAYS;
+  const periodsOn = (day: string) => dayShapes.find((d) => d.day === day)?.periods ?? Infinity;
+  const longestDay = dayShapes.length ? Math.max(...dayShapes.map((d) => d.periods)) : 8;
+  const teacherPeriodNumbers = Array.from({ length: longestDay }, (_, i) => i + 1);
+
   const getSlot = (day: string, periodNum: number) => {
     // A timetable cell is identified by class AND time. Matching on day+period
     // alone let one section render another section's lesson whenever the state
@@ -857,7 +869,7 @@ export default function TimetablePage() {
       (s) =>
         s.day === day &&
         s.period === periodNum &&
-        s.grade === selectedGrade &&
+        gradeKey(s.grade) === gradeKey(selectedGrade) &&
         s.section === selectedSection
     );
 
@@ -873,7 +885,7 @@ export default function TimetablePage() {
         subject: dbMatch.subject,
         teacherId: dbMatch.teacherId || undefined,
         teacher: resolvedTeacher,
-        room: dbMatch.roomId || '—',
+        room: (dbMatch as { roomName?: string | null }).roomName || dbMatch.roomId || '—',
       };
     }
 
@@ -894,8 +906,11 @@ export default function TimetablePage() {
     <div className="bg-[#F6F8FC] min-h-screen p-4 sm:p-6 lg:p-8 space-y-6 text-[#172033]">
       {userRole !== 'teacher' && (
         <>
-          <VersionBanner onChanged={fetchSchedules} />
-          <GenerationResult result={genResult} onDismiss={() => setGenResult(null)} />
+          <VersionBanner onChanged={fetchSchedules} refreshKey={`${versionInfo?.id}|${versionInfo?.status}`} />
+          <AutoFixNotices />
+          {solverV2Enabled && versionInfo?.id
+            ? <SolverProblemsPanel versionId={versionInfo.id} refreshKey={`${problemsRefresh}|${versionInfo.status}`} onIssues={handleIssues} onRegenerate={handleRegenerate} />
+            : <GenerationResult result={genResult} onDismiss={() => setGenResult(null)} />}
         </>
       )}
       {/* ── Enterprise SaaS Workspace Header ── */}
@@ -1023,7 +1038,7 @@ export default function TimetablePage() {
                   <th className="p-2 w-16 text-center border-r border-[#111e38] bg-[#1c2d54] text-white font-black sticky left-0 z-20">
                     DAY
                   </th>
-                  {[1, 2, 3, 4, 5, 6, 7, 8].map((pNum) => (
+                  {teacherPeriodNumbers.map((pNum) => (
                     <th key={pNum} className="p-2 text-center bg-[#1c2d54] border-r border-[#111e38]">
                       <div className="text-white font-black text-xs tracking-wider">PERIOD {pNum}</div>
                     </th>
@@ -1031,7 +1046,7 @@ export default function TimetablePage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E8F0] text-xs">
-                {DAYS.map((day) => (
+                {gridDays.map((day) => (
                   <tr key={day} className="hover:bg-slate-50/50 transition-colors">
                     <td className="p-2 text-center bg-[#F8FAFC] border-b border-r border-[#E2E8F0] sticky left-0 z-10 font-bold shadow-xs w-16">
                       <div className="text-xs font-black text-[#0F2747] tracking-wider uppercase">
@@ -1041,7 +1056,7 @@ export default function TimetablePage() {
                         {day}
                       </div>
                     </td>
-                    {[1, 2, 3, 4, 5, 6, 7, 8].map((pNum) => {
+                    {teacherPeriodNumbers.map((pNum) => {
                       const slot = teacherWeekSchedule.find((s) => s.day === day && s.period === pNum);
                       const accent = slot ? getSubjectAccent(slot.subject) : null;
                       const IconComp = accent?.icon;
@@ -1060,7 +1075,7 @@ export default function TimetablePage() {
                                 {slot.grade} {slot.section}
                               </div>
                               <div className="flex items-center justify-between pt-0.5 border-t border-slate-100 text-[9px] text-[#64748B]">
-                                <span className="font-mono">{slot.roomId || 'Classroom'}</span>
+                                <span className="font-mono">{slot.roomName || slot.roomId || 'Classroom'}</span>
                                 <span className="text-[8px] font-mono font-semibold px-1 py-0.2 rounded border bg-blue-50 text-blue-700 border-blue-200">
                                   P{pNum}
                                 </span>
@@ -1154,8 +1169,19 @@ export default function TimetablePage() {
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
+                {/* Solver schools: approve the draft, then publish (the validator gates publishing). */}
+                {userRole !== 'teacher' && solverV2Enabled && versionInfo?.id && ['draft', 'review'].includes(versionInfo.status ?? '') && (
+                  <Button size="sm" variant="outline" disabled={isApproving} onClick={handleApprove} className="h-8 px-3.5 text-xs font-bold gap-1.5" data-testid="approve-version">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> {isApproving ? 'Approving…' : `Approve v${versionInfo.version}`}
+                  </Button>
+                )}
+                {userRole !== 'teacher' && solverV2Enabled && versionInfo?.status === 'approved' && (
+                  <Button size="sm" disabled={isPublishing} onClick={handleFinalizePublish} className="h-8 px-3.5 text-xs font-black bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5" data-testid="publish-version">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> {isPublishing ? 'Publishing…' : `Publish v${versionInfo.version}`}
+                  </Button>
+                )}
                 {/* Admin Only: Finalize & Publish Button — Hidden after final publish */}
-                {userRole !== 'teacher' && timetableStatus !== 'published' && (
+                {userRole !== 'teacher' && !solverV2Enabled && timetableStatus !== 'published' && (
                   <Button
                     size="sm"
                     disabled={isPublishing}
@@ -1262,7 +1288,7 @@ export default function TimetablePage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E2E8F0] text-xs">
-                  {DAYS.map((day) => (
+                  {gridDays.map((day) => (
                     <tr key={day} className="hover:bg-slate-50/50 transition-colors">
                       {/* Sticky Day Column */}
                       <td className="p-2 text-center bg-[#F8FAFC] border-b border-r border-[#E2E8F0] sticky left-0 z-10 font-bold shadow-xs w-16 day-cell">
@@ -1301,7 +1327,15 @@ export default function TimetablePage() {
                         }
 
                         const periodNum = p.num as number;
+                        if (periodNum > periodsOn(day)) {
+                          return (
+                            <td key={pIdx} className="p-1.5 border-b border-r border-[#E2E8F0] bg-slate-50 text-center text-[10px] text-slate-400 select-none">
+                              No period
+                            </td>
+                          );
+                        }
                         const slot = getSlot(day, periodNum);
+                        const cellIssues = slot.id ? issuesBySlot[String(slot.id)] ?? [] : [];
                         // Same teacher already booked into another class at this time.
                         const cellClashes = clashesFor(slot.teacherId, day, periodNum);
                         const accent = getSubjectAccent(slot.subject);
@@ -1331,7 +1365,9 @@ export default function TimetablePage() {
                               });
                               setCellEditOpen(true);
                             }}
-                            className={`p-1.5 border-b border-r border-[#E2E8F0] ${userRole !== 'teacher' ? 'cursor-pointer' : ''} transition-all duration-150 relative group bg-white hover:bg-slate-50/80 ${
+                            title={cellIssues.length ? cellIssues.join('\n') : undefined}
+                            data-has-issue={cellIssues.length ? 'true' : undefined}
+                            className={`p-1.5 border-b border-r border-[#E2E8F0] ${userRole !== 'teacher' ? 'cursor-pointer' : ''} transition-all duration-150 relative group ${cellIssues.length ? 'bg-rose-100 ring-2 ring-inset ring-rose-500' : 'bg-white hover:bg-slate-50/80'} ${
                               isCellDragOver ? 'ring-2 ring-blue-500 ring-offset-1 bg-blue-50/70 z-10 scale-[1.02]' : ''
                             }`}
                           >
@@ -1390,8 +1426,8 @@ export default function TimetablePage() {
         </>
       )}
 
-      {/* ── Summary & NEP 2020 Compliance ── */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* ── Subject colour legend ── */}
+      <div className="grid grid-cols-1 gap-4">
         <Card className="border-slate-200 shadow-sm p-4">
           <p className="text-xs font-bold text-slate-800 mb-2">Subject Period Color Code</p>
           <div className="flex flex-wrap gap-1.5 text-[11px]">
@@ -1404,26 +1440,6 @@ export default function TimetablePage() {
           </div>
         </Card>
 
-        <Card className="border-slate-200 shadow-sm p-4">
-          <p className="text-xs font-bold text-slate-800 mb-2">Weekly Period Quota Compliance</p>
-          <div className="space-y-1 text-xs text-slate-600">
-            <div className="flex justify-between"><span>Core Academic Load:</span><span className="font-bold text-slate-800">36 / 48 Periods</span></div>
-            <div className="flex justify-between"><span>Lab / Practical Sessions:</span><span className="font-bold text-slate-800">6 Periods</span></div>
-            <div className="flex justify-between"><span>Sports & Activities:</span><span className="font-bold text-slate-800">6 Periods</span></div>
-          </div>
-        </Card>
-
-        <Card className="border-blue-200 bg-blue-50/60 shadow-sm p-4 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-700 to-indigo-800 text-white flex items-center justify-center shrink-0 shadow-md">
-            <CheckCircle2 className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-blue-950">NEP 2020 Validated</p>
-            <p className="text-[11px] text-blue-800 mt-0.5">
-              Balanced curriculum distribution with zero double-booked rooms or teacher overlaps.
-            </p>
-          </div>
-        </Card>
       </div>
 
       {/* Validated slot editor: every change goes through the shared
@@ -2242,6 +2258,11 @@ export default function TimetablePage() {
             </div>
           </div>
 
+          {studioSettings.enableShortBreak && studioSettings.enableLunchBreak && studioSettings.shortBreakAfter === studioSettings.lunchBreakAfter && (
+            <p className="text-[11px] font-semibold text-amber-700">
+              The short break and lunch are both after period {studioSettings.shortBreakAfter}; on save the shorter one is switched off automatically.
+            </p>
+          )}
           <DialogFooter className="pt-3 flex justify-between items-center border-t border-slate-100">
             <Button variant="outline" onClick={() => setBellTimingsOpen(false)} className="h-10 text-xs font-bold px-4">
               Cancel

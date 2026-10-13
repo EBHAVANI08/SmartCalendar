@@ -3,9 +3,14 @@ import { readList, teacherTeachesSection } from '@/lib/faculty';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { getDayConfig } from '@/lib/timetable-config';
 import { getPublishedVersion } from '@/lib/timetable-lifecycle';
-import { periodsForDay, workingDayNames, buildTeachingGrid } from '@/lib/timetable-constraints';
+import { periodsForDay, workingDayNames, buildTeachingGrid, periodTimingsForDay } from '@/lib/timetable-constraints';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
+import { isAutofixEnabled, runAutofix } from '@/lib/autofix';
+import { isSolverV2Enabled } from '@/lib/solver/flags';
+import { generateDraft } from '@/lib/solver/generate';
+import { repairDraft } from '@/lib/solver/repair';
 
 const MAX_PERIODS_PER_TEACHER_DAY = 6;
 
@@ -209,6 +214,25 @@ export async function POST(request: Request) {
     const fromGrade = body.fromGrade || body.startGrade || body.setup?.fromGrade || body.setup?.startGrade;
     const toGrade = body.toGrade || body.endGrade || body.setup?.toGrade || body.setup?.endGrade;
 
+    // Schools on the constraint solver: auto-fix → solve → write the draft only.
+    // Everything below is the legacy generator, unchanged for other schools.
+    if (await isSolverV2Enabled(schoolId)) {
+      if (dryRun) return NextResponse.json({ error: 'Use scripts/audit-timetable.ts --simulate for a dry run.', code: 'DRY_RUN_UNSUPPORTED' }, { status: 400 });
+      // "Fix only affected lessons": keep every lesson that still fits the settings.
+      if (body.mode === 'repair') {
+        const repaired = await repairDraft({ schoolId, actor: request.headers.get('x-user-email') || 'School Admin' });
+        return NextResponse.json(repaired.body, { status: repaired.status });
+      }
+      const result = await generateDraft({
+        schoolId,
+        actor: request.headers.get('x-user-email') || 'School Admin',
+        scope: fromGrade && toGrade ? { fromGrade: String(fromGrade), toGrade: String(toGrade) }
+          : bulkAll ? null
+          : { grade: String(grade ?? ''), section: String(section ?? '') },
+      });
+      return NextResponse.json(result.body, { status: result.status });
+    }
+
     // Fetch all active class sections in school setup, existing distinct schedule sections, and subject configs
     const [classSections, existingSchedules, gradeConfigs] = await Promise.all([
       db.classSection.findMany({ where: { schoolId, active: true }, select: { grade: true, section: true } }),
@@ -302,6 +326,37 @@ export async function POST(request: Request) {
         return NextResponse.json({ error: 'School, grade, and section are required.' }, { status: 400 });
       }
       targetClasses = [{ grade: String(grade).trim(), section: String(section).trim().toUpperCase() }];
+    }
+
+    // Correct setup mistakes first (logged, undoable), then refuse before
+    // touching any version if a target grade still cannot be timetabled:
+    // padding or dropping periods would hide that from the school.
+    // Tier 1 and tier 2 (including balancing over-capacity grades) run here,
+    // before solving, when the school has automatic fixes switched on.
+    const autofixOn = await isAutofixEnabled(schoolId);
+    const autofix = autofixOn
+      ? await runAutofix(schoolId, { apply: true, trigger: 'generation', actor: request.headers.get('x-user-email') })
+      : { fixes: [], unfixable: [], suppressed: [], logIds: [], runId: null };
+    const targetGradeNames = new Set(targetClasses.map((tc) => tc.grade));
+    const blocking = autofix.unfixable.filter((item) => item.blocking && (!item.grade || targetGradeNames.has(item.grade)));
+    const overCapacity = (await gradeCapacityReport(schoolId)).filter((c) => targetGradeNames.has(c.grade) && !c.ok);
+    if (blocking.length > 0 || overCapacity.length > 0) {
+      return NextResponse.json(
+        {
+          error: autofixOn
+            ? `Cannot generate: ${blocking.length + overCapacity.length} setup problem(s) could not be fixed automatically.`
+            : `Cannot generate: ${blocking.length + overCapacity.length} setup problem(s). Automatic fixes are switched off for this school.`,
+          code: 'CAPACITY_EXCEEDED',
+          autoFixed: autofix.fixes.map((fix) => fix.summary),
+          grades: [
+            ...blocking.map((item) => ({ grade: item.grade ?? 'All grades', problem: item.message })),
+            ...overCapacity
+              .filter((c) => !blocking.some((item) => item.grade === c.grade))
+              .map((c) => ({ grade: c.grade, demand: c.demand, slots: c.slots, problem: describeCapacityProblem(c) })),
+          ],
+        },
+        { status: 422 }
+      );
     }
 
     // Handle timetable versioning (draft / revision)
@@ -406,37 +461,9 @@ export async function POST(request: Request) {
       const totalWeeklySlotsNeeded = teachingGrid.length; // e.g. 45 periods (8*5 + 5)
       totalWeeklyRequirementsMap[`${targetGrade}-${targetSection}`] = totalWeeklySlotsNeeded;
 
-      // Bell timing calculations
-      const parseMinutes = (value: string, fallback: number) => {
-        const match = /^(\d{1,2}):(\d{2})$/.exec(value || '');
-        return match ? Number(match[1]) * 60 + Number(match[2]) : fallback;
-      };
-      const formatMinutes = (value: number) =>
-        `${String(Math.floor(value / 60) % 24).padStart(2, '0')}:${String(value % 60).padStart(2, '0')}`;
-
-      const periodsPerDay = gradeDayConfig.periodsPerDay ?? 8;
-      const startMin = parseMinutes(gradeDayConfig.startTime, 8 * 60);
-      const endMin = parseMinutes(gradeDayConfig.endTime, 15 * 60);
-      const breakAfter = gradeDayConfig.breakAfter ?? 2;
-      const breakMinutes = gradeDayConfig.breakMinutes ?? 15;
-      const lunchAfter = gradeDayConfig.lunchAfter ?? 4;
-      const lunchMinutes = gradeDayConfig.lunchMinutes ?? 30;
-
-      const totalTeachingMins = Math.max(periodsPerDay * 20, endMin - startMin - breakMinutes - lunchMinutes);
-      const periodDuration = Math.floor(totalTeachingMins / periodsPerDay);
-      const extraMins = totalTeachingMins % periodsPerDay;
-
-      // Precalculate period times
-      let cursor = startMin;
-      const timeSlotsMap = new Map<number, { start: string; end: string }>();
-      for (let p = 1; p <= 12; p++) {
-        const pStart = cursor;
-        cursor += periodDuration + (p <= extraMins ? 1 : 0);
-        const pEnd = cursor;
-        if (p === breakAfter) cursor += breakMinutes;
-        if (p === lunchAfter) cursor += lunchMinutes;
-        timeSlotsMap.set(p, { start: formatMinutes(pStart), end: formatMinutes(pEnd) });
-      }
+      // Period times come from the saved bell schedule (one shared source for
+      // the Studio, exports and generation).
+      const timingsByDay = new Map(days.map((day) => [day, periodTimingsForDay(gradeDayConfig, day)]));
 
       // 2. Fetch subject list & configured quotas for this grade
       const [gradeSubjectConfigs, schoolSubjectMasters] = await Promise.all([
@@ -541,7 +568,9 @@ export async function POST(request: Request) {
         for (let idx = 0; idx < daySubjects.length; idx++) {
           const period = idx + 1;
           const subject = daySubjects[idx];
-          const timeSlot = timeSlotsMap.get(period) || { start: '08:00', end: '08:45' };
+          const timing = timingsByDay.get(day)?.find((item) => item.period === period);
+          if (!timing) continue; // never schedule outside the configured bell
+          const timeSlot = { start: timing.startTime, end: timing.endTime };
           classSlots.push({ day, period, subject, timeSlot });
         }
       }
@@ -774,6 +803,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      autoFixed: autofix.fixes.map((fix) => fix.summary),
       message: `AI Timetable Generator completed: Generated ${createdCount} clash-free periods across ${targetClasses.length} section(s). Zero teacher double-bookings!`,
       stats: {
         totalClasses: targetClasses.length,

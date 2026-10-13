@@ -2,6 +2,7 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { editableScheduleScope } from '@/lib/timetable-lifecycle';
 
 export async function PATCH(request: Request) {
   const denied = requireCapability(request, 'timetable.write');
@@ -79,7 +80,8 @@ export async function PATCH(request: Request) {
       grade: { in: gradeVariants },
       section: { equals: section, mode: 'insensitive' },
     };
-    whereCondition.schoolId = targetSchoolId;
+    // This school's rows that may still change; published versions keep their times.
+    Object.assign(whereCondition, await editableScheduleScope(targetSchoolId));
 
     const matchingSchedules = await db.schedule.findMany({
       where: whereCondition,
@@ -99,22 +101,6 @@ export async function PATCH(request: Request) {
     const results = await db.$transaction(updatePromises);
     const updated = results.reduce((sum, res) => sum + res.count, 0);
 
-    if (updated === 0 && matchingSchedules.length === 0) {
-      const fallbackResults = await db.$transaction(
-        slots.map((slot) =>
-          db.schedule.updateMany({
-            where: { grade, section, period: slot.period },
-            data: { startTime: slot.startTime, endTime: slot.endTime },
-          }),
-        ),
-      );
-      const fallbackUpdated = fallbackResults.reduce((sum, res) => sum + res.count, 0);
-      return NextResponse.json({
-        success: true,
-        updated: fallbackUpdated,
-        message: `Updated ${fallbackUpdated} timetable period entries for ${grade} Section ${section} (${setup.startTime || '09:30'}–${setup.endTime || '17:00'}).`,
-      });
-    }
 
     return NextResponse.json({
       success: true,

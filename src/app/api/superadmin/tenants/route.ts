@@ -93,6 +93,9 @@ export async function POST(request: Request) {
     data: {
       schoolId: school.id,
       planName: planKey,
+      // New schools get automatic setup fixes from the start.
+      autofixEnabled: true,
+      solverV2Enabled: true,
       maxTeachers: plan?.maxTeachers ?? 50,
       maxGrades: plan?.maxGrades ?? 12,
       maxPeriodsPerDay: plan?.maxPeriodsPerDay ?? 8,

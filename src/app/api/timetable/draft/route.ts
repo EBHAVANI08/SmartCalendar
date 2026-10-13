@@ -4,8 +4,11 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { createInitialVersion } from '@/lib/timetable-lifecycle';
 import { NextResponse } from 'next/server';
+import { requireCapability } from '@/lib/authz';
 
 export async function POST(request: Request) {
+  const denied = requireCapability(request, 'timetable.write');
+  if (denied) return denied;
   const schoolId = await getTenantSchoolId(request);
   if (!schoolId) {
     return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });

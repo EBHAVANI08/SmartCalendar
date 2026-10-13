@@ -1,4 +1,7 @@
 import { db } from '@/lib/db';
+import { MIN_PERIOD_MINUTES } from '@/lib/scheduling-constants';
+import { gradeKey, subjectKey } from '@/lib/name-normalize';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
 
 /**
  * Shared timetable constraints.
@@ -109,7 +112,7 @@ export function buildPeriodTimings(options: {
   const end = parse(options.endTime, 15 * 60);
   const breakMinutes = Math.max(0, Number(options.breakMinutes) || 0);
   const lunchMinutes = Math.max(0, Number(options.lunchMinutes) || 0);
-  const teaching = Math.max(periods * 20, end - start - breakMinutes - lunchMinutes);
+  const teaching = Math.max(periods * MIN_PERIOD_MINUTES, end - start - breakMinutes - lunchMinutes);
   const perPeriod = Math.floor(teaching / periods);
   const extra = teaching % periods;
 
@@ -123,6 +126,137 @@ export function buildPeriodTimings(options: {
     if (period === options.lunchAfter) cursor += lunchMinutes;
     return { period, startTime, endTime };
   });
+}
+
+/** Bell settings for one grade (or the school default), as stored. */
+export interface BellConfig {
+  startTime: string;
+  endTime: string;
+  breakEnabled: boolean;
+  breakAfter: number;
+  breakMinutes: number;
+  lunchEnabled: boolean;
+  lunchAfter: number;
+  lunchMinutes: number;
+}
+
+export type BellTimelineItem =
+  | { kind: 'period'; period: number; startTime: string; endTime: string }
+  | { kind: 'break' | 'lunch'; after: number; startTime: string; endTime: string };
+
+/**
+ * Periods followed by an enabled break or lunch. Lessons on either side of one
+ * are not back to back (no double period across it).
+ */
+export function breakBoundaries(config: Pick<BellConfig, 'breakEnabled' | 'breakAfter' | 'breakMinutes' | 'lunchEnabled' | 'lunchAfter' | 'lunchMinutes'>): number[] {
+  const after: number[] = [];
+  if (config.breakEnabled && config.breakMinutes > 0 && config.breakAfter > 0) after.push(config.breakAfter);
+  if (config.lunchEnabled && config.lunchMinutes > 0 && config.lunchAfter > 0) after.push(config.lunchAfter);
+  return [...new Set(after)].sort((a, b) => a - b);
+}
+
+/** Most periods any working day has; the full day's bell is built for this count. */
+export function longestDayPeriods(config: DayPeriodConfig): number {
+  return Math.max(1, ...workingDayNames(config).map((day) => periodsForDay(day, config)));
+}
+
+/**
+ * The full day's bell: periods and the enabled breaks, in order. A full day
+ * runs from startTime to endTime; shorter days use the same period times and
+ * end earlier. Every screen and the generator read times from here.
+ */
+export function buildBellTimeline(config: DayPeriodConfig & BellConfig): BellTimelineItem[] {
+  const periods = longestDayPeriods(config);
+  const breakMinutes = config.breakEnabled ? config.breakMinutes : 0;
+  const lunchMinutes = config.lunchEnabled ? config.lunchMinutes : 0;
+  const timings = buildPeriodTimings({
+    periods,
+    startTime: config.startTime,
+    endTime: config.endTime,
+    breakAfter: config.breakEnabled ? config.breakAfter : undefined,
+    breakMinutes,
+    lunchAfter: config.lunchEnabled ? config.lunchAfter : undefined,
+    lunchMinutes,
+  });
+  const items: BellTimelineItem[] = [];
+  for (const timing of timings) {
+    items.push({ kind: 'period', ...timing });
+    let cursor = timing.endTime;
+    for (const [kind, enabled, after, minutes] of [
+      ['break', config.breakEnabled, config.breakAfter, breakMinutes],
+      ['lunch', config.lunchEnabled, config.lunchAfter, lunchMinutes],
+    ] as const) {
+      if (!enabled || after !== timing.period || minutes <= 0) continue;
+      const end = addMinutes(cursor, minutes);
+      items.push({ kind, after, startTime: cursor, endTime: end });
+      cursor = end;
+    }
+  }
+  return items;
+}
+
+/** Start/end of each period on one day (first N periods of the full-day bell). */
+export function periodTimingsForDay(config: DayPeriodConfig & BellConfig, day: string): { period: number; startTime: string; endTime: string }[] {
+  const count = periodsForDay(day, config);
+  return buildBellTimeline(config)
+    .filter((item): item is Extract<BellTimelineItem, { kind: 'period' }> => item.kind === 'period')
+    .slice(0, count)
+    .map(({ period, startTime, endTime }) => ({ period, startTime, endTime }));
+}
+
+function addMinutes(time: string, minutes: number): string {
+  const [h, m] = time.split(':').map(Number);
+  const total = h * 60 + m + minutes;
+  return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+function toMinutes(time: string): number | null {
+  const match = /^(\d{1,2}):(\d{2})$/.exec((time || '').trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+}
+
+/**
+ * Problems that make a bell schedule unusable. An empty list means valid.
+ * Checked on save (the API rejects invalid settings) and shown in setup.
+ */
+export type BellIssueCode = 'TIME_FORMAT' | 'TIME_ORDER' | 'BREAK_ZERO' | 'BREAK_RANGE' | 'SAME_PERIOD' | 'TOO_SHORT';
+
+/** Issues the auto-fix engine corrects by itself (see src/lib/autofix/rules.ts). */
+export const AUTO_FIXABLE_BELL_ISSUES: readonly BellIssueCode[] = ['BREAK_ZERO', 'BREAK_RANGE', 'SAME_PERIOD'];
+
+export function validateBellConfig(config: DayPeriodConfig & BellConfig, label = 'School day'): string[] {
+  return bellIssues(config, label).map((issue) => issue.message);
+}
+
+export function bellIssues(config: DayPeriodConfig & BellConfig, label = 'School day'): { code: BellIssueCode; message: string }[] {
+  const errors: { code: BellIssueCode; message: string }[] = [];
+  const periods = longestDayPeriods(config);
+  const start = toMinutes(config.startTime);
+  const end = toMinutes(config.endTime);
+  if (start === null || end === null) errors.push({ code: 'TIME_FORMAT', message: `${label}: start and end times must be HH:MM.` });
+  else if (end <= start) errors.push({ code: 'TIME_ORDER', message: `${label}: the day must end after it starts (${config.startTime} – ${config.endTime}).` });
+
+  const checkBreak = (name: string, enabled: boolean, after: number, minutes: number) => {
+    if (!enabled) return;
+    if (!(minutes > 0)) errors.push({ code: 'BREAK_ZERO', message: `${label}: ${name} is switched on but lasts 0 minutes. Give it a duration or switch it off.` });
+    if (!Number.isInteger(after) || after < 1 || after >= periods) {
+      errors.push({ code: 'BREAK_RANGE', message: `${label}: ${name} must come after a period between 1 and ${periods - 1}.` });
+    }
+  };
+  checkBreak('the short break', config.breakEnabled, config.breakAfter, config.breakMinutes);
+  checkBreak('lunch', config.lunchEnabled, config.lunchAfter, config.lunchMinutes);
+  if (config.breakEnabled && config.lunchEnabled && config.breakAfter === config.lunchAfter) {
+    errors.push({ code: 'SAME_PERIOD', message: `${label}: the short break and lunch are both after period ${config.breakAfter}. Put them after different periods.` });
+  }
+
+  if (start !== null && end !== null && end > start) {
+    const breaks = (config.breakEnabled ? Math.max(0, config.breakMinutes) : 0) + (config.lunchEnabled ? Math.max(0, config.lunchMinutes) : 0);
+    const perPeriod = Math.floor((end - start - breaks) / periods);
+    if (perPeriod < MIN_PERIOD_MINUTES) {
+      errors.push({ code: 'TOO_SHORT', message: `${label}: ${periods} periods and the breaks leave only ${Math.max(0, perPeriod)} minutes per period between ${config.startTime} and ${config.endTime}; at least ${MIN_PERIOD_MINUTES} are needed.` });
+    }
+  }
+  return errors;
 }
 
 export interface SlotIdentity {
@@ -143,7 +277,12 @@ export interface ConflictCheckInput extends SlotIdentity {
   timetableVersionId?: string | null;
   /** Schedule row being edited, excluded from its own conflict check. */
   ignoreScheduleId?: string | null;
-  config?: DayPeriodConfig;
+  /** The class's own day setup (grade override when it has one); its breaks separate periods. */
+  config?: DayPeriodConfig | (DayPeriodConfig & BellConfig);
+  /** Subject of the lesson: enables the same-teacher-same-class rule (Rule A). */
+  subject?: string;
+  /** Also check the subject's daily limit, double periods and minimum gap (when the lesson moves). */
+  checkSubjectRules?: boolean;
 }
 
 export interface ConflictResult {
@@ -153,7 +292,11 @@ export interface ConflictResult {
     | 'TEACHER_DOUBLE_BOOKED'
     | 'CLASS_DOUBLE_BOOKED'
     | 'TEACHER_INACTIVE'
-    | 'TEACHER_NOT_IN_SCHOOL';
+    | 'TEACHER_NOT_IN_SCHOOL'
+    | 'TEACHER_SAME_CLASS_CONSECUTIVE'
+    | 'SUBJECT_DAILY_LIMIT'
+    | 'SUBJECT_NOT_DOUBLE'
+    | 'SUBJECT_MIN_GAP';
   message?: string;
   /** Where the conflicting teacher already is, for a useful error message. */
   conflictWith?: { grade: string; section: string; subject: string };
@@ -205,6 +348,9 @@ export async function checkSlotConflicts(input: ConflictCheckInput): Promise<Con
     };
   }
 
+  const placement = await checkPlacementRules(input, versionScope);
+  if (placement) return placement;
+
   if (!teacherId) return { ok: true };
 
   const teacher = await db.teacher.findUnique({
@@ -248,6 +394,72 @@ export async function checkSlotConflicts(input: ConflictCheckInput): Promise<Con
   }
 
   return { ok: true };
+}
+
+/**
+ * Rules about where a lesson sits next to the class's other lessons that day:
+ *  - Rule A (school setting, on by default): the same teacher does not teach
+ *    this class a different subject in the period just before or after;
+ *  - with checkSubjectRules: the subject's daily limit, double periods only
+ *    when allowed (pairs only), and the "Apart" minimum gap.
+ * A break or lunch between two periods means they are not back to back.
+ */
+async function checkPlacementRules(
+  input: ConflictCheckInput,
+  versionScope: Record<string, unknown>,
+): Promise<ConflictResult | null> {
+  const { schoolId, grade, section, day, period, teacherId, subject, ignoreScheduleId } = input;
+  if (!subject) return null;
+  const breaks = input.config && 'breakAfter' in input.config ? breakBoundaries(input.config) : [];
+  const touching = (a: number, b: number) => Math.abs(a - b) === 1 && !breaks.includes(Math.min(a, b));
+  const sameDay = await db.schedule.findMany({
+    where: { schoolId, grade, section, day, ...versionScope, ...(ignoreScheduleId ? { NOT: { id: ignoreScheduleId } } : {}) },
+    select: { period: true, subject: true, teacherId: true },
+  });
+
+  if (teacherId) {
+    const preferences = await db.schoolPreferences.findUnique({ where: { schoolId }, select: { noSameClassBackToBack: true } });
+    if (preferences?.noSameClassBackToBack !== false) {
+      const neighbour = sameDay.find((row) => touching(row.period, period) && row.teacherId === teacherId && subjectKey(row.subject) !== subjectKey(subject));
+      if (neighbour) {
+        return {
+          ok: false,
+          code: 'TEACHER_SAME_CLASS_CONSECUTIVE',
+          message: `The same teacher already teaches ${grade} ${section} ${neighbour.subject} in period ${neighbour.period} on ${day}; a different subject right before or after is not allowed (School Setup can switch this rule off).`,
+        };
+      }
+    }
+  }
+
+  if (!input.checkSubjectRules) return null;
+  const rules = (await db.gradeSubjectConfig.findMany({
+    where: { schoolId, active: true, AND: [NOT_ARCHIVED] },
+    select: { grade: true, subjectName: true, maxPeriodsPerDay: true, allowConsecutive: true, sameDayMinGap: true },
+  })).filter((r) => gradeKey(r.grade) === gradeKey(grade) && subjectKey(r.subjectName) === subjectKey(subject));
+  const rule = rules.find((r) => r.grade === grade) ?? rules[0];
+  const samePeriods = sameDay.filter((row) => subjectKey(row.subject) === subjectKey(subject)).map((row) => row.period);
+  const limit = rule?.maxPeriodsPerDay ?? 1;
+  if (samePeriods.length + 1 > limit) {
+    return { ok: false, code: 'SUBJECT_DAILY_LIMIT', message: `${subject} would be ${samePeriods.length + 1} times on ${day} for ${grade} ${section}; the limit is ${limit}.` };
+  }
+  for (const other of samePeriods) {
+    if (touching(other, period)) {
+      if (!rule?.allowConsecutive) {
+        return { ok: false, code: 'SUBJECT_NOT_DOUBLE', message: `${subject} is already in period ${other} on ${day}; it is not set up for double periods.` };
+      }
+    } else if (rule?.sameDayMinGap != null && Math.abs(other - period) - 1 < rule.sameDayMinGap) {
+      return { ok: false, code: 'SUBJECT_MIN_GAP', message: `${subject} is in period ${other} on ${day}; it needs at least ${rule.sameDayMinGap} period(s) between.` };
+    }
+  }
+  if (rule?.allowConsecutive) {
+    const block = [...samePeriods, period].sort((a, b) => a - b);
+    let run = 1;
+    for (let i = 1; i < block.length; i++) {
+      run = touching(block[i - 1], block[i]) ? run + 1 : 1;
+      if (run > 2) return { ok: false, code: 'SUBJECT_NOT_DOUBLE', message: `${subject} would run ${run} periods in a row on ${day}; only pairs are allowed.` };
+    }
+  }
+  return null;
 }
 
 /**

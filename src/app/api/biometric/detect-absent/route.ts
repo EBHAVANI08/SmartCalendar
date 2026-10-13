@@ -3,6 +3,7 @@ import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
 import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
+import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 
 // AI-powered absence detection — OPTIMIZED with batch queries
 export async function POST(request: Request) {
@@ -65,14 +66,17 @@ export async function POST(request: Request) {
     }
 
     const affectedTeacherIds = affectedTeachers.map(r => r.teacherId);
+    const inUse = await operationalScheduleFilter(schoolId);
 
     // 2. Batch load: leave applications, today's schedules, yesterday's schedules
     const [leaveApplications, todaySchedules, yesterdaySchedules, lessonPlans, curriculumTopics] = await Promise.all([
       db.leaveApplication.findMany({
         where: { teacherId: { in: affectedTeacherIds }, startDate: { lte: detectDate }, endDate: { gte: detectDate }, status: 'approved' },
       }),
-      db.schedule.findMany({ where: { schoolId, teacherId: { in: affectedTeacherIds }, day: dayName }, orderBy: { period: 'asc' } }),
-      db.schedule.findMany({ where: { schoolId, teacherId: { in: affectedTeacherIds }, day: yesterdayDay }, orderBy: { period: 'asc' } }),
+      // One lesson per slot: every version holds its own copy of a lesson, and
+      // reading them all created one substitution per copy.
+      db.schedule.findMany({ where: { ...inUse, teacherId: { in: affectedTeacherIds }, day: dayName }, orderBy: { period: 'asc' } }),
+      db.schedule.findMany({ where: { ...inUse, teacherId: { in: affectedTeacherIds }, day: yesterdayDay }, orderBy: { period: 'asc' } }),
       db.lessonPlan.findMany({ where: { teacherId: { in: affectedTeacherIds } } }),
       db.curriculumTopic.findMany({ where: { board: 'CBSE' }, take: 50, orderBy: { sequenceOrder: 'asc' } }),
     ]);

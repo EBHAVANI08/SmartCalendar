@@ -4,7 +4,7 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { getDayConfig } from '@/lib/timetable-config';
 import {
   ClashTracker,
-  buildPeriodTimings,
+  periodTimingsForDay,
   isPeriodWithinDay,
   periodsForDay,
   workingDayNames,
@@ -144,19 +144,12 @@ export async function POST(request: Request) {
 
     const activeDays = new Set(workingDayNames(config) as string[]);
     // Timings are per-day, because each day can have a different period count.
-    const timingsByDay = new Map<string, ReturnType<typeof buildPeriodTimings>>();
+    const timingsByDay = new Map<string, ReturnType<typeof periodTimingsForDay>>();
     const timingsFor = (day: string) => {
       const cached = timingsByDay.get(day);
       if (cached) return cached;
-      const built = buildPeriodTimings({
-        periods: periodsForDay(day, config),
-        startTime: config.startTime,
-        endTime: config.endTime,
-        breakAfter: config.breakAfter,
-        breakMinutes: config.breakMinutes,
-        lunchAfter: config.lunchAfter,
-        lunchMinutes: config.lunchMinutes,
-      });
+      // Same bell as the Studio and generator (src/lib/timetable-constraints.ts).
+      const built = periodTimingsForDay(config, day);
       timingsByDay.set(day, built);
       return built;
     };

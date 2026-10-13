@@ -5,6 +5,9 @@ import { mergeLists, parseSubjectGradeSectionsMap, readList, serializeSubjectGra
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { requireCapability } from '@/lib/authz';
+import { canonicalGrade, resolveSubjectName, schoolGradeNames, schoolSubjectNames, subjectConflictMessage } from '@/lib/master-data';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { autofixAfterSave } from '@/lib/autofix';
 
 /**
  * Map a teacher to a grade+subject, or unmap them.
@@ -23,12 +26,26 @@ export async function POST(request: Request) {
 
   const body = await request.json().catch(() => ({}));
   const teacherId = String(body.teacherId ?? '');
-  const subjectName = String(body.subjectName ?? '').trim();
-  const grade = String(body.grade ?? '').trim();
+  let subjectName = String(body.subjectName ?? '').trim();
+  let grade = String(body.grade ?? '').trim();
   const remove = body.remove === true;
 
   if (!teacherId || !subjectName) {
     return NextResponse.json({ error: 'teacherId and subjectName are required.' }, { status: 400 });
+  }
+
+  // Map onto the school's existing spelling of the subject and grade.
+  if (!remove) {
+    const [gradeNames, subjectNames] = await Promise.all([schoolGradeNames(schoolId), schoolSubjectNames(schoolId)]);
+    const resolution = resolveSubjectName(subjectName, subjectNames);
+    if (resolution.kind === 'conflict') {
+      return NextResponse.json(
+        { error: subjectConflictMessage(resolution), code: 'DUPLICATE_SUBJECT', existing: resolution.existing },
+        { status: 409 }
+      );
+    }
+    subjectName = resolution.name;
+    if (grade) grade = canonicalGrade(grade, gradeNames);
   }
 
   const teacher = await db.teacher.findFirst({ where: { id: teacherId, schoolId } });
@@ -101,16 +118,18 @@ export async function POST(request: Request) {
   // Also ensure GradeSubjectConfig has this subject if mapped
   if (!remove && grade) {
     const existingConfig = await db.gradeSubjectConfig.findFirst({
-      where: { schoolId, grade, subjectName },
+      where: { schoolId, grade, subjectName, AND: [NOT_ARCHIVED] },
     });
     if (!existingConfig) {
       await db.gradeSubjectConfig.create({
         data: {
+          source: 'sync',
           schoolId,
           grade,
           subjectName,
-          weeklyPeriods: 4,
-          maxPeriodsPerDay: 2,
+          // Quota not set yet; the school enters it in the Subjects tab.
+          weeklyPeriods: 0,
+          maxPeriodsPerDay: 1,
           allowConsecutive: false,
           priority: 'Normal',
           requiredRoomType: null,
@@ -122,6 +141,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
+    autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')),
     message: remove
       ? `${teacher.name} is no longer mapped to ${subjectName}${grade ? ` for ${grade}` : ''}.`
       : `${teacher.name} is now mapped to teach ${subjectName}${grade ? ` for ${grade}` : ''}.`,

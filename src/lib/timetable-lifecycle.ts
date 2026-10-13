@@ -40,6 +40,34 @@ export function isEditable(status: string): boolean {
   return EDITABLE_STATUSES.includes(status as VersionStatus);
 }
 
+/**
+ * Where-clause for the school's timetable rows that may still change: rows of
+ * draft/review versions, and unversioned rows (schools on a legacy timetable).
+ * Approved, published and superseded rows are history and are never rewritten
+ * or deleted by setup changes. Always combine with `schoolId`.
+ */
+export async function editableScheduleScope(schoolId: string) {
+  const editable = await db.timetableVersion.findMany({
+    where: { schoolId, status: { in: EDITABLE_STATUSES } },
+    select: { id: true },
+  });
+  return {
+    schoolId,
+    OR: [
+      { timetableVersionId: { in: editable.map((v) => v.id) } },
+      { timetableVersionId: null },
+      { timetableVersionId: { isSet: false } },
+    ],
+  };
+}
+
+/** True when a row may be edited: unversioned, or in a draft/review version of this school. */
+export async function isScheduleRowEditable(schoolId: string, timetableVersionId: string | null | undefined): Promise<boolean> {
+  if (!timetableVersionId) return true;
+  const version = await db.timetableVersion.findFirst({ where: { id: timetableVersionId, schoolId }, select: { status: true } });
+  return Boolean(version && isEditable(version.status));
+}
+
 /** The school's current official timetable, if one is published. */
 export async function getPublishedVersion(schoolId: string) {
   return db.timetableVersion.findFirst({

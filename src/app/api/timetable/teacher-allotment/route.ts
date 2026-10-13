@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { NextResponse } from 'next/server';
+import { editableScheduleScope } from '@/lib/timetable-lifecycle';
 import * as XLSX from 'xlsx';
 import { PDFParse } from 'pdf-parse';
 import { requireCapability } from '@/lib/authz';
@@ -118,6 +119,7 @@ export async function POST(request: Request) {
       ...(!row.grades.length ? [{ row: index + 2, field: 'Grades', message: 'At least one eligible grade is required.' }] : []),
     ]);
     if (!commit || issues.length) return NextResponse.json({ success: true, layout: matrixLayout ? 'grade-section-matrix' : 'teacher-roster', rows, issues, blocking: issues.length > 0, classesDetected: new Set(matrixAllotments.map((x) => `${x.grade}|${x.section}`)).size, allotmentsDetected: matrixAllotments.length, summary: { detected: rows.length, valid: rows.length - new Set(issues.map((x) => x.row)).size, errors: issues.length } });
+    const editable = await editableScheduleScope(schoolId);
     const result = await db.$transaction(async (tx) => {
       const teachers: { id: string; name: string; subject: string; grades: string }[] = [];
       // Keyed on (schoolId, email). Keying on email alone could match a teacher
@@ -129,7 +131,8 @@ export async function POST(request: Request) {
       for (const row of rows) teachers.push(await tx.teacher.upsert({ where: { schoolId_email: { schoolId, email: row.email.toLowerCase() } }, update: { name: row.name, subject: row.subject, grades: JSON.stringify(row.grades) }, create: { password: unusablePasswordHash, name: row.name, email: row.email.toLowerCase(), subject: row.subject, grades: JSON.stringify(row.grades), schoolId, availability: '[]' } }));
       if (matrixLayout && matrixAllotments.length) {
         const classes = [...new Set(matrixAllotments.map((item) => `${item.grade}|${item.section}`))];
-        await tx.schedule.deleteMany({ where: { schoolId, OR: classes.map((item) => { const [grade, section] = item.split('|'); return { grade, section }; }) } });
+        // Only rows that may still change; published and older versions are history.
+        await tx.schedule.deleteMany({ where: { AND: [editable, { OR: classes.map((item) => { const [grade, section] = item.split('|'); return { grade, section }; }) }] } });
         const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']; const times = [['09:30','10:19'],['10:19','11:08'],['11:23','12:12'],['12:12','13:01'],['13:46','14:35'],['14:35','15:24'],['15:24','16:12'],['16:12','17:00']];
         const occupied = new Set<string>(); let generated = 0; let unallocated = 0;
         const usedClassSubjectDay = new Set<string>();
@@ -152,12 +155,13 @@ export async function POST(request: Request) {
         const skipped = scheduleData.length - inserted.count;
         return { imported: teachers.length, allotted: Math.max(0, generated - skipped), unallotted: unallocated + skipped, classesCreated: classes.length, layout: 'grade-section-matrix' };
       }
-      const schedules = await tx.schedule.findMany({ where: { schoolId, teacherId: null }, orderBy: [{ day: 'asc' }, { period: 'asc' }] });
-      const occupied = new Set((await tx.schedule.findMany({ where: { schoolId, teacherId: { not: null } }, select: { teacherId: true, day: true, period: true } })).map((s) => `${s.teacherId}|${s.day}|${s.period}`));
+      const schedules = await tx.schedule.findMany({ where: { ...editable, teacherId: null }, orderBy: [{ day: 'asc' }, { period: 'asc' }] });
+      const occupied = new Set((await tx.schedule.findMany({ where: { ...editable, teacherId: { not: null } }, select: { teacherId: true, timetableVersionId: true, day: true, period: true } })).map((s) => `${s.timetableVersionId ?? ''}|${s.teacherId}|${s.day}|${s.period}`));
       let allotted = 0;
       for (const schedule of schedules) {
-        const teacher = teachers.find((candidate) => candidate.subject.toLowerCase() === schedule.subject.toLowerCase() && (JSON.parse(candidate.grades) as string[]).includes(schedule.grade) && !occupied.has(`${candidate.id}|${schedule.day}|${schedule.period}`));
-        if (teacher) { await tx.schedule.update({ where: { id: schedule.id }, data: { teacherId: teacher.id } }); occupied.add(`${teacher.id}|${schedule.day}|${schedule.period}`); allotted++; }
+        const slotKey = (teacherId: string) => `${schedule.timetableVersionId ?? ''}|${teacherId}|${schedule.day}|${schedule.period}`;
+        const teacher = teachers.find((candidate) => candidate.subject.toLowerCase() === schedule.subject.toLowerCase() && (JSON.parse(candidate.grades) as string[]).includes(schedule.grade) && !occupied.has(slotKey(candidate.id)));
+        if (teacher) { await tx.schedule.update({ where: { id: schedule.id }, data: { teacherId: teacher.id } }); occupied.add(slotKey(teacher.id)); allotted++; }
       }
       return { imported: teachers.length, allotted, unallotted: schedules.length - allotted };
     }, { maxWait: 20_000, timeout: 180_000 });

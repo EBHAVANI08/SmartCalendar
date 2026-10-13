@@ -5,6 +5,7 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
 import { ownTeacherId } from '@/lib/teacher-scope';
 import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
+import { withRoomNames } from '@/lib/room-names';
 import { NextResponse } from 'next/server';
 
 /**
@@ -105,8 +106,8 @@ export async function GET(request: Request) {
       periodsThisWeek: weekSchedule.length,
       upcomingCover: upcomingCover.length,
     },
-    todaySchedule,
-    weekSchedule,
+    todaySchedule: await withRoomNames(schoolId, todaySchedule),
+    weekSchedule: await withRoomNames(schoolId, weekSchedule),
     nextPeriod,
     myCover: myCover.slice(0, 20),
     myLeave,

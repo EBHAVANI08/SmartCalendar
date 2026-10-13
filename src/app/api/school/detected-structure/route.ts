@@ -5,9 +5,13 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
 import { getDayConfig } from '@/lib/timetable-config';
 import { periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
-import { ensureAcademicYear } from '@/lib/timetable-lifecycle';
+import { editableScheduleScope, ensureAcademicYear } from '@/lib/timetable-lifecycle';
 import { readList } from '@/lib/faculty';
 import { NextResponse } from 'next/server';
+import { canonicalGrade, schoolGradeNames } from '@/lib/master-data';
+import { findSameGrade, gradeKey } from '@/lib/name-normalize';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { autofixAfterSave } from '@/lib/autofix';
 
 /**
  * Academic structure inferred from a school's existing timetable.
@@ -164,11 +168,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Grade name is required.' }, { status: 400 });
     }
 
-    // Default to 'A' if section not provided
-    if (!section) {
-      section = 'A';
-    }
-
     // Strip any "Section " prefix
     section = section.replace(/^SECTION\s*/i, '').trim().toUpperCase();
 
@@ -176,12 +175,16 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Section name cannot be empty.' }, { status: 400 });
     }
 
+    // Store under the school's existing spelling of this grade ("Grade I" and
+    // "grade 1" become the existing "Grade 1"), never as a second grade.
+    grade = canonicalGrade(grade, await schoolGradeNames(schoolId));
+
     const academicYearId = await ensureAcademicYear(schoolId);
     const code = `${grade.replace(/\s+/g, '')}-${section}`;
 
     // Check if section already exists
     const existing = await db.classSection.findFirst({
-      where: { schoolId, grade, section },
+      where: { schoolId, grade, section, AND: [NOT_ARCHIVED] },
     });
 
     if (existing) {
@@ -206,6 +209,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
+      autofix: await autofixAfterSave(schoolId, 'save:structure', request.headers.get('x-user-email')),
       message: `Section ${section} added to ${grade} successfully.`,
       grade,
       section,
@@ -241,17 +245,14 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ success: true, message: 'Grade name unchanged.' });
     }
 
-    // Check if newGrade already exists in classSection or schedule under this school
-    if (oldGrade.toLowerCase() !== newGrade.toLowerCase()) {
-      const existingGrade = await db.classSection.findFirst({
-        where: { schoolId, grade: newGrade },
-      });
-      const existingSchedule = await db.schedule.findFirst({
-        where: { schoolId, grade: newGrade },
-      });
-      if (existingGrade || existingSchedule) {
+    // The new name must not be another existing grade under any spelling
+    // ("Grade I" vs "Grade 1"). Re-spelling the same grade is allowed.
+    if (gradeKey(oldGrade) !== gradeKey(newGrade)) {
+      const clash = findSameGrade(newGrade, (await schoolGradeNames(schoolId)).filter((name) => name !== oldGrade));
+      const existingSchedule = clash ? null : await db.schedule.findFirst({ where: { schoolId, grade: newGrade }, select: { id: true } });
+      if (clash || existingSchedule) {
         return NextResponse.json(
-          { error: `Grade "${newGrade}" already exists. Please choose a different name.` },
+          { error: `Grade "${clash || newGrade}" already exists. Please choose a different name.` },
           { status: 409 }
         );
       }
@@ -259,7 +260,7 @@ export async function PATCH(request: Request) {
 
     // 1. Update ClassSection rows
     const sections = await db.classSection.findMany({
-      where: { schoolId, grade: oldGrade },
+      where: { schoolId, grade: oldGrade, AND: [NOT_ARCHIVED] },
     });
     for (const s of sections) {
       const newCode = `${newGrade.replace(/\s+/g, '')}-${s.section}`;
@@ -269,11 +270,15 @@ export async function PATCH(request: Request) {
       });
     }
 
-    // 2. Update Schedule rows
+    // 2. Update Schedule rows that may still change. Approved, published and
+    // superseded versions are history: they keep the old name until the next
+    // version is published (the timetable views match grades by normalised name).
+    const editableRows = await editableScheduleScope(schoolId);
     const scheduleUpdate = await db.schedule.updateMany({
-      where: { schoolId, grade: oldGrade },
+      where: { ...editableRows, grade: oldGrade },
       data: { grade: newGrade },
     });
+    const historyRows = await db.schedule.count({ where: { schoolId, grade: oldGrade } });
 
     // 3. Update GradeSubjectConfig rows
     const subjectConfigUpdate = await db.gradeSubjectConfig.updateMany({
@@ -307,6 +312,7 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({
       success: true,
+      autofix: await autofixAfterSave(schoolId, 'save:structure', request.headers.get('x-user-email')),
       message: `Grade renamed from "${oldGrade}" to "${newGrade}" successfully.`,
       oldGrade,
       newGrade,
@@ -315,6 +321,8 @@ export async function PATCH(request: Request) {
       updatedSubjectConfigs: subjectConfigUpdate.count,
       updatedSubstitutions: substitutionUpdate.count,
       updatedTeachers: teacherUpdatedCount,
+      // Rows of approved/published/superseded versions left unchanged.
+      historyRowsKept: historyRows,
     });
   } catch (error) {
     console.error('Error renaming grade:', error);
@@ -362,9 +370,10 @@ export async function DELETE(request: Request) {
         where: { schoolId, grade },
       });
 
-      // 2. Delete Schedule records
+      // 2. Delete timetable rows that may still change. The published timetable
+      // and version history keep theirs; the next published version drops them.
       const schedulesDeleted = await db.schedule.deleteMany({
-        where: { schoolId, grade },
+        where: { ...(await editableScheduleScope(schoolId)), grade },
       });
 
       // 3. Delete GradeSubjectConfig records
@@ -372,10 +381,8 @@ export async function DELETE(request: Request) {
         where: { schoolId, grade },
       });
 
-      // 4. Delete Substitution records
-      const substitutionsDeleted = await db.substitution.deleteMany({
-        where: { schoolId, grade },
-      });
+      // 4. Substitution records are attendance history and are kept.
+      const substitutionsDeleted = { count: 0 };
 
       // 5. Remove grade from Teacher.grades
       const teachers = await db.teacher.findMany({
@@ -395,6 +402,7 @@ export async function DELETE(request: Request) {
 
       return NextResponse.json({
         success: true,
+        autofix: await autofixAfterSave(schoolId, 'save:structure', request.headers.get('x-user-email')),
         message: `Grade "${grade}" and all associated sections and schedules were deleted successfully.`,
         grade,
         deletedSections: csDeleted.count,
@@ -415,13 +423,14 @@ export async function DELETE(request: Request) {
       where: { schoolId, grade, section },
     });
 
-    // 2. Delete schedule rows for this class
+    // 2. Delete this class's timetable rows that may still change (history is kept)
     const schedulesDeleted = await db.schedule.deleteMany({
-      where: { schoolId, grade, section },
+      where: { ...(await editableScheduleScope(schoolId)), grade, section },
     });
 
     return NextResponse.json({
       success: true,
+      autofix: await autofixAfterSave(schoolId, 'save:structure', request.headers.get('x-user-email')),
       message: `Section ${section} removed from ${grade}.`,
       grade,
       section,

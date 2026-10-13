@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import { useToast } from '@/hooks/use-toast';
 import { SetupChecklist } from '@/components/dashboard/setup-checklist';
+import { AutoFixNotices } from '@/components/autofix-notices';
 
 /* ── Types ── */
 interface DashboardStats {
@@ -660,6 +661,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Setup progress, from real data. Disappears once the school is set up. */}
+      {userRole !== 'teacher' && <AutoFixNotices />}
       {userRole !== 'teacher' && <SetupChecklist />}
 
       {/* KPI Row - every card below is a live tenant-scoped database count. */}

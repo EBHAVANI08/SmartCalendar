@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability, roleOf } from '@/lib/authz';
+import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
 
 export async function GET(request: Request) {
   // School-wide staffing figures are an administrator's view. Teachers have
@@ -30,6 +31,9 @@ export async function GET(request: Request) {
     const subWhere = { schoolId, absentTeacher: { schoolId } };
     const notifWhere = { teacher: { schoolId } };
     const leaveWhere = { teacher: { schoolId }, status: 'approved', startDate: { lte: todayStr }, endDate: { gte: todayStr } };
+    // The timetable in use (published version, or the live legacy timetable).
+    // Counting every version added up each copy of every lesson.
+    const inUse = await operationalScheduleFilter(schoolId);
 
     const [
       school,
@@ -45,12 +49,13 @@ export async function GET(request: Request) {
       db.school.findUnique({ where: { id: schoolId }, select: { name: true, code: true } }).catch(() => null),
       db.teacher.count({ where: teacherWhere }),
       db.leaveApplication.count({ where: leaveWhere }),
-      db.substitution.count({ where: { ...subWhere, status: 'pending' } }),
+      // Still to be covered: today and later. Old pending rows are not open work.
+      db.substitution.count({ where: { ...subWhere, status: 'pending', date: { gte: todayStr } } }),
       db.substitution.count({ where: { ...subWhere, date: todayStr, status: 'completed' } }),
       db.teacherNotification.count({ where: { ...notifWhere, isRead: false } }),
       db.teacher.findMany({ where: teacherWhere, select: { id: true, name: true, email: true, subject: true, role: true }, orderBy: { name: 'asc' } }),
-      db.schedule.count({ where: { schoolId } }),
-      db.schedule.findMany({ where: { schoolId }, select: { grade: true }, distinct: ['grade'] }),
+      db.schedule.count({ where: inUse }),
+      db.schedule.findMany({ where: inUse, select: { grade: true }, distinct: ['grade'] }),
     ]);
 
     const distinctGrades = scheduleGrades.map((g) => g.grade).filter(Boolean);

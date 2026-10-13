@@ -1,3 +1,4 @@
+import { gradeKey, sameSubject } from '@/lib/name-normalize';
 /**
  * Faculty identity, parsing and validation.
  *
@@ -475,6 +476,9 @@ export function teacherTeachesSection(
   const targetGradeNum = targetGrade.replace(/[^0-9]/g, '');
   const targetSec = section.trim().toUpperCase().replace(/^SECTION\s*/i, '');
   const targetSubject = subject ? subject.trim().toLowerCase() : undefined;
+  // "Grade I" and "Grade 1" are the same grade; digit-stripping alone misses Roman numerals.
+  const targetGradeKey = grade.trim() ? gradeKey(grade) : '';
+  const sameGrade = (value: string) => Boolean(targetGradeKey) && gradeKey(value) === targetGradeKey;
 
   // 1. If it's a JSON object format directly
   if (typeof rawSections === 'object' && !Array.isArray(rawSections)) {
@@ -482,7 +486,7 @@ export function teacherTeachesSection(
     for (const [gKey, val] of Object.entries(map)) {
       const cleanG = gKey.trim().toLowerCase();
       const gNum = cleanG.replace(/[^0-9]/g, '');
-      if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum)) {
+      if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum) || sameGrade(cleanG)) {
         const secList = Array.isArray(val) ? val : [val];
         return secList.some((s) => String(s).trim().toUpperCase().replace(/^SECTION\s*/i, '') === targetSec);
       }
@@ -509,7 +513,7 @@ export function teacherTeachesSection(
       const cleanSubj = subjPart.trim().toLowerCase();
       const isSubjMatch =
         targetSubject &&
-        (cleanSubj === targetSubject || cleanSubj.replace(/\s+/g, '') === targetSubject.replace(/\s+/g, ''));
+        (cleanSubj === targetSubject || cleanSubj.replace(/\s+/g, '') === targetSubject.replace(/\s+/g, '') || sameSubject(cleanSubj, targetSubject));
 
       if (isSubjMatch) {
         hasSubjectEntriesForTargetSubject = true;
@@ -517,7 +521,7 @@ export function teacherTeachesSection(
           const [gPart, sPart] = rest.split(':');
           const cleanG = gPart.trim().toLowerCase();
           const gNum = cleanG.replace(/[^0-9]/g, '');
-          if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum)) {
+          if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum) || sameGrade(cleanG)) {
             hasSubjectGradeEntriesForTarget = true;
             const cleanS = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
             if (cleanS === targetSec) return true;
@@ -529,7 +533,7 @@ export function teacherTeachesSection(
           const [gPart, sPart] = rest.split(':');
           const cleanG = gPart.trim().toLowerCase();
           const gNum = cleanG.replace(/[^0-9]/g, '');
-          if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum)) {
+          if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum) || sameGrade(cleanG)) {
             const cleanS = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
             if (cleanS === targetSec) return true;
           }
@@ -541,7 +545,7 @@ export function teacherTeachesSection(
       const [gPart, sPart] = trimmed.split(':');
       const cleanG = gPart.trim().toLowerCase();
       const gNum = cleanG.replace(/[^0-9]/g, '');
-      if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum)) {
+      if (cleanG === targetGrade || (targetGradeNum && gNum === targetGradeNum) || sameGrade(cleanG)) {
         hasGradeSpecificEntriesForThisGrade = true;
         const cleanS = sPart.trim().toUpperCase().replace(/^SECTION\s*/i, '');
         if (cleanS === targetSec) return true;
@@ -678,6 +682,16 @@ export function parseSubjectGradeSectionsMap(
   }
 
   return result;
+}
+
+/**
+ * True when a teacher's sections column actually names grades ("Grade:Section",
+ * "Subject::Grade:Section" or a grade-keyed object). parseSubjectGradeSectionsMap
+ * fills in an example grade for editing when it does not; data checks must
+ * not treat that example as a real assignment.
+ */
+export function hasScopedSections(raw: unknown): boolean {
+  return String(raw ?? '').includes(':');
 }
 
 /**

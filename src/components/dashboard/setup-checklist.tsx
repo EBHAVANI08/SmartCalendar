@@ -15,6 +15,8 @@ export interface Step {
   detail: string;
   required: boolean;
   skipped?: boolean;
+  /** Generation cannot succeed until this is fixed. */
+  blocking?: boolean;
 }
 
 export interface SetupStatus {
@@ -201,10 +203,13 @@ export function SetupChecklistFull() {
             <Link
               key={step.id}
               href={step.href}
+              title={step.detail}
               className={`flex items-start gap-2.5 p-3 rounded-xl border transition-all ${
                 step.done
                   ? 'border-emerald-200/80 bg-white hover:border-emerald-300 hover:shadow-xs'
-                  : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/30 hover:shadow-xs'
+                  : step.blocking
+                    ? 'border-rose-300 bg-rose-50/60 hover:border-rose-400 hover:shadow-xs'
+                    : 'border-slate-200 bg-white hover:border-blue-300 hover:bg-blue-50/30 hover:shadow-xs'
               }`}
             >
               <span
@@ -225,7 +230,7 @@ export function SetupChecklistFull() {
                     <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Optional</span>
                   )}
                 </div>
-                <p className="text-[11px] text-slate-500 truncate mt-0.5">{step.detail}</p>
+                <p className={`text-[11px] truncate mt-0.5 ${step.blocking ? 'text-rose-700 font-semibold' : 'text-slate-500'}`}>{step.detail}</p>
               </div>
               {!step.done && <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-1" />}
             </Link>

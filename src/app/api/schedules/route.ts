@@ -1,8 +1,10 @@
 export const dynamic = 'force-dynamic';
 
 import { db } from '@/lib/db';
+import { withRoomNames } from '@/lib/room-names';
 import { getTenantSchoolId, resolveSchoolId } from '@/lib/school-helper';
 import { operationalScheduleFilter } from '@/lib/timetable-lifecycle';
+import { gradeKey } from '@/lib/name-normalize';
 import { NextResponse } from 'next/server';
 import { ownTeacherId } from '@/lib/teacher-scope';
 import { TEACHER_PUBLIC_SELECT } from '@/lib/safe-fields';
@@ -44,7 +46,13 @@ export async function GET(request: Request) {
       : await operationalScheduleFilter(schoolId);
 
     const where: Record<string, unknown> = { ...versionScope };
-    if (grade) where.grade = grade;
+    if (grade) {
+      // Same grade under another spelling: a published version keeps the name a
+      // grade had when it was published ("Grade I" vs "Grade 1").
+      const names = await db.schedule.findMany({ where: { ...versionScope }, select: { grade: true }, distinct: ['grade'] });
+      const sameGrade = names.map((r) => r.grade).filter((name) => gradeKey(name) === gradeKey(grade));
+      where.grade = { in: sameGrade.length ? sameGrade : [grade] };
+    }
     if (section) where.section = section;
     if (day) where.day = day;
 
@@ -129,7 +137,7 @@ export async function GET(request: Request) {
       }
     }
 
-    return NextResponse.json(schedules);
+    return NextResponse.json(await withRoomNames(schoolId, schedules));
   } catch (error) {
     console.error('Error fetching schedules:', error);
     return NextResponse.json({ error: 'Failed to fetch schedules' }, { status: 500 });

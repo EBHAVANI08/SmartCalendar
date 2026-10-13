@@ -3,6 +3,8 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 import { requireCapability } from '@/lib/authz';
+import { isSolverV2Enabled } from '@/lib/solver/flags';
+import { assessPublishability } from '@/lib/timetable-audit';
 
 export const dynamic = 'force-dynamic';
 
@@ -65,6 +67,20 @@ export async function POST(request: Request, context: {
 
   if (['approve', 'publish', 'archive'].includes(action) && !['admin', 'school', 'superadmin'].includes(actorRole)) {
     return NextResponse.json({ error: 'Administrator authority is required.' }, { status: 403 });
+  }
+
+  // Solver schools: the independent validator gates publication too.
+  if (action === 'publish' && (await isSolverV2Enabled(schoolId))) {
+    const check = await assessPublishability(schoolId, id);
+    if (!check.ok) {
+      return NextResponse.json({
+        error: `Publication blocked: the validator found ${check.summary.errors} problem(s)`
+          + (check.requiredTeacherGaps ? `, including ${check.requiredTeacherGaps} required-teacher gap(s)` : '') + '.',
+        code: 'VALIDATION_BLOCKED',
+        errors: check.summary.errors,
+        byRule: check.summary.byRule,
+      }, { status: 409 });
+    }
   }
 
   const nextStatus = {

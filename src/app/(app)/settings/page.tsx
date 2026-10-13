@@ -23,6 +23,10 @@ import DayConfigPage from '../day-config/page';
 import RoomsPage from '../rooms/page';
 import { DetectedStructure } from '@/components/school-setup/detected-structure';
 import { SetupChecklistFull } from '@/components/dashboard/setup-checklist';
+import { CapacitySummary } from '@/components/school-setup/capacity-summary';
+import { AutoFixPanel } from '@/components/school-setup/autofix-panel';
+import { AutoFixNotices } from '@/components/autofix-notices';
+import { WorkloadDefaults } from '@/components/school-setup/workload-defaults';
 
 interface SchoolProfile {
   id: string;
@@ -43,8 +47,10 @@ interface DayConfig {
   workingDays: number;
   startTime: string;
   endTime: string;
+  breakEnabled?: boolean;
   breakAfter: number;
   breakMinutes: number;
+  lunchEnabled?: boolean;
   lunchAfter: number;
   lunchMinutes: number;
 }
@@ -87,7 +93,7 @@ function ReadOnlyRow({ label, value }: { label: string; value: React.ReactNode }
 }
 
 export type SettingsTabId = 'profile' | 'timetable' | 'automation' | 'integrations' | 'security';
-export type TimetableSubTabId = 'days' | 'structure' | 'subjects' | 'rooms' | 'summary';
+export type TimetableSubTabId = 'days' | 'structure' | 'subjects' | 'workload' | 'rooms' | 'summary' | 'autofix';
 
 function SchoolSettingsContent({
   pageTitle = 'School Settings',
@@ -122,7 +128,7 @@ function SchoolSettingsContent({
       setTimetableSubTab(t as TimetableSubTabId);
     } else if (t === 'timetable') {
       setActiveTab('timetable');
-      if (s && ['days', 'structure', 'subjects', 'rooms', 'summary'].includes(s)) {
+      if (s && ['days', 'structure', 'subjects', 'workload', 'rooms', 'summary', 'autofix'].includes(s)) {
         setTimetableSubTab(s as TimetableSubTabId);
       }
     } else if (t === 'profile' || t === 'automation' || t === 'integrations' || t === 'security') {
@@ -592,8 +598,10 @@ function SchoolSettingsContent({
                 { id: 'days', label: 'Days & Periods', icon: CalendarClock, desc: 'Working days & breaks' },
                 { id: 'structure', label: 'Academic Structure', icon: Layers, desc: 'Grades & sections' },
                 { id: 'subjects', label: 'Subjects', icon: BookOpen, desc: 'Subject rules & allocation' },
+                { id: 'workload', label: 'Teacher Workload', icon: User, desc: 'Default teaching limits' },
                 { id: 'rooms', label: 'Rooms', icon: DoorOpen, desc: 'Capacity & types' },
                 { id: 'summary', label: 'Weekly Summary', icon: Info, desc: 'Teaching hours overview' },
+                { id: 'autofix', label: 'Auto-fixes', icon: Sparkles, desc: 'Automatic corrections, with Undo' },
               ].map((st) => {
                 const SubIcon = st.icon;
                 const isSubActive = timetableSubTab === st.id;
@@ -623,10 +631,14 @@ function SchoolSettingsContent({
           {timetableSubTab === 'days' && <DayConfigPage onSaved={load} />}
           {timetableSubTab === 'structure' && <DetectedStructure />}
           {timetableSubTab === 'subjects' && <SubjectManagementPage />}
+          {timetableSubTab === 'workload' && <WorkloadDefaults />}
           {timetableSubTab === 'rooms' && <RoomsPage />}
+          {timetableSubTab === 'autofix' && <AutoFixPanel />}
           {timetableSubTab === 'summary' && (
             <div className="space-y-4">
+              <AutoFixNotices />
               <SetupChecklistFull />
+              <CapacitySummary />
               <Card className="border-slate-200 shadow-sm rounded-3xl">
                 <CardHeader className="p-6 pb-4">
                   <CardTitle className="text-base font-bold text-slate-900">Teaching Week Overview &amp; Period Balances</CardTitle>
@@ -640,8 +652,8 @@ function SchoolSettingsContent({
                       <div className="rounded-2xl border border-slate-200 bg-slate-50/50 p-5 space-y-1">
                         <ReadOnlyRow label="Working days per week" value={`${dayConfig.workingDays} Days`} />
                         <ReadOnlyRow label="School hours" value={`${dayConfig.startTime} – ${dayConfig.endTime}`} />
-                        <ReadOnlyRow label="Short break" value={`${dayConfig.breakMinutes} min (after period ${dayConfig.breakAfter})`} />
-                        <ReadOnlyRow label="Lunch break" value={`${dayConfig.lunchMinutes} min (after period ${dayConfig.lunchAfter})`} />
+                        <ReadOnlyRow label="Short break" value={dayConfig.breakEnabled === false ? 'Off' : `${dayConfig.breakMinutes} min (after period ${dayConfig.breakAfter})`} />
+                        <ReadOnlyRow label="Lunch break" value={dayConfig.lunchEnabled === false ? 'Off' : `${dayConfig.lunchMinutes} min (after period ${dayConfig.lunchAfter})`} />
                         <ReadOnlyRow label="Total teaching periods per week" value={<Badge className="bg-blue-600 font-bold">{totalWeekly} Periods</Badge>} />
                       </div>
 

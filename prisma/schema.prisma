@@ -92,6 +92,8 @@ model Schedule {
   // Binds this row to a TimetableVersion so draft/published lifecycle applies.
   // Null means a legacy row created before versioning; those keep working.
   timetableVersionId String?
+  /// Frozen by an admin: the solver keeps this slot exactly as it is.
+  locked    Boolean? @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   teacher   Teacher? @relation(fields: [teacherId], references: [id])
@@ -115,8 +117,12 @@ model SchoolDayPeriodConfig {
   perDayPeriods String   @default("{}") // JSON: {"Monday":8,...,"Saturday":5}
   startTime     String   @default("08:00")
   endTime       String   @default("15:00")
+  /// Optional: rows saved before these switches existed lack them; a break
+  /// is then on when it has minutes (src/lib/timetable-config.ts).
+  breakEnabled  Boolean? @default(true)
   breakAfter    Int      @default(2)
   breakMinutes  Int      @default(15)
+  lunchEnabled  Boolean? @default(true)
   lunchAfter    Int      @default(4)
   lunchMinutes  Int      @default(30)
   gradeConfigs  String?  @default("{}") // JSON map: { [grade: string]: GradeDayConfig }
@@ -135,11 +141,28 @@ model GradeSubjectConfig {
   weeklyPeriods      Int      @default(4)
   maxPeriodsPerDay   Int      @default(2)
   allowConsecutive   Boolean  @default(false)
+  /// "Apart": when the subject comes more than once in a day, at least this
+  /// many periods between the occurrences (an allowed double period is
+  /// exempt). Null: no minimum; the generator only spreads them softly.
+  sameDayMinGap      Int?
   priority           String   @default("Normal") // Core | High | Normal | Low
   /// Room type this subject requires for this grade, e.g. "physics_lab".
   /// Null means any room. Data, so lab requirements are never hardcoded.
   requiredRoomType   String?
+  /// Whether a lesson of this subject needs a teacher: "required" (default),
+  /// "optional" (a qualified free teacher if any, else none) or "none" (e.g. a
+  /// free period: no teacher, no room). Null means "required".
+  teacherRequirement String?  @default("required")
   active             Boolean  @default(true)
+  /// Soft delete: set (with active = false) when an auto-fix merges this row
+  /// into another. Archived rows are never read as live setup.
+  archivedAt         DateTime?
+  /// Who created the row: "user", "sync" (from Faculty Directory) or "import".
+  /// Null for rows created before this was recorded.
+  source             String?
+  /// When an admin last set weeklyPeriods by hand. Automatic balancing reduces
+  /// such rows only as a last resort.
+  quotaEditedAt      DateTime?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -255,6 +278,15 @@ model SchoolPreferences {
   autoSubstituteRecommendations Boolean @default(true)
   /// Show substitutes the lesson context for the period they are covering.
   lessonContextEnabled        Boolean  @default(true)
+  /// School-wide teacher caps used when a teacher has no personal rule.
+  /// Null: not set; the solver then reports "rule missing" instead of guessing.
+  defaultMaxWeekly            Int?
+  defaultMaxDaily             Int?
+  defaultMaxConsecutive       Int?
+  /// Rule A: the same teacher may not teach the same class in two consecutive
+  /// periods with different subjects. Null or true: on (default); false: off.
+  /// Clashes, availability, caps and room checks are unaffected either way.
+  noSameClassBackToBack       Boolean?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 }
@@ -279,6 +311,14 @@ model SchoolFeatureFlags {
   workloadAnalyticsEnabled Boolean @default(true)
   // Communication
   teacherNotifyEnabled    Boolean  @default(true)
+  /// Automatic setup corrections (src/lib/autofix). Null/false: the engine only
+  /// previews. Schools created after the engine existed get true; existing
+  /// schools are switched on deliberately by the owner.
+  autofixEnabled          Boolean?
+  /// Timetable generation by the constraint solver (src/lib/solver) with the
+  /// validator publish gate. Null/false: the legacy generator and publish flow.
+  /// Existing schools are switched on deliberately; new schools start on.
+  solverV2Enabled         Boolean?
   // Limits
   maxGrades               Int      @default(12)
   maxTeachers             Int      @default(200)
@@ -459,6 +499,8 @@ model ClassSection {
   classTeacherId  String?
   homeRoomId      String?
   active          Boolean  @default(true)
+  /// Soft delete by auto-fix (see GradeSubjectConfig.archivedAt).
+  archivedAt      DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
@@ -475,6 +517,8 @@ model SubjectMaster {
   difficulty Int      @default(1)
   active     Boolean  @default(true)
   aliases    Json?
+  /// Soft delete by auto-fix (see GradeSubjectConfig.archivedAt).
+  archivedAt DateTime?
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
@@ -522,7 +566,8 @@ model TeacherQualification {
 model TeacherWorkloadRule {
   id                 String   @id @default(auto()) @map("_id") @db.ObjectId
   schoolId           String
-  timetableVersionId String
+  /// Null: the teacher's standing rule, used by every timetable version.
+  timetableVersionId String?
   teacherId          String
   employmentType     String   @default("full_time")
   homeCampusId       String?
@@ -530,10 +575,13 @@ model TeacherWorkloadRule {
   maxDaily           Int      @default(6)
   maxConsecutive     Int      @default(3)
   minPlanning        Int      @default(0)
+  /// [{ "day": "Monday", "period": 3 }, ...] the teacher cannot teach.
+  unavailableSlots   Json?
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
   @@unique([timetableVersionId, teacherId])
+  @@index([schoolId, teacherId])
 }
 
 model TeacherAvailabilitySlot {
@@ -564,6 +612,9 @@ model Room {
   /// JSON map of day -> period numbers the room cannot be used (maintenance,
   /// assembly, external booking). Null means always available.
   unavailablePeriods Json?
+  /// Classes that may use the room in the same period (a hall or ground can
+  /// hold several). Null means 1.
+  maxParallelClasses Int?    @default(1)
   active            Boolean  @default(true)
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -1147,4 +1198,52 @@ model TenantMessage {
   school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
 
   @@index([schoolId, createdAt])
+}
+
+/// One automatic setup correction. `changes` holds the exact field values
+/// before and after for every row touched, so the fix can be undone.
+model AutoFixLog {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId    String    @db.ObjectId
+  /// Groups the fixes made by one engine run.
+  runId       String
+  /// What started the run: "save:subjects", "save:structure", "save:dayconfig", "generation", "script".
+  trigger     String
+  rule        String
+  /// 1 = silent, 2 = applied and shown to the admin with Undo.
+  tier        Int
+  /// The thing that was fixed, e.g. "grade:Grade 1" or "subject:Information Technology".
+  entity      String
+  summary     String
+  before      Json
+  after       Json
+  /// [{ model, id, before: {...}, after: {...} }]
+  changes     Json
+  /// Same issue on the same data = same key; an undone fix suppresses re-applying it.
+  suppressKey String
+  appliedAt   DateTime  @default(now())
+  appliedBy   String?
+  undoneAt    DateTime?
+  undoneBy    String?
+  /// Tier 2 notice dismissed by an admin (the fix stays applied).
+  acknowledgedAt DateTime?
+
+  @@index([schoolId, appliedAt])
+  @@index([schoolId, suppressKey])
+}
+
+/// A school's own decision that one name means another ("Computer" is
+/// "Computer Science"). Applied by the auto-fix engine like any other merge.
+model MergeRule {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  schoolId  String   @db.ObjectId
+  /// "subject" or "grade".
+  kind      String   @default("subject")
+  from      String
+  to        String
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@unique([schoolId, kind, from])
+  @@index([schoolId])
 }

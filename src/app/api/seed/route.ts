@@ -400,6 +400,10 @@ export async function POST(request: Request) {
   // by any signed-in user, including a teacher.
   const denied = requireCapability(request, 'owner.console');
   if (denied) return denied;
+  // Wipes every collection of the database: never on the live system.
+  if (process.env.NODE_ENV === 'production' || process.env.ALLOW_SEED_WIPE !== 'true') {
+    return NextResponse.json({ error: 'Seeding wipes the whole database and is disabled here.' }, { status: 403 });
+  }
 
   try {
     // Clear existing data

@@ -66,16 +66,28 @@ interface SubjectConfig {
   weeklyPeriods: number;
   maxPeriodsPerDay: number;
   allowConsecutive: boolean;
+  /** "Apart": minimum periods between two lessons on one day; null = no minimum. */
+  sameDayMinGap?: number | null;
   priority: string;
   requiredRoomType?: string | null;
   active: boolean;
+  /** Suggested from faculty/timetable data but not saved; has no quota yet. */
+  isVirtual?: boolean;
   teachers: { id: string; name: string }[];
 }
 
 export default function SubjectManagementPage() {
   const { toast } = useToast();
   const [gradesList, setGradesList] = useState<string[]>([]);
-  const [grade, setGrade] = useState('Grade 10');
+  // Chosen from the school's own grades once they load; no assumed default.
+  const [grade, setGrade] = useState('');
+  // Server-computed: same calculations as the setup checklist.
+  const [staffing, setStaffing] = useState<{ required: number; unstaffed: { grade: string; subjectName: string }[] } | null>(null);
+  const [autofixEnabled, setAutofixEnabled] = useState(false);
+  // The row the admin edited last: Auto-balance never changes it.
+  const [lastEditedId, setLastEditedId] = useState<string | null>(null);
+  const [balancing, setBalancing] = useState(false);
+  const [capacity, setCapacity] = useState<{ demand: number; slots: number; overBy: number; ok: boolean; problem: string | null; subjectIssues: { subjectName: string; weeklyPeriods: number; maxPlaceable: number }[] } | null>(null);
   const [subjects, setSubjects] = useState<SubjectConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -96,7 +108,7 @@ export default function SubjectManagementPage() {
   const [teacherSearch, setTeacherSearch] = useState('');
 
   // New Subject Draft with Multi-Grade selection
-  const [selectedGrades, setSelectedGrades] = useState<string[]>(['Grade 10']);
+  const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
   const [draft, setDraft] = useState({
     subjectName: '',
     weeklyPeriods: '4',
@@ -130,12 +142,15 @@ export default function SubjectManagementPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/subjects?grade=${encodeURIComponent(grade)}`);
+      const res = await fetch(grade ? `/api/subjects?grade=${encodeURIComponent(grade)}` : '/api/subjects');
       const data = await res.json();
-      setSubjects(res.ok && data.success ? data.subjects : []);
+      setSubjects(res.ok && data.success && grade ? data.subjects : []);
+      setStaffing(res.ok && data.success ? data.staffing ?? null : null);
+      setCapacity(res.ok && data.success ? data.capacity ?? null : null);
+      setAutofixEnabled(Boolean(res.ok && data.success && data.autofixEnabled));
       if (res.ok && data.success && Array.isArray(data.availableGrades) && data.availableGrades.length > 0) {
         setGradesList((prev) => (prev.length > 0 ? prev : data.availableGrades));
-        if (!data.availableGrades.includes(grade) && !gradesList.includes(grade)) {
+        if (!grade || (!data.availableGrades.includes(grade) && !gradesList.includes(grade))) {
           setGrade(data.availableGrades[0]);
         }
       }
@@ -150,7 +165,7 @@ export default function SubjectManagementPage() {
 
   // Keep selectedGrades synced with active grade initially
   useEffect(() => {
-    setSelectedGrades([grade]);
+    setSelectedGrades(grade ? [grade] : []);
   }, [grade]);
 
   // Load faculty list
@@ -255,10 +270,35 @@ export default function SubjectManagementPage() {
             : s
         )
       );
+      if (changes.weeklyPeriods !== undefined || changes.active !== undefined) {
+        setLastEditedId(savedConfig?.id || row.id);
+        await load(); // refresh demand vs. slots
+      }
     } catch {
       toast({ title: 'Not saved', description: 'Request failed.', variant: 'destructive' });
     } finally {
       setSavingId(null);
+    }
+  };
+
+  /** Balances this grade's quotas now, never changing the row just edited. */
+  const autoBalance = async () => {
+    setBalancing(true);
+    try {
+      const res = await fetch('/api/school/autofix/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ balance: true, grade, protect: lastEditedId ? [lastEditedId] : [] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const balanced = Array.isArray(data.fixes) ? data.fixes.find((fix: { rule: string }) => fix.rule === 'over_capacity') : null;
+      const stuck = Array.isArray(data.unfixable) ? data.unfixable.find((item: { rule: string; grade?: string }) => item.rule === 'over_capacity' && item.grade === grade) : null;
+      toast(res.ok && balanced
+        ? { title: 'Balanced', description: `${balanced.summary}. Undo it from School Setup → Auto-fixes.` }
+        : { title: 'Not balanced', description: stuck?.message || data.error || 'Nothing could be reduced automatically.', variant: 'destructive' });
+      await load();
+    } finally {
+      setBalancing(false);
     }
   };
 
@@ -283,9 +323,7 @@ export default function SubjectManagementPage() {
     }
   };
 
-  const effectiveGrades = gradesList.length > 0
-    ? gradesList
-    : ['Grade 1', 'Grade 2', 'Grade 3', 'Grade 4', 'Grade 5', 'Grade 6', 'Grade 7', 'Grade 8', 'Grade 9', 'Grade 10'];
+  const effectiveGrades = gradesList;
 
   // Grade selection shortcuts
   const toggleGrade = (g: string) => {
@@ -466,8 +504,10 @@ export default function SubjectManagementPage() {
     s.subjectName.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const weeklyTotal = subjects.filter((s) => s.active).reduce((sum, s) => sum + s.weeklyPeriods, 0);
-  const unstaffed = subjects.filter((s) => s.active && s.teachers.length === 0);
+  // Saved, active subjects only; unsaved suggestions carry no quota.
+  const weeklyTotal = subjects.filter((s) => s.active && !s.isVirtual).reduce((sum, s) => sum + s.weeklyPeriods, 0);
+  // From src/lib/staffing.ts via the API, so this matches the setup checklist.
+  const unstaffed = staffing?.unstaffed ?? [];
   const specializedRoomsCount = subjects.filter((s) => s.active && s.requiredRoomType).length;
 
   return (
@@ -588,8 +628,10 @@ export default function SubjectManagementPage() {
             <div>
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Weekly Period Demand</p>
               <div className="flex items-baseline gap-2 mt-1">
-                <span className="text-2xl font-black text-slate-900">{weeklyTotal}</span>
-                <span className="text-xs text-slate-400 font-medium">periods / week</span>
+                <span className={`text-2xl font-black ${capacity && !capacity.ok ? 'text-rose-600' : 'text-slate-900'}`}>{weeklyTotal}</span>
+                <span className="text-xs text-slate-400 font-medium">
+                  {capacity ? `of ${capacity.slots} slots / week` : 'periods / week'}
+                </span>
               </div>
             </div>
             <div className="w-10 h-10 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 border border-indigo-100">
@@ -604,7 +646,7 @@ export default function SubjectManagementPage() {
               <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Teacher Staffing Status</p>
               <div className="flex items-baseline gap-2 mt-1">
                 <span className={`text-2xl font-black ${unstaffed.length > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                  {unstaffed.length === 0 ? 'Fully Staffed' : `${unstaffed.length} Unstaffed`}
+                  {!staffing ? '—' : staffing.required === 0 ? 'No quotas set' : unstaffed.length === 0 ? 'Fully Staffed' : `${unstaffed.length} Unstaffed`}
                 </span>
               </div>
             </div>
@@ -616,6 +658,40 @@ export default function SubjectManagementPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Capacity: blocking when the week cannot hold the subjects ── */}
+      {capacity && !capacity.ok && (
+        <div className="flex items-start gap-3 p-4 rounded-2xl bg-rose-50 border border-rose-200 shadow-xs" role="alert">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+          <div className="text-xs space-y-1">
+            <p className="font-bold text-rose-950">
+              {grade} cannot be timetabled with these quotas
+            </p>
+            {capacity.overBy > 0 && (
+              <p className="text-rose-800">
+                Active subjects need <span className="font-semibold">{capacity.demand}</span> periods a week, but the week has only{' '}
+                <span className="font-semibold">{capacity.slots}</span> teaching slots ({capacity.overBy} too many). Reduce weekly periods or add periods in Day &amp; Period setup.
+              </p>
+            )}
+            {capacity.subjectIssues.map((issue) => (
+              <p key={issue.subjectName} className="text-rose-800">
+                <span className="font-semibold">{issue.subjectName}</span>: {issue.weeklyPeriods} periods a week, but its per-day limit allows at most {issue.maxPlaceable}.
+              </p>
+            ))}
+            {autofixEnabled ? (
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <span className="text-rose-800 font-semibold">Over by {capacity.overBy}.</span>
+                <Button size="sm" variant="outline" className="h-7 text-xs" disabled={balancing} onClick={autoBalance}>
+                  {balancing ? 'Balancing…' : 'Auto-balance'}
+                </Button>
+                <span className="text-rose-700">Otherwise it is balanced automatically when you generate (with Undo).</span>
+              </div>
+            ) : (
+              <p className="text-rose-700">Timetable generation is blocked for this grade until this is fixed.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Unstaffed Warning Alert ── */}
       {unstaffed.length > 0 && (
@@ -707,6 +783,7 @@ export default function SubjectManagementPage() {
                     <th className="py-3 px-3">Weekly Periods</th>
                     <th className="py-3 px-3">Max / Day</th>
                     <th className="py-3 px-3">Double Period</th>
+                    <th className="py-3 px-3" title="If the subject comes twice in a day: at least this many periods between them. Empty = no minimum.">Gap if twice a day</th>
                     <th className="py-3 px-3">Priority</th>
                     <th className="py-3 px-3">Required Room</th>
                     <th className="py-3 px-3">Assigned Faculty</th>
@@ -772,6 +849,28 @@ export default function SubjectManagementPage() {
                               {s.allowConsecutive ? 'Yes' : 'No'}
                             </span>
                           </div>
+                        </td>
+
+                        {/* "Apart": minimum periods between two lessons on one day */}
+                        <td className="py-3.5 px-3">
+                          {s.maxPeriodsPerDay > 1 ? (
+                            <input
+                              type="number"
+                              min={1}
+                              placeholder="—"
+                              title="Empty: no minimum. A double period (if allowed) is not affected."
+                              className="w-16 h-8 rounded-md border border-slate-200 px-2 text-xs"
+                              defaultValue={s.sameDayMinGap ?? ''}
+                              data-testid="subject-min-gap"
+                              onBlur={(e) => {
+                                const raw = e.target.value.trim();
+                                const next = raw === '' ? null : Number(raw);
+                                if (next !== (s.sameDayMinGap ?? null)) patch(s, { sameDayMinGap: next });
+                              }}
+                            />
+                          ) : (
+                            <span className="text-[10px] text-slate-400" title="Only applies when the subject may come more than once a day">—</span>
+                          )}
                         </td>
 
                         {/* Priority Dropdown */}

@@ -4,6 +4,11 @@ import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { requireCapability } from '@/lib/authz';
 import { NextResponse } from 'next/server';
+import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
+import { staffingReport } from '@/lib/staffing';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
+import { isAutofixEnabled } from '@/lib/autofix';
+import { gradeKey } from '@/lib/name-normalize';
 
 /**
  * How far a school is through setting itself up.
@@ -28,6 +33,8 @@ interface Step {
   required: boolean;
   /** Present but not applicable to this school, e.g. rooms when unused. */
   skipped?: boolean;
+  /** Not just incomplete: generation cannot succeed until this is fixed. */
+  blocking?: boolean;
 }
 
 export async function GET(request: Request) {
@@ -39,7 +46,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
   }
 
-  const [school, dayConfig, subjectConfigs, teachers, rooms, scheduleCount, publishedVersion] =
+  const [school, dayConfig, subjectConfigs, teachers, rooms, scheduleCount, publishedVersion, sections] =
     await Promise.all([
       db.school.findUnique({
         where: { id: schoolId },
@@ -47,7 +54,7 @@ export async function GET(request: Request) {
       }),
       db.schoolDayPeriodConfig.findUnique({ where: { schoolId } }).catch(() => null),
       db.gradeSubjectConfig
-        .findMany({ where: { schoolId }, select: { grade: true, subjectName: true, weeklyPeriods: true, active: true } })
+        .findMany({ where: { schoolId, AND: [NOT_ARCHIVED] }, select: { grade: true, subjectName: true, weeklyPeriods: true, active: true } })
         .catch(() => []),
       db.teacher
         .findMany({ where: { schoolId }, select: { role: true, subjects: true, subject: true, grades: true } })
@@ -55,39 +62,41 @@ export async function GET(request: Request) {
       db.room.count({ where: { schoolId, active: true } }).catch(() => 0),
       db.schedule.count({ where: { schoolId } }),
       db.timetableVersion.findFirst({ where: { schoolId, status: 'published' }, select: { id: true } }).catch(() => null),
+      db.classSection.findMany({ where: { schoolId, active: true, AND: [NOT_ARCHIVED] }, select: { grade: true } }),
     ]);
 
   if (!school) {
     return NextResponse.json({ error: 'School not found.' }, { status: 404 });
   }
 
-  // A legacy school proves its grades and sections through its existing
-  // timetable, not only through subject configuration.
-  const scheduleGrades = scheduleCount
-    ? await db.schedule.findMany({ where: { schoolId }, select: { grade: true, section: true, subject: true }, take: 3000 })
-    : [];
-  const classSet = new Set(scheduleGrades.map((r) => `${r.grade}|${r.section}`));
-  for (const c of subjectConfigs) classSet.add(`${c.grade}|`);
+  // Classes are the active sections, nothing else: timetable rows of old
+  // versions and grades that only have subject rules are not classes.
+  const sectionGrades = new Set(sections.map((s) => gradeKey(s.grade)));
+  const rulesWithoutSections = [...new Set(subjectConfigs
+    .filter((c) => c.active !== false && (c.weeklyPeriods ?? 0) > 0 && !sectionGrades.has(gradeKey(c.grade)))
+    .map((c) => c.grade))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
   const activeTeachers = teachers.filter((t) => t.role !== 'inactive');
 
-  const teacherSubjects = (t: (typeof teachers)[number]) => {
-    const raw = t.subjects || t.subject || '';
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.map((x) => String(x).toLowerCase());
-    } catch {
-      /* legacy single value */
-    }
-    return raw ? [String(raw).toLowerCase()] : [];
-  };
-  const coveredSubjects = new Set(activeTeachers.flatMap(teacherSubjects));
-
   const activeSubjects = subjectConfigs.filter((c) => c.active !== false && (c.weeklyPeriods ?? 0) > 0);
-  const unmappedSubjects = activeSubjects.filter((c) => !coveredSubjects.has(c.subjectName.toLowerCase()));
+  // Same calculations as the Subjects tab (src/lib/staffing.ts, src/lib/timetable-capacity.ts).
+  const [{ unstaffed: unmappedSubjects }, capacity] = await Promise.all([staffingReport(schoolId), gradeCapacityReport(schoolId)]);
+  const overCapacity = capacity.filter((grade) => !grade.ok);
 
   // Rooms only count when the school has started using them at all.
   const roomsInUse = rooms > 0;
+
+  // Problems the auto-fix engine already corrected show as "Auto-fixed: N"
+  // on their step instead of as errors (fixes still applied, not undone).
+  const appliedFixes = await db.autoFixLog.groupBy({ by: ['rule'], where: { schoolId, undoneAt: null }, _count: { _all: true } }).catch(() => []);
+  const fixedCount = (rules: string[]) => appliedFixes.filter((row) => rules.includes(row.rule)).reduce((sum, row) => sum + row._count._all, 0);
+  const autoFixed = (rules: string[]) => {
+    const count = fixedCount(rules);
+    return count ? ` · Auto-fixed: ${count}` : '';
+  };
+  const totalAutoFixed = appliedFixes.reduce((sum, row) => sum + row._count._all, 0);
+  const autofixOn = await isAutofixEnabled(schoolId);
 
   const steps: Step[] = [
     {
@@ -111,16 +120,17 @@ export async function GET(request: Request) {
       done: Boolean(dayConfig),
       href: '/settings?tab=timetable&sub=days',
       detail: dayConfig
-        ? `${dayConfig.workingDays} working days configured`
+        ? `${dayConfig.workingDays} working days configured${autoFixed(['break_zero_minutes', 'break_out_of_range', 'break_same_period'])}`
         : 'Not configured — generation cannot run without it',
       required: true,
     },
     {
       id: 'classes',
       label: 'Grades & sections',
-      done: classSet.size > 0,
+      done: sections.length > 0,
       href: '/settings?tab=timetable&sub=structure',
-      detail: classSet.size ? `${classSet.size} class(es) known` : 'No grades or sections yet',
+      detail: (sections.length ? `${sections.length} active section(s)${autoFixed(['duplicate_grade'])}` : 'No active sections yet')
+        + (rulesWithoutSections.length ? ` · Subject rules for grades with no sections (not counted): ${rulesWithoutSections.join(', ')}` : ''),
       required: true,
     },
     {
@@ -129,7 +139,7 @@ export async function GET(request: Request) {
       done: activeSubjects.length > 0,
       href: '/settings?tab=timetable&sub=subjects',
       detail: activeSubjects.length
-        ? `${activeSubjects.length} subject(s) configured`
+        ? `${activeSubjects.length} subject(s) configured${autoFixed(['duplicate_subject', 'display_name', 'auto_created_rows'])}`
         : 'No subjects with a weekly requirement',
       required: true,
     },
@@ -149,9 +159,30 @@ export async function GET(request: Request) {
       detail: activeSubjects.length === 0
         ? 'Configure subjects first'
         : unmappedSubjects.length
-          ? `${unmappedSubjects.length} subject(s) have no qualified teacher`
+          ? `${unmappedSubjects.length} grade subject(s) have no qualified teacher`
           : 'Every configured subject has a teacher',
       required: true,
+    },
+    {
+      id: 'capacity',
+      label: 'Weekly periods fit the week',
+      done: activeSubjects.length > 0 && overCapacity.length === 0,
+      href: '/settings?tab=timetable&sub=subjects',
+      detail: activeSubjects.length === 0
+        ? 'Configure subjects first'
+        : overCapacity.length
+          ? `${overCapacity.map(describeCapacityProblem).join('; ')}${autofixOn ? ' — balanced automatically when you generate' : ''}`
+          : `All ${capacity.length} grade(s) fit their week${autoFixed(['over_capacity', 'daily_cap_too_low'])}`,
+      required: true,
+      blocking: overCapacity.length > 0 && !autofixOn,
+    },
+    {
+      id: 'autofix',
+      label: 'Automatic corrections',
+      done: true,
+      href: '/settings?tab=timetable&sub=autofix',
+      detail: totalAutoFixed ? `Auto-fixed: ${totalAutoFixed} — review or undo` : 'Nothing needed correcting',
+      required: false,
     },
     {
       id: 'rooms',
