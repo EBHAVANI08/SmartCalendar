@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { impactText } from '@/lib/settings-impact-text';
 
 /**
  * School Setup → Teacher Workload: the school's default limits, used for every
@@ -60,7 +61,7 @@ export function WorkloadDefaults() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) { setErrors(body.errors ?? [body.error ?? `HTTP ${res.status}`]); return; }
-      toast({ title: 'Workload defaults saved', description: `${form.maxWeekly} a week · ${form.maxDaily} a day · ${form.maxConsecutive} in a row.` });
+      toast({ title: 'Workload defaults saved', description: [`${form.maxWeekly} a week · ${form.maxDaily} a day · ${form.maxConsecutive} in a row.`, impactText(body.impact)].filter(Boolean).join(' ') });
       await load();
     } catch {
       setErrors(['Could not reach the server. Nothing was saved.']);

@@ -69,6 +69,11 @@ export interface SolverInput {
   rooms: SolverRoom[];
   /** Admin-locked lessons: kept exactly as they are. */
   locked: SolverLesson[];
+  /**
+   * Where lessons were before (soft): when a class is rearranged after a
+   * settings change, lessons prefer their old slot so as little as possible moves.
+   */
+  previous?: { classKey: string; subject: string; day: string; period: number; teacherId: string | null }[];
 }
 
 export type UnallocatedReason =

@@ -10,6 +10,7 @@ import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-ca
 import { isAutofixEnabled, runAutofix } from '@/lib/autofix';
 import { isSolverV2Enabled } from '@/lib/solver/flags';
 import { generateDraft } from '@/lib/solver/generate';
+import { repairDraft } from '@/lib/solver/repair';
 
 const MAX_PERIODS_PER_TEACHER_DAY = 6;
 
@@ -217,6 +218,11 @@ export async function POST(request: Request) {
     // Everything below is the legacy generator, unchanged for other schools.
     if (await isSolverV2Enabled(schoolId)) {
       if (dryRun) return NextResponse.json({ error: 'Use scripts/audit-timetable.ts --simulate for a dry run.', code: 'DRY_RUN_UNSUPPORTED' }, { status: 400 });
+      // "Fix only affected lessons": keep every lesson that still fits the settings.
+      if (body.mode === 'repair') {
+        const repaired = await repairDraft({ schoolId, actor: request.headers.get('x-user-email') || 'School Admin' });
+        return NextResponse.json(repaired.body, { status: repaired.status });
+      }
       const result = await generateDraft({
         schoolId,
         actor: request.headers.get('x-user-email') || 'School Admin',

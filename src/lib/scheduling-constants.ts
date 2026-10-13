@@ -48,3 +48,10 @@ export const SOLVER_REPAIR_ATTEMPTS_PER_LESSON = 400;
  * that places the most lessons wins. Stops early once everything is placed.
  */
 export const SOLVER_RESTARTS = 8;
+
+/**
+ * Solver: soft-score bonus for placing a lesson in the slot it had before a
+ * settings change (larger than every other soft preference combined for one
+ * slot), so rearranging a class after a change moves as few lessons as possible.
+ */
+export const PREVIOUS_SLOT_BONUS = 200;

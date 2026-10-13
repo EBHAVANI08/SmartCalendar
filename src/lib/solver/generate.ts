@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { db } from '@/lib/db';
 import { runAutofix, isAutofixEnabled } from '@/lib/autofix';
 import { gradeKey } from '@/lib/name-normalize';
+import { fingerprintOf } from '@/lib/settings-fingerprint';
 import { loadSolverInput } from '@/lib/solver/load';
 import { solve } from '@/lib/solver/solve';
 import type { SolverLesson, Unallocated } from '@/lib/solver/types';
@@ -205,6 +206,8 @@ export async function generateDraft(request: GenerateRequest): Promise<GenerateR
           unallocated,
           skipped: loaded.skipped,
           autofix: { runId: autofix.runId, logIds: autofix.logIds },
+          // What the settings looked like, to tell the admin when they change later.
+          settingsFingerprint: fingerprintOf(input),
         } as unknown as Prisma.InputJsonValue,
       },
     });

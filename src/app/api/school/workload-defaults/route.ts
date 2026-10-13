@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
+import { settingsImpact } from '@/lib/settings-impact';
 import { requireCapability } from '@/lib/authz';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
@@ -64,5 +65,5 @@ export async function PUT(request: Request) {
       after: { ...caps },
     },
   }).catch(() => null);
-  return NextResponse.json({ success: true, defaults: caps });
+  return NextResponse.json({ success: true, defaults: caps, impact: await settingsImpact(schoolId) });
 }

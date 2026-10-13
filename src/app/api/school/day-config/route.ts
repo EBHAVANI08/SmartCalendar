@@ -5,6 +5,7 @@ import { getTenantSchoolId } from '@/lib/school-helper';
 import { getDayConfig, saveDayConfig } from '@/lib/timetable-config';
 import { buildBellTimeline, buildTeachingGrid, periodTimingsForDay, periodsForDay, validateBellConfig, workingDayNames } from '@/lib/timetable-constraints';
 import { NextResponse } from 'next/server';
+import { settingsImpact } from '@/lib/settings-impact';
 import { requireCapability } from '@/lib/authz';
 import { autofixAfterSave } from '@/lib/autofix';
 
@@ -96,5 +97,5 @@ export async function PUT(request: Request) {
     getAvailableGrades(schoolId),
   ]);
 
-  return NextResponse.json({ ...describe(config, baseConfig, grades), autofix });
+  return NextResponse.json({ ...describe(config, baseConfig, grades), autofix, impact: await settingsImpact(schoolId) });
 }

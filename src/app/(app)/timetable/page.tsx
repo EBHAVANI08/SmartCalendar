@@ -26,7 +26,7 @@ import { ImportPreviewDialog, type ImportReport } from '@/components/timetable/i
 import { readList, teacherTeachesSection, formatTeacherQualifications } from '@/lib/faculty';
 import { gradeKey } from '@/lib/name-normalize';
 import { AutoFixNotices } from '@/components/autofix-notices';
-import { SolverProblemsPanel, type PanelIssue } from '@/components/timetable/solver-problems-panel';
+import { SolverProblemsPanel, type PanelIssue, type RegenerateMode } from '@/components/timetable/solver-problems-panel';
 
 interface Teacher {
   id: string;
@@ -456,6 +456,26 @@ export default function TimetablePage() {
   };
 
   /** Solver schools: draft → approved (the publish gate requires it). */
+  /** Solver schools: fix only the lessons that no longer fit the settings, or rebuild the draft. */
+  const handleRegenerate = async (mode: RegenerateMode) => {
+    try {
+      const res = await fetch('/api/schedules/ai-generate-timetable', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(mode === 'repair' ? { mode: 'repair' } : { bulkAll: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      toast({ title: mode === 'repair' ? 'Affected lessons fixed' : `Draft v${data.version?.version ?? ''} regenerated`, description: data.message });
+      const newVer = await fetchTimetableStatus();
+      fetchSchedules(newVer?.id);
+      fetchOccupancy(newVer?.id);
+      setProblemsRefresh((n) => n + 1);
+    } catch (err) {
+      toast({ variant: 'destructive', title: 'Could not update the draft', description: err instanceof Error ? err.message : 'Unexpected error' });
+    }
+  };
+
   const handleApprove = async () => {
     if (!versionInfo?.id) return;
     setIsApproving(true);
@@ -889,7 +909,7 @@ export default function TimetablePage() {
           <VersionBanner onChanged={fetchSchedules} refreshKey={`${versionInfo?.id}|${versionInfo?.status}`} />
           <AutoFixNotices />
           {solverV2Enabled && versionInfo?.id
-            ? <SolverProblemsPanel versionId={versionInfo.id} refreshKey={`${problemsRefresh}|${versionInfo.status}`} onIssues={handleIssues} />
+            ? <SolverProblemsPanel versionId={versionInfo.id} refreshKey={`${problemsRefresh}|${versionInfo.status}`} onIssues={handleIssues} onRegenerate={handleRegenerate} />
             : <GenerationResult result={genResult} onDismiss={() => setGenResult(null)} />}
         </>
       )}

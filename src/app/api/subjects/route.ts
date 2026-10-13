@@ -7,6 +7,7 @@ import { staffingReport, teacherQualifiedFor } from '@/lib/staffing';
 import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-capacity';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
+import { settingsImpact } from '@/lib/settings-impact';
 import { requireCapability } from '@/lib/authz';
 import { isKnownRoomType } from '@/lib/room-types';
 import { canonicalGrade, resolveSubjectName, schoolGradeNames, schoolSubjectNames, subjectConflictMessage } from '@/lib/master-data';
@@ -254,7 +255,7 @@ export async function POST(request: Request) {
 
   return NextResponse.json({
     success: true,
-    autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')),
+    autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), impact: await settingsImpact(schoolId),
     createdCount: createdList.length,
     skippedGrades: skippedList,
     subject: createdList[0],
@@ -344,7 +345,7 @@ export async function PUT(request: Request) {
       },
     });
 
-    return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), subject: created });
+    return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), impact: await settingsImpact(schoolId), subject: created });
   }
 
   const updated = await db.gradeSubjectConfig.update({
@@ -365,7 +366,7 @@ export async function PUT(request: Request) {
     },
   });
 
-  return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), subject: updated });
+  return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), impact: await settingsImpact(schoolId), subject: updated });
 }
 
 export async function DELETE(request: Request) {
@@ -384,7 +385,7 @@ export async function DELETE(request: Request) {
   }
 
   if (id.startsWith('virtual-')) {
-    return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), message: 'Subject dismissed.' });
+    return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), impact: await settingsImpact(schoolId), message: 'Subject dismissed.' });
   }
 
   const existing = await db.gradeSubjectConfig.findFirst({ where: { id, schoolId } });
@@ -393,5 +394,5 @@ export async function DELETE(request: Request) {
   }
 
   await db.gradeSubjectConfig.delete({ where: { id } });
-  return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), message: `Removed ${existing.subjectName} from ${existing.grade}.` });
+  return NextResponse.json({ success: true, autofix: await autofixAfterSave(schoolId, 'save:subjects', request.headers.get('x-user-email')), impact: await settingsImpact(schoolId), message: `Removed ${existing.subjectName} from ${existing.grade}.` });
 }

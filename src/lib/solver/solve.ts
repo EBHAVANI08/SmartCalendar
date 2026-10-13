@@ -1,4 +1,4 @@
-import { SOLVER_REPAIR_ATTEMPTS_PER_LESSON, SOLVER_RESTARTS } from '@/lib/scheduling-constants';
+import { PREVIOUS_SLOT_BONUS, SOLVER_REPAIR_ATTEMPTS_PER_LESSON, SOLVER_RESTARTS } from '@/lib/scheduling-constants';
 import type {
   SolverInput, SolverLesson, SolverRequirement, SolverResult, SolverTeacher, Unallocated, UnallocatedReason,
 } from '@/lib/solver/types';
@@ -171,6 +171,9 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   }
 
   // ── Soft score ────────────────────────────────────────────────────────────
+  // Lessons' old slots (soft): a rearranged class keeps as much as it can.
+  const previousSlots = new Map((input.previous ?? []).map((p) => [`${p.classKey}|${p.subject}|${p.day}|${p.period}`, p.teacherId]));
+
   function score(req: SolverRequirement, teacherId: string | null, day: string, period: number, maxPeriods: number): number {
     let value = 0;
     const sameDay = subjectDayPeriods.get(`${req.classKey}|${req.subject}|${day}`)?.length ?? 0;
@@ -183,6 +186,9 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
     }
     value -= 3 * dayPeriods.length;                                        // balance the teacher's days
     value += req.core ? 2 * (maxPeriods - period) : 0;                     // core subjects earlier
+    if (previousSlots.has(`${req.classKey}|${req.subject}|${day}|${period}`)) {
+      value += PREVIOUS_SLOT_BONUS + (previousSlots.get(`${req.classKey}|${req.subject}|${day}|${period}`) === teacherId ? PREVIOUS_SLOT_BONUS / 2 : 0);
+    }
     return value + rand();                                                 // seeded tie-break
   }
 

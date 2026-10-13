@@ -1,6 +1,7 @@
 export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
+import { settingsImpact } from '@/lib/settings-impact';
 import { requireCapability } from '@/lib/authz';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
@@ -67,7 +68,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     },
   }).catch(() => null);
 
-  return NextResponse.json({ success: true, rule: { ...caps, unavailable, source: 'personal' } });
+  return NextResponse.json({ success: true, rule: { ...caps, unavailable, source: 'personal' }, impact: await settingsImpact(schoolId) });
 }
 
 export async function DELETE(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -92,5 +93,5 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       },
     }).catch(() => null);
   }
-  return NextResponse.json({ success: true, removed: removed.count });
+  return NextResponse.json({ success: true, removed: removed.count, impact: await settingsImpact(schoolId) });
 }

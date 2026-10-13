@@ -31,7 +31,12 @@ interface AuditResponse {
   unallocated: { grade: string; section: string; subject: string; periods: number; reason: string; detail: string }[];
   skipped: { grade: string; section: string; reason: string }[];
   autoChanges: { id: string; rule: string; summary: string; undoneAt: string | null }[];
+  /** Settings areas changed since this version was generated. */
+  settingsChanged?: { area: string; label: string }[];
+  mode?: string;
 }
+
+export type RegenerateMode = 'repair' | 'full';
 
 const REASON_LABELS: Record<string, string> = {
   no_qualified_teacher: 'No qualified teacher',
@@ -63,13 +68,21 @@ const RULE_LABELS: Record<string, string> = {
   unknown_room: 'Unknown room',
 };
 
-export function SolverProblemsPanel({ versionId, refreshKey, onIssues }: {
+export function SolverProblemsPanel({ versionId, refreshKey, onIssues, onRegenerate }: {
   versionId: string;
   /** Changes when the version's lessons change, to reload. */
   refreshKey?: unknown;
   /** Issues for the grid (red cells). */
   onIssues?: (issues: PanelIssue[]) => void;
+  /** Fix only the affected lessons, or rebuild the whole draft (admins only). */
+  onRegenerate?: (mode: RegenerateMode) => Promise<void>;
 }) {
+  const [fixing, setFixing] = useState<RegenerateMode | null>(null);
+  const run = async (mode: RegenerateMode) => {
+    if (!onRegenerate) return;
+    setFixing(mode);
+    try { await onRegenerate(mode); } finally { setFixing(null); }
+  };
   const { toast } = useToast();
   const [data, setData] = useState<AuditResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -147,6 +160,46 @@ export function SolverProblemsPanel({ versionId, refreshKey, onIssues }: {
             : audit.errors === 0 ? 'Ready to approve and publish' : 'Publishing is blocked until these are fixed'}
         </Badge>
       </div>
+
+      {(() => {
+        const live = data.version.status === 'published';
+        const changed = data.settingsChanged ?? [];
+        if (!onRegenerate) return null;
+        if (live && audit.errors > 0) {
+          return (
+            <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] text-rose-900 space-y-2" data-testid="live-mismatch">
+              <p>
+                <span className="font-semibold">The live timetable no longer matches your settings: {audit.errors} problem(s).</span>{' '}
+                Teachers still see it unchanged. Start a revision that moves only the affected lessons, then approve and publish it.
+              </p>
+              <Button size="sm" className="h-7 text-[11px]" disabled={Boolean(fixing)} onClick={() => run('repair')} data-testid="revision-fix">
+                {fixing === 'repair' ? 'Working…' : 'Create revision & fix'}
+              </Button>
+            </div>
+          );
+        }
+        if (!live && (changed.length > 0 || audit.errors > 0)) {
+          return (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 space-y-2" data-testid="settings-changed">
+              <p>
+                {changed.length > 0
+                  ? <><span className="font-semibold">Settings changed after this draft was made:</span> {changed.map((c) => c.label).join(', ')}.</>
+                  : <span className="font-semibold">This draft has {audit.errors} problem(s).</span>}{' '}
+                Fix only the affected lessons (everything else stays where it is), or rebuild the whole draft.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" className="h-7 text-[11px]" disabled={Boolean(fixing)} onClick={() => run('repair')} data-testid="fix-affected">
+                  {fixing === 'repair' ? 'Fixing…' : 'Fix only affected lessons'}
+                </Button>
+                <Button size="sm" variant="outline" className="h-7 text-[11px]" disabled={Boolean(fixing)} onClick={() => run('full')}>
+                  {fixing === 'full' ? 'Regenerating…' : 'Regenerate everything'}
+                </Button>
+              </div>
+            </div>
+          );
+        }
+        return null;
+      })()}
 
       {unallocated.length > 0 && (
         <section>

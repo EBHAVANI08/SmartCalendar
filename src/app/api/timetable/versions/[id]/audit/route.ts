@@ -5,6 +5,8 @@ import { requireCapability } from '@/lib/authz';
 import { db } from '@/lib/db';
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { auditVersion } from '@/lib/timetable-audit';
+import { changedAreas, fingerprintOf } from '@/lib/settings-fingerprint';
+import { loadSolverInput } from '@/lib/solver/load';
 
 /**
  * Everything the Studio's Problems panel shows for one version: the
@@ -27,8 +29,13 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
 
   const audit = await auditVersion(schoolId, id);
   const config = (version.generationConfig ?? {}) as {
-    engine?: string; generatedAt?: string; unallocated?: unknown[]; skipped?: unknown[]; autofix?: { logIds?: string[] };
+    engine?: string; mode?: string; generatedAt?: string; unallocated?: unknown[]; skipped?: unknown[]; autofix?: { logIds?: string[] };
+    settingsFingerprint?: unknown;
   };
+  // Settings changed since this version was generated (only versions made by the solver record them).
+  const changed = config.settingsFingerprint
+    ? changedAreas(config.settingsFingerprint, fingerprintOf((await loadSolverInput(schoolId, { versionId: id })).input))
+    : [];
   const logIds = Array.isArray(config.autofix?.logIds) ? config.autofix!.logIds! : [];
   const changes = logIds.length
     ? await db.autoFixLog.findMany({
@@ -43,6 +50,8 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     version: { id: version.id, version: version.version, status: version.status, approvedBy: version.approvedBy, approvedAt: version.approvedAt },
     engine: config.engine ?? null,
     generatedAt: config.generatedAt ?? null,
+    mode: config.mode ?? 'generate',
+    settingsChanged: changed,
     audit: { lessons: audit.slots, errors: audit.errors, warnings: audit.warnings, byRule: audit.byRule, issues: audit.issues },
     unallocated: Array.isArray(config.unallocated) ? config.unallocated : [],
     skipped: Array.isArray(config.skipped) ? config.skipped : [],

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { impactText } from '@/lib/settings-impact-text';
 
 /**
  * One teacher's workload limits and unavailable periods. A teacher follows the
@@ -90,7 +91,7 @@ export function TeacherWorkloadEditor({ teacherId, teacherName, onSaved }: { tea
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) { setErrors(body.errors ?? [body.error ?? `HTTP ${res.status}`]); return; }
-      toast({ title: 'Workload limits saved', description: `${teacherName} now has personal limits.` });
+      toast({ title: 'Workload limits saved', description: [`${teacherName} now has personal limits.`, impactText(body.impact)].filter(Boolean).join(' ') });
       await load();
       onSaved?.();
     } catch {
@@ -106,7 +107,8 @@ export function TeacherWorkloadEditor({ teacherId, teacherName, onSaved }: { tea
     try {
       const res = await fetch(`/api/teachers/${encodeURIComponent(teacherId)}/workload-rule`, { method: 'DELETE' });
       if (!res.ok) throw new Error();
-      toast({ title: 'Using school defaults', description: `${teacherName}'s personal limits and unavailable periods were removed.` });
+      const body = await res.json().catch(() => ({}));
+      toast({ title: 'Using school defaults', description: [`${teacherName}'s personal limits and unavailable periods were removed.`, impactText(body.impact)].filter(Boolean).join(' ') });
       await load();
       onSaved?.();
     } catch {
