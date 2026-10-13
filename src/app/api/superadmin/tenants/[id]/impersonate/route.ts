@@ -1,6 +1,7 @@
 import { db } from '@/lib/db';
 import { signJwt } from '@/lib/jwt-auth';
 import { NextResponse } from 'next/server';
+import { IMPERSONATION_TTL_SECONDS } from '@/lib/security-constants';
 import { isSuperAdminRequest, unauthorized, writeAudit } from '@/lib/superadmin';
 import { readSessionToken, getSession } from '@/lib/session';
 
@@ -47,7 +48,6 @@ export async function POST(request: Request, ctx: Ctx) {
     token,
     user,
     impersonating: true,
-    superadminToken: superadminToken || null,
     superadminUser: superadminSession ? {
       id: superadminSession.userId,
       name: superadminSession.name || 'SuperAdmin',
@@ -64,13 +64,15 @@ export async function POST(request: Request, ctx: Ctx) {
     maxAge: 7 * 24 * 60 * 60,
   });
 
+  // The owner's own session is kept only in an httpOnly cookie (never sent to
+  // the page) and only for a short while; logout clears it.
   if (superadminToken) {
     response.cookies.set('smart_calendar_impersonator_token', superadminToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 7 * 24 * 60 * 60,
+      maxAge: IMPERSONATION_TTL_SECONDS,
     });
   }
 

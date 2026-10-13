@@ -1,181 +1,87 @@
-import { signJwt, verifyJwt } from '@/lib/jwt-auth';
-import bcrypt from 'bcryptjs';
+import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
+import { db } from '@/lib/db';
+import { RESET_CODE_MAX_ATTEMPTS, RESET_CODE_TTL_MS } from '@/lib/security-constants';
 
 /**
- * The single account a reset code was issued for. A reset changes only this
- * row, never every record that shares the email address (one address can
- * belong to staff in several schools).
+ * Password-reset codes, kept on the server only.
+ *
+ * Earlier versions sent the browser a signed token holding a hash of the
+ * 6-digit code; with only 900,000 possible codes that hash could be cracked
+ * offline in minutes. Now the code is stored as a salted HMAC in the database
+ * (PasswordResetCode), never returned to the caller, checked with an attempt
+ * limit, and usable once.
  */
+
+/** The single account a reset code was issued for; a reset changes only this row. */
 export interface ResetAccount {
   type: 'teacher' | 'school' | 'member' | 'admin';
   id: string;
 }
 
-interface OtpEntry {
-  email: string;
+const hashCode = (code: string, salt: string) => createHmac('sha256', salt).update(code).digest('hex');
+
+// On MongoDB a field Prisma never wrote is "unset", which `usedAt: null` does not match.
+const UNUSED = { OR: [{ usedAt: null }, { usedAt: { isSet: false } }] };
+
+/** Codes requested for this email since `since` (to limit how often codes are sent). */
+export async function resetRequestsSince(email: string, since: Date): Promise<number> {
+  return db.passwordResetCode.count({ where: { email: email.trim().toLowerCase(), createdAt: { gte: since } } });
+}
+
+/** Creates a new code for the account (earlier unused codes for the email stop working). */
+export async function createPasswordResetOtp(email: string, account: ResetAccount, requestIp?: string): Promise<{
   otp: string;
-  expiresAt: number; // Unix timestamp in ms
-  attempts: number;
-  account: ResetAccount;
-}
-
-// In-memory store for single-use protection and attempt throttling
-const activeOtps = new Map<string, OtpEntry>();
-// Failed attempts per email, shared by the in-memory and signed-token paths, so
-// deleting the in-memory entry cannot reopen unlimited guessing via the token.
-const failedAttempts = new Map<string, { count: number; expiresAt: number }>();
-
-function attemptsExhausted(email: string): boolean {
-  const entry = failedAttempts.get(email);
-  if (!entry) return false;
-  if (Date.now() > entry.expiresAt) {
-    failedAttempts.delete(email);
-    return false;
-  }
-  return entry.count >= MAX_ATTEMPTS;
-}
-
-function recordFailedAttempt(email: string): number {
-  const current = failedAttempts.get(email);
-  const count = (current && Date.now() <= current.expiresAt ? current.count : 0) + 1;
-  failedAttempts.set(email, { count, expiresAt: Date.now() + OTP_EXPIRY_SECONDS * 1000 });
-  return count;
-}
-
-function encodeAccount(account: ResetAccount): string {
-  return `${account.type}:${account.id}`;
-}
-
-function decodeAccount(value: string | undefined): ResetAccount | null {
-  const [type, id] = String(value || '').split(':');
-  if (!id || !['teacher', 'school', 'member', 'admin'].includes(type)) return null;
-  return { type: type as ResetAccount['type'], id };
-}
-
-const OTP_EXPIRY_SECONDS = 15 * 60; // 15 minutes
-const MAX_ATTEMPTS = 5;
-
-/**
- * Generate a 6-digit OTP and signed token for password reset.
- */
-export async function createPasswordResetOtp(email: string, account: ResetAccount): Promise<{
-  otp: string;
-  otpToken: string;
   expiresInMinutes: number;
 }> {
   const cleanEmail = email.trim().toLowerCase();
-  const otp = Math.floor(100000 + Math.random() * 900000).toString();
-  const now = Date.now();
-  const expiresAt = now + OTP_EXPIRY_SECONDS * 1000;
-
-  // Store in memory
-  activeOtps.set(cleanEmail, {
-    email: cleanEmail,
-    otp,
-    expiresAt,
-    attempts: 0,
-    account,
-  });
-  failedAttempts.delete(cleanEmail);
-
-  // Also hash OTP into signed JWT for stateless durability
-  const otpHashed = await bcrypt.hash(otp, 6);
-  const otpToken = await signJwt(
-    {
-      userId: encodeAccount(account),
+  const otp = String(randomInt(100000, 1000000));
+  const salt = randomBytes(16).toString('hex');
+  await db.passwordResetCode.updateMany({ where: { email: cleanEmail, ...UNUSED }, data: { usedAt: new Date() } });
+  await db.passwordResetCode.create({
+    data: {
       email: cleanEmail,
-      role: 'teacher', // dummy role required by UserSessionPayload
-      schoolId: null,
-      name: otpHashed, // embed hashed OTP inside signed token
-      modules: 'password_reset_otp',
+      accountType: account.type,
+      accountId: account.id,
+      codeHash: hashCode(otp, salt),
+      salt,
+      expiresAt: new Date(Date.now() + RESET_CODE_TTL_MS),
+      usedAt: null,
+      requestIp: requestIp ?? null,
     },
-    OTP_EXPIRY_SECONDS
-  );
-
-  return {
-    otp,
-    otpToken,
-    expiresInMinutes: 15,
-  };
+  });
+  return { otp, expiresInMinutes: Math.round(RESET_CODE_TTL_MS / 60000) };
 }
 
-/**
- * Verify OTP entered by user.
- */
+/** Checks the code entered for the email; a correct code is used up immediately. */
 export async function verifyPasswordResetOtp(
   email: string,
   enteredOtp: string,
-  otpToken?: string
 ): Promise<{ valid: boolean; error?: string; account?: ResetAccount }> {
   const cleanEmail = email.trim().toLowerCase();
   const cleanOtp = enteredOtp.trim();
+  if (!/^\d{6}$/.test(cleanOtp)) return { valid: false, error: 'Please enter a valid 6-digit code.' };
 
-  if (!cleanOtp || cleanOtp.length !== 6) {
-    return { valid: false, error: 'Please enter a valid 6-digit code.' };
-  }
-
-  if (attemptsExhausted(cleanEmail)) {
-    activeOtps.delete(cleanEmail);
+  const entry = await db.passwordResetCode.findFirst({
+    where: { email: cleanEmail, ...UNUSED, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!entry) return { valid: false, error: 'Invalid or expired code. Please request a new code.' };
+  if (entry.attempts >= RESET_CODE_MAX_ATTEMPTS) {
+    await db.passwordResetCode.updateMany({ where: { id: entry.id, ...UNUSED }, data: { usedAt: new Date() } });
     return { valid: false, error: 'Too many incorrect attempts. Please request a new code.' };
   }
 
-  const memoryEntry = activeOtps.get(cleanEmail);
-
-  // Check in-memory store first
-  if (memoryEntry) {
-    if (Date.now() > memoryEntry.expiresAt) {
-      activeOtps.delete(cleanEmail);
-      return { valid: false, error: 'This OTP has expired. Please request a new code.' };
-    }
-
-    if (memoryEntry.attempts >= MAX_ATTEMPTS) {
-      activeOtps.delete(cleanEmail);
-      return { valid: false, error: 'Too many incorrect attempts. This OTP has been invalidated. Please request a new code.' };
-    }
-
-    if (memoryEntry.otp === cleanOtp) {
-      // Invalidate so it cannot be used again
-      activeOtps.delete(cleanEmail);
-      failedAttempts.delete(cleanEmail);
-      return { valid: true, account: memoryEntry.account };
-    }
-
-    // Increment failed attempt
-    memoryEntry.attempts += 1;
-    recordFailedAttempt(cleanEmail);
-    return {
-      valid: false,
-      error: `Incorrect OTP. You have ${MAX_ATTEMPTS - memoryEntry.attempts} attempt(s) remaining.`,
-    };
+  const expected = Buffer.from(entry.codeHash, 'hex');
+  const actual = Buffer.from(hashCode(cleanOtp, entry.salt), 'hex');
+  if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
+    const updated = await db.passwordResetCode.update({ where: { id: entry.id }, data: { attempts: { increment: 1 } } });
+    const left = Math.max(0, RESET_CODE_MAX_ATTEMPTS - updated.attempts);
+    return { valid: false, error: left ? `Incorrect code. You have ${left} attempt(s) left.` : 'Too many incorrect attempts. Please request a new code.' };
   }
 
-  // Fallback: Verify via signed JWT token if present (e.g. server restarted)
-  if (otpToken) {
-    try {
-      const verified = await verifyJwt(otpToken);
-      if (
-        verified &&
-        verified.email.toLowerCase() === cleanEmail &&
-        verified.modules === 'password_reset_otp' &&
-        verified.name
-      ) {
-        const account = decodeAccount(verified.userId);
-        const matches = account ? await bcrypt.compare(cleanOtp, verified.name) : false;
-        if (matches && account) {
-          failedAttempts.delete(cleanEmail);
-          return { valid: true, account };
-        }
-        recordFailedAttempt(cleanEmail);
-      }
-    } catch {}
-  }
-
-  return { valid: false, error: 'Invalid or expired OTP. Please request a new code.' };
-}
-
-/**
- * Invalidate an active OTP (e.g. after successful password reset)
- */
-export function invalidatePasswordResetOtp(email: string) {
-  activeOtps.delete(email.trim().toLowerCase());
+  // Use the code exactly once, even if two requests race.
+  const claimed = await db.passwordResetCode.updateMany({ where: { id: entry.id, ...UNUSED }, data: { usedAt: new Date() } });
+  if (claimed.count === 0) return { valid: false, error: 'This code was already used. Please request a new code.' };
+  if (!['teacher', 'school', 'member', 'admin'].includes(entry.accountType)) return { valid: false, error: 'This code is no longer valid.' };
+  return { valid: true, account: { type: entry.accountType as ResetAccount['type'], id: entry.accountId } };
 }

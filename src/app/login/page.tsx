@@ -76,13 +76,11 @@ export default function LoginPage() {
               isLoggedIn: true,
               user: data.user,
               role: data.user.role || 'admin',
-              token: data.token,
             })
           );
           sessionStorage.setItem('sc_user', JSON.stringify(data.user));
-          if (data.token) {
-            sessionStorage.setItem('sc_token', data.token);
-          }
+          // The session itself is the httpOnly cookie; scripts never hold the token.
+          sessionStorage.removeItem('sc_token');
         } catch {}
 
         toast({

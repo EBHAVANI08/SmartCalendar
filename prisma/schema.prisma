@@ -1247,3 +1247,24 @@ model MergeRule {
   @@unique([schoolId, kind, from])
   @@index([schoolId])
 }
+
+/// One password-reset code request. The code itself never leaves the server:
+/// only a salted hash is stored here, checked with an attempt limit, and the
+/// row is used once. Rows for the same email are also used to limit how often
+/// codes can be requested.
+model PasswordResetCode {
+  id          String    @id @default(auto()) @map("_id") @db.ObjectId
+  email       String
+  /// The single account the code was issued for: "teacher" | "school" | "member" | "admin".
+  accountType String
+  accountId   String
+  codeHash    String
+  salt        String
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  usedAt      DateTime?
+  requestIp   String?
+  createdAt   DateTime  @default(now())
+
+  @@index([email, createdAt])
+}

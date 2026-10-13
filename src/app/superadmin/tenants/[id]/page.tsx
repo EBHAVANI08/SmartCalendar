@@ -104,14 +104,13 @@ export default function TenantDetailPage() {
 
   const impersonate = async () => {
     try {
-      const currentToken = sessionStorage.getItem('sc_token');
       const currentUser = sessionStorage.getItem('sc_user');
       let parsedUser = null;
       try {
         parsedUser = currentUser ? JSON.parse(currentUser) : null;
       } catch {}
 
-      const owner = { user: parsedUser, token: currentToken };
+      const owner = { user: parsedUser };
 
       const res = await fetch(`/api/superadmin/tenants/${id}/impersonate`, { method: 'POST' });
       const d = await res.json();
@@ -120,16 +119,14 @@ export default function TenantDetailPage() {
         return;
       }
 
-      const ownerSession = {
-        user: owner.user || d.superadminUser,
-        token: owner.token || d.superadminToken,
-      };
+      // Only who the owner is; the owner's session stays in an httpOnly cookie.
+      const ownerSession = { user: owner.user || d.superadminUser };
 
       sessionStorage.setItem('sc_owner_session', JSON.stringify(ownerSession));
       localStorage.setItem('sc_owner_session', JSON.stringify(ownerSession));
 
       sessionStorage.setItem('sc_user', JSON.stringify(d.user));
-      if (d.token) sessionStorage.setItem('sc_token', d.token);
+      sessionStorage.removeItem('sc_token');
 
       const schoolLabel = data?.tenant?.name || form.name || d.user?.name || 'Tenant School';
       sessionStorage.setItem('sc_impersonating', schoolLabel);
@@ -141,7 +138,6 @@ export default function TenantDetailPage() {
           isLoggedIn: true,
           user: d.user,
           role: d.user.role || 'admin',
-          token: d.token,
         })
       );
 
