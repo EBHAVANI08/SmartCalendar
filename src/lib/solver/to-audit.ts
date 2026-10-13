@@ -8,7 +8,11 @@ import type { SolverInput, SolverResult } from '@/lib/solver/types';
 export function toAuditInput(input: SolverInput, result: SolverResult, rooms?: AuditInput['rooms']): AuditInput {
   const classByKey = new Map(input.classes.map((c) => [c.key, c]));
   const periodsByGrade: AuditInput['periodsByGrade'] = {};
-  for (const cls of input.classes) periodsByGrade[cls.grade] = Object.fromEntries(cls.days.map((d) => [d.day, d.periods]));
+  const breaksAfterByGrade: Record<string, number[]> = {};
+  for (const cls of input.classes) {
+    periodsByGrade[cls.grade] = Object.fromEntries(cls.days.map((d) => [d.day, d.periods]));
+    breaksAfterByGrade[cls.grade] = cls.breaksAfter ?? [];
+  }
   return {
     slots: result.lessons.map((lesson, index) => {
       const cls = classByKey.get(lesson.classKey)!;
@@ -23,6 +27,7 @@ export function toAuditInput(input: SolverInput, result: SolverResult, rooms?: A
       allowConsecutive: r.allowConsecutive,
       requiredRoomType: r.requiredRoomType,
       teacherRequirement: r.teacherRequirement,
+      minGap: r.minGap ?? null,
       active: true,
     })),
     teachers: input.teachers.map((t) => ({
@@ -31,5 +36,7 @@ export function toAuditInput(input: SolverInput, result: SolverResult, rooms?: A
     })),
     rooms: rooms ?? input.rooms.map((r) => ({ id: r.id, name: r.id, type: r.type, maxParallelClasses: r.maxParallelClasses })),
     periodsByGrade,
+    breaksAfterByGrade,
+    rules: { noSameClassBackToBack: input.rules?.noSameClassBackToBack !== false },
   };
 }

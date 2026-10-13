@@ -208,6 +208,7 @@ export async function POST(request: Request, ctx: Ctx) {
   }
 
   // Hard constraints - identical to generation and substitution.
+  const gradeConfig = await getDayConfig(schoolId, slot.grade);
   const check = await checkSlotConflicts({
     schoolId,
     grade: slot.grade,
@@ -217,7 +218,8 @@ export async function POST(request: Request, ctx: Ctx) {
     teacherId,
     timetableVersionId: slot.timetableVersionId,
     ignoreScheduleId: id,
-    config: config.configured ? config : undefined,
+    config: gradeConfig.configured ? gradeConfig : config.configured ? config : undefined,
+    subject: slot.subject,
   });
 
   if (!check.ok) {

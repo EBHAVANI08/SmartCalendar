@@ -66,6 +66,8 @@ const RULE_LABELS: Record<string, string> = {
   workload_rule_missing: 'Teacher has no workload limits',
   room_type: 'Wrong room type',
   unknown_room: 'Unknown room',
+  subject_min_gap: 'Subject repeated too close together',
+  teacher_same_class_consecutive: 'Same teacher, same class, different subjects back to back',
 };
 
 export function SolverProblemsPanel({ versionId, refreshKey, onIssues, onRegenerate }: {

@@ -1,5 +1,7 @@
 import { db } from '@/lib/db';
 import { MIN_PERIOD_MINUTES } from '@/lib/scheduling-constants';
+import { gradeKey, subjectKey } from '@/lib/name-normalize';
+import { NOT_ARCHIVED } from '@/lib/soft-delete';
 
 /**
  * Shared timetable constraints.
@@ -142,6 +144,17 @@ export type BellTimelineItem =
   | { kind: 'period'; period: number; startTime: string; endTime: string }
   | { kind: 'break' | 'lunch'; after: number; startTime: string; endTime: string };
 
+/**
+ * Periods followed by an enabled break or lunch. Lessons on either side of one
+ * are not back to back (no double period across it).
+ */
+export function breakBoundaries(config: Pick<BellConfig, 'breakEnabled' | 'breakAfter' | 'breakMinutes' | 'lunchEnabled' | 'lunchAfter' | 'lunchMinutes'>): number[] {
+  const after: number[] = [];
+  if (config.breakEnabled && config.breakMinutes > 0 && config.breakAfter > 0) after.push(config.breakAfter);
+  if (config.lunchEnabled && config.lunchMinutes > 0 && config.lunchAfter > 0) after.push(config.lunchAfter);
+  return [...new Set(after)].sort((a, b) => a - b);
+}
+
 /** Most periods any working day has; the full day's bell is built for this count. */
 export function longestDayPeriods(config: DayPeriodConfig): number {
   return Math.max(1, ...workingDayNames(config).map((day) => periodsForDay(day, config)));
@@ -264,7 +277,12 @@ export interface ConflictCheckInput extends SlotIdentity {
   timetableVersionId?: string | null;
   /** Schedule row being edited, excluded from its own conflict check. */
   ignoreScheduleId?: string | null;
-  config?: DayPeriodConfig;
+  /** The class's own day setup (grade override when it has one); its breaks separate periods. */
+  config?: DayPeriodConfig | (DayPeriodConfig & BellConfig);
+  /** Subject of the lesson: enables the same-teacher-same-class rule (Rule A). */
+  subject?: string;
+  /** Also check the subject's daily limit, double periods and minimum gap (when the lesson moves). */
+  checkSubjectRules?: boolean;
 }
 
 export interface ConflictResult {
@@ -274,7 +292,11 @@ export interface ConflictResult {
     | 'TEACHER_DOUBLE_BOOKED'
     | 'CLASS_DOUBLE_BOOKED'
     | 'TEACHER_INACTIVE'
-    | 'TEACHER_NOT_IN_SCHOOL';
+    | 'TEACHER_NOT_IN_SCHOOL'
+    | 'TEACHER_SAME_CLASS_CONSECUTIVE'
+    | 'SUBJECT_DAILY_LIMIT'
+    | 'SUBJECT_NOT_DOUBLE'
+    | 'SUBJECT_MIN_GAP';
   message?: string;
   /** Where the conflicting teacher already is, for a useful error message. */
   conflictWith?: { grade: string; section: string; subject: string };
@@ -326,6 +348,9 @@ export async function checkSlotConflicts(input: ConflictCheckInput): Promise<Con
     };
   }
 
+  const placement = await checkPlacementRules(input, versionScope);
+  if (placement) return placement;
+
   if (!teacherId) return { ok: true };
 
   const teacher = await db.teacher.findUnique({
@@ -369,6 +394,72 @@ export async function checkSlotConflicts(input: ConflictCheckInput): Promise<Con
   }
 
   return { ok: true };
+}
+
+/**
+ * Rules about where a lesson sits next to the class's other lessons that day:
+ *  - Rule A (school setting, on by default): the same teacher does not teach
+ *    this class a different subject in the period just before or after;
+ *  - with checkSubjectRules: the subject's daily limit, double periods only
+ *    when allowed (pairs only), and the "Apart" minimum gap.
+ * A break or lunch between two periods means they are not back to back.
+ */
+async function checkPlacementRules(
+  input: ConflictCheckInput,
+  versionScope: Record<string, unknown>,
+): Promise<ConflictResult | null> {
+  const { schoolId, grade, section, day, period, teacherId, subject, ignoreScheduleId } = input;
+  if (!subject) return null;
+  const breaks = input.config && 'breakAfter' in input.config ? breakBoundaries(input.config) : [];
+  const touching = (a: number, b: number) => Math.abs(a - b) === 1 && !breaks.includes(Math.min(a, b));
+  const sameDay = await db.schedule.findMany({
+    where: { schoolId, grade, section, day, ...versionScope, ...(ignoreScheduleId ? { NOT: { id: ignoreScheduleId } } : {}) },
+    select: { period: true, subject: true, teacherId: true },
+  });
+
+  if (teacherId) {
+    const preferences = await db.schoolPreferences.findUnique({ where: { schoolId }, select: { noSameClassBackToBack: true } });
+    if (preferences?.noSameClassBackToBack !== false) {
+      const neighbour = sameDay.find((row) => touching(row.period, period) && row.teacherId === teacherId && subjectKey(row.subject) !== subjectKey(subject));
+      if (neighbour) {
+        return {
+          ok: false,
+          code: 'TEACHER_SAME_CLASS_CONSECUTIVE',
+          message: `The same teacher already teaches ${grade} ${section} ${neighbour.subject} in period ${neighbour.period} on ${day}; a different subject right before or after is not allowed (School Setup can switch this rule off).`,
+        };
+      }
+    }
+  }
+
+  if (!input.checkSubjectRules) return null;
+  const rules = (await db.gradeSubjectConfig.findMany({
+    where: { schoolId, active: true, AND: [NOT_ARCHIVED] },
+    select: { grade: true, subjectName: true, maxPeriodsPerDay: true, allowConsecutive: true, sameDayMinGap: true },
+  })).filter((r) => gradeKey(r.grade) === gradeKey(grade) && subjectKey(r.subjectName) === subjectKey(subject));
+  const rule = rules.find((r) => r.grade === grade) ?? rules[0];
+  const samePeriods = sameDay.filter((row) => subjectKey(row.subject) === subjectKey(subject)).map((row) => row.period);
+  const limit = rule?.maxPeriodsPerDay ?? 1;
+  if (samePeriods.length + 1 > limit) {
+    return { ok: false, code: 'SUBJECT_DAILY_LIMIT', message: `${subject} would be ${samePeriods.length + 1} times on ${day} for ${grade} ${section}; the limit is ${limit}.` };
+  }
+  for (const other of samePeriods) {
+    if (touching(other, period)) {
+      if (!rule?.allowConsecutive) {
+        return { ok: false, code: 'SUBJECT_NOT_DOUBLE', message: `${subject} is already in period ${other} on ${day}; it is not set up for double periods.` };
+      }
+    } else if (rule?.sameDayMinGap != null && Math.abs(other - period) - 1 < rule.sameDayMinGap) {
+      return { ok: false, code: 'SUBJECT_MIN_GAP', message: `${subject} is in period ${other} on ${day}; it needs at least ${rule.sameDayMinGap} period(s) between.` };
+    }
+  }
+  if (rule?.allowConsecutive) {
+    const block = [...samePeriods, period].sort((a, b) => a - b);
+    let run = 1;
+    for (let i = 1; i < block.length; i++) {
+      run = touching(block[i - 1], block[i]) ? run + 1 : 1;
+      if (run > 2) return { ok: false, code: 'SUBJECT_NOT_DOUBLE', message: `${subject} would run ${run} periods in a row on ${day}; only pairs are allowed.` };
+    }
+  }
+  return null;
 }
 
 /**

@@ -33,6 +33,18 @@ function random(seed: number) {
   };
 }
 
+/** Longest chain of periods where each is back to back with the next. */
+function runLength(periods: number[], touching: (a: number, b: number) => boolean): number {
+  const sorted = [...new Set(periods)].sort((a, b) => a - b);
+  let best = 0;
+  let run = 0;
+  for (let index = 0; index < sorted.length; index++) {
+    run = index > 0 && touching(sorted[index - 1], sorted[index]) ? run + 1 : 1;
+    best = Math.max(best, run);
+  }
+  return best;
+}
+
 function longestRun(periods: number[]): number {
   const sorted = [...new Set(periods)].sort((a, b) => a - b);
   let best = 0;
@@ -133,6 +145,13 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
   }
 
   // ── Hard checks ───────────────────────────────────────────────────────────
+  /** Two periods are back to back when adjacent with no break or lunch between them. */
+  const breaksByClass = new Map(input.classes.map((c) => [c.key, new Set(c.breaksAfter ?? [])]));
+  function touchingFor(classKey: string) {
+    const breaks = breaksByClass.get(classKey) ?? new Set<number>();
+    return (a: number, b: number) => Math.abs(a - b) === 1 && !breaks.has(Math.min(a, b));
+  }
+
   /** The room a lesson would use at this slot, or undefined when none is free. */
   function roomFor(req: SolverRequirement, day: string, period: number): string | null | undefined {
     if (req.teacherRequirement === 'none') return null;
@@ -163,8 +182,26 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
     }
     const subjectPeriods = subjectDayPeriods.get(`${req.classKey}|${req.subject}|${day}`) ?? [];
     if (subjectPeriods.length >= req.maxPerDay) return { ok: false };
-    const adjacent = subjectPeriods.some((p) => Math.abs(p - period) === 1);
-    if (adjacent && (!req.allowConsecutive || longestRun([...subjectPeriods, period]) > 2)) return { ok: false };
+    const touching = touchingFor(req.classKey);
+    for (const p of subjectPeriods) {
+      if (touching(p, period)) {
+        // Back to back with the same subject is a double period: only when allowed.
+        if (!req.allowConsecutive) return { ok: false };
+      } else if (req.minGap != null && Math.abs(p - period) - 1 < req.minGap) {
+        return { ok: false };                                              // "Apart": minimum gap
+      }
+    }
+    if (req.allowConsecutive && runLength([...subjectPeriods, period], touching) > 2) return { ok: false }; // pairs only
+    // Rule A: the same teacher does not teach this class a different subject
+    // in the period just before or after (breaks and lunch separate periods).
+    if (teacherId && input.rules?.noSameClassBackToBack !== false) {
+      for (const neighbour of [period - 1, period + 1]) {
+        if (!touching(neighbour, period)) continue;
+        const index = classSlot.get(`${req.classKey}|${slotKey(day, neighbour)}`);
+        const other = index === undefined ? null : lessons[index];
+        if (other && other.teacherId === teacherId && other.subject !== req.subject) return { ok: false };
+      }
+    }
     const roomId = roomFor(req, day, period);
     if (roomId === undefined) return { ok: false };
     return { ok: true, roomId };
@@ -176,8 +213,14 @@ function solveOnce(input: SolverInput, seed: number): SolverResult {
 
   function score(req: SolverRequirement, teacherId: string | null, day: string, period: number, maxPeriods: number): number {
     let value = 0;
-    const sameDay = subjectDayPeriods.get(`${req.classKey}|${req.subject}|${day}`)?.length ?? 0;
+    const samePeriods = subjectDayPeriods.get(`${req.classKey}|${req.subject}|${day}`) ?? [];
+    const sameDay = samePeriods.length;
     value += sameDay === 0 ? 50 : -40;                                     // spread over distinct days
+    if (sameDay > 0) {
+      const touching = touchingFor(req.classKey);
+      if (req.allowConsecutive && samePeriods.some((p) => touching(p, period))) value += 70; // "Together": keep the pair
+      else value += 3 * Math.min(...samePeriods.map((p) => Math.abs(p - period))); // otherwise apart within the day
+    }
     if (subjectPeriodUse.get(`${req.classKey}|${req.subject}`)?.has(period)) value -= 12; // vary the period number
     const dayPeriods = teacherId ? teacherDayPeriods.get(`${teacherId}|${day}`) ?? [] : [];
     if (dayPeriods.length) {

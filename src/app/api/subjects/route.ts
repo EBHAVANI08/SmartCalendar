@@ -8,6 +8,7 @@ import { describeCapacityProblem, gradeCapacityReport } from '@/lib/timetable-ca
 import { getTenantSchoolId } from '@/lib/school-helper';
 import { NextResponse } from 'next/server';
 import { settingsImpact } from '@/lib/settings-impact';
+import { schoolWeekShape } from '@/lib/workload';
 import { requireCapability } from '@/lib/authz';
 import { isKnownRoomType } from '@/lib/room-types';
 import { canonicalGrade, resolveSubjectName, schoolGradeNames, schoolSubjectNames, subjectConflictMessage } from '@/lib/master-data';
@@ -69,6 +70,7 @@ export async function GET(request: Request) {
     weeklyPeriods: number;
     maxPeriodsPerDay: number;
     allowConsecutive: boolean;
+    sameDayMinGap: number | null;
     priority: string;
     requiredRoomType: string | null;
     active: boolean;
@@ -85,6 +87,7 @@ export async function GET(request: Request) {
       weeklyPeriods: c.weeklyPeriods,
       maxPeriodsPerDay: c.maxPeriodsPerDay,
       allowConsecutive: c.allowConsecutive,
+      sameDayMinGap: c.sameDayMinGap ?? null,
       priority: c.priority,
       requiredRoomType: c.requiredRoomType,
       active: c.active,
@@ -108,6 +111,7 @@ export async function GET(request: Request) {
         weeklyPeriods: 0,
         maxPeriodsPerDay: 1,
         allowConsecutive: false,
+        sameDayMinGap: null,
         priority: 'Normal',
         requiredRoomType: null,
         active: true,
@@ -315,6 +319,25 @@ export async function PUT(request: Request) {
     );
   }
 
+  // "Apart": minimum periods between two lessons of the subject on one day.
+  // Empty clears it (no minimum). It must leave room in the school's longest day.
+  let sameDayMinGap: number | null | undefined;
+  if (body.sameDayMinGap !== undefined) {
+    if (body.sameDayMinGap === null || body.sameDayMinGap === '') sameDayMinGap = null;
+    else {
+      const gap = Number(body.sameDayMinGap);
+      const week = await schoolWeekShape(schoolId);
+      const most = week.configured ? week.longestDay - 2 : null;
+      if (!Number.isInteger(gap) || gap < 1 || (most !== null && gap > most)) {
+        return NextResponse.json(
+          { error: most !== null ? `The gap must be a whole number from 1 to ${most} (your longest day has ${week.longestDay} periods).` : 'The gap must be a whole number of at least 1.' },
+          { status: 400 }
+        );
+      }
+      sameDayMinGap = gap;
+    }
+  }
+
   // If the subject was virtual / discovered, upsert it into database
   if (!current) {
     if (!subjectName || !grade) {
@@ -339,6 +362,7 @@ export async function PUT(request: Request) {
         weeklyPeriods,
         maxPeriodsPerDay,
         allowConsecutive: Boolean(body.allowConsecutive),
+        sameDayMinGap: sameDayMinGap ?? null,
         priority: body.priority && PRIORITIES.includes(body.priority) ? body.priority : 'Normal',
         requiredRoomType: body.requiredRoomType && isKnownRoomType(body.requiredRoomType) ? body.requiredRoomType : null,
         active: body.active !== false,
@@ -358,6 +382,7 @@ export async function PUT(request: Request) {
       ...(body.allowConsecutive !== undefined
         ? { allowConsecutive: Boolean(body.allowConsecutive) }
         : {}),
+      ...(sameDayMinGap !== undefined ? { sameDayMinGap } : {}),
       ...(body.priority && PRIORITIES.includes(body.priority) ? { priority: body.priority } : {}),
       ...(body.active !== undefined ? { active: Boolean(body.active) } : {}),
       ...(body.requiredRoomType !== undefined

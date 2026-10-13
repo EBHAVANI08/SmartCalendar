@@ -6,7 +6,7 @@ import { NOT_ARCHIVED } from '@/lib/soft-delete';
 import { teacherQualifiedFor } from '@/lib/staffing';
 import { teacherRequirementOf } from '@/lib/teacher-requirement';
 import { getDayConfig } from '@/lib/timetable-config';
-import { DAY_NAMES, periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
+import { breakBoundaries, DAY_NAMES, periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
 import type { SolverClass, SolverInput, SolverLesson, SolverRequirement, SolverTeacher } from '@/lib/solver/types';
 
 /**
@@ -84,6 +84,7 @@ export async function loadSolverInput(schoolId: string, options: LoadOptions = {
       section: section.section,
       days,
       homeRoomId: section.homeRoomId && roomIds.has(section.homeRoomId) ? section.homeRoomId : null,
+      breaksAfter: breakBoundaries(week),
     });
   }
 
@@ -108,6 +109,7 @@ export async function loadSolverInput(schoolId: string, options: LoadOptions = {
         weeklyPeriods: rule.weeklyPeriods,
         maxPerDay: rule.maxPeriodsPerDay ?? 1,
         allowConsecutive: Boolean(rule.allowConsecutive),
+        minGap: rule.sameDayMinGap ?? null,
         requiredRoomType: teacherRequirement === 'none' ? null : specialRoomType(rule.requiredRoomType),
         teacherRequirement,
         core: String(rule.priority ?? '').toLowerCase() === 'core',
@@ -154,5 +156,6 @@ export async function loadSolverInput(schoolId: string, options: LoadOptions = {
       return { classKey, day: row.day, period: row.period, subject, teacherId: row.teacherId ?? null, roomId: row.roomId ?? null, locked: true };
     });
 
-  return { input: { classes, requirements, teachers: solverTeachers, rooms, locked }, skipped, assumedTeachers };
+  const schoolRules = { noSameClassBackToBack: preferences?.noSameClassBackToBack !== false };
+  return { input: { classes, requirements, teachers: solverTeachers, rooms, locked, rules: schoolRules }, skipped, assumedTeachers };
 }

@@ -191,6 +191,7 @@ export async function PATCH(request: Request, ctx: Ctx) {
     }
 
     // Standard move into an empty cell
+    const gradeConfig = await getDayConfig(schoolId, slot.grade);
     const check = await checkSlotConflicts({
       schoolId,
       grade: slot.grade,
@@ -200,7 +201,9 @@ export async function PATCH(request: Request, ctx: Ctx) {
       teacherId: slot.teacherId,
       timetableVersionId: slot.timetableVersionId,
       ignoreScheduleId: id,
-      config: config.configured ? config : undefined,
+      config: gradeConfig.configured ? gradeConfig : undefined,
+      subject: slot.subject,
+      checkSubjectRules: true,
     });
     if (!check.ok) {
       return NextResponse.json(

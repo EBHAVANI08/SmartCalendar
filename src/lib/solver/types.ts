@@ -15,6 +15,12 @@ export interface SolverClass {
   days: { day: string; periods: number }[];
   /** The section's own room, used for lessons without a specialised room need. */
   homeRoomId: string | null;
+  /**
+   * Periods followed by a break or lunch (from the day setup). Lessons on
+   * either side are not back to back: no double period across them, and the
+   * same-teacher-same-class rule does not apply across them.
+   */
+  breaksAfter?: number[];
 }
 
 export interface SolverRequirement {
@@ -25,6 +31,11 @@ export interface SolverRequirement {
   maxPerDay: number;
   /** Two periods of the subject may be adjacent, as a pair only. */
   allowConsecutive: boolean;
+  /**
+   * "Apart": at least this many periods between two lessons of the subject on
+   * the same day (an allowed double period is exempt). Null/absent: no minimum.
+   */
+  minGap?: number | null;
   requiredRoomType: string | null;
   /** Placed earlier in the day (soft). */
   core: boolean;
@@ -74,6 +85,14 @@ export interface SolverInput {
    * settings change, lessons prefer their old slot so as little as possible moves.
    */
   previous?: { classKey: string; subject: string; day: string; period: number; teacherId: string | null }[];
+  /** School-wide timetable rules. */
+  rules?: {
+    /**
+     * Rule A: the same teacher may not teach the same class in two back-to-back
+     * periods with different subjects. Absent or true: on (the default).
+     */
+    noSameClassBackToBack?: boolean;
+  };
 }
 
 export type UnallocatedReason =

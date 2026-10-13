@@ -66,6 +66,8 @@ interface SubjectConfig {
   weeklyPeriods: number;
   maxPeriodsPerDay: number;
   allowConsecutive: boolean;
+  /** "Apart": minimum periods between two lessons on one day; null = no minimum. */
+  sameDayMinGap?: number | null;
   priority: string;
   requiredRoomType?: string | null;
   active: boolean;
@@ -781,6 +783,7 @@ export default function SubjectManagementPage() {
                     <th className="py-3 px-3">Weekly Periods</th>
                     <th className="py-3 px-3">Max / Day</th>
                     <th className="py-3 px-3">Double Period</th>
+                    <th className="py-3 px-3" title="If the subject comes twice in a day: at least this many periods between them. Empty = no minimum.">Gap if twice a day</th>
                     <th className="py-3 px-3">Priority</th>
                     <th className="py-3 px-3">Required Room</th>
                     <th className="py-3 px-3">Assigned Faculty</th>
@@ -846,6 +849,28 @@ export default function SubjectManagementPage() {
                               {s.allowConsecutive ? 'Yes' : 'No'}
                             </span>
                           </div>
+                        </td>
+
+                        {/* "Apart": minimum periods between two lessons on one day */}
+                        <td className="py-3.5 px-3">
+                          {s.maxPeriodsPerDay > 1 ? (
+                            <input
+                              type="number"
+                              min={1}
+                              placeholder="—"
+                              title="Empty: no minimum. A double period (if allowed) is not affected."
+                              className="w-16 h-8 rounded-md border border-slate-200 px-2 text-xs"
+                              defaultValue={s.sameDayMinGap ?? ''}
+                              data-testid="subject-min-gap"
+                              onBlur={(e) => {
+                                const raw = e.target.value.trim();
+                                const next = raw === '' ? null : Number(raw);
+                                if (next !== (s.sameDayMinGap ?? null)) patch(s, { sameDayMinGap: next });
+                              }}
+                            />
+                          ) : (
+                            <span className="text-[10px] text-slate-400" title="Only applies when the subject may come more than once a day">—</span>
+                          )}
                         </td>
 
                         {/* Priority Dropdown */}

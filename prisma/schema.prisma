@@ -141,6 +141,10 @@ model GradeSubjectConfig {
   weeklyPeriods      Int      @default(4)
   maxPeriodsPerDay   Int      @default(2)
   allowConsecutive   Boolean  @default(false)
+  /// "Apart": when the subject comes more than once in a day, at least this
+  /// many periods between the occurrences (an allowed double period is
+  /// exempt). Null: no minimum; the generator only spreads them softly.
+  sameDayMinGap      Int?
   priority           String   @default("Normal") // Core | High | Normal | Low
   /// Room type this subject requires for this grade, e.g. "physics_lab".
   /// Null means any room. Data, so lab requirements are never hardcoded.
@@ -279,6 +283,10 @@ model SchoolPreferences {
   defaultMaxWeekly            Int?
   defaultMaxDaily             Int?
   defaultMaxConsecutive       Int?
+  /// Rule A: the same teacher may not teach the same class in two consecutive
+  /// periods with different subjects. Null or true: on (default); false: off.
+  /// Clashes, availability, caps and room checks are unaffected either way.
+  noSameClassBackToBack       Boolean?
   createdAt                   DateTime @default(now())
   updatedAt                   DateTime @updatedAt
 }

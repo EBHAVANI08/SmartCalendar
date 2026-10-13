@@ -4,7 +4,7 @@ import { specialRoomType } from '@/lib/room-types';
 import { NOT_ARCHIVED } from '@/lib/soft-delete';
 import { teacherRequirementOf, type TeacherRequirement } from '@/lib/teacher-requirement';
 import { getDayConfig } from '@/lib/timetable-config';
-import { DAY_NAMES, periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
+import { breakBoundaries, DAY_NAMES, periodsForDay, workingDayNames } from '@/lib/timetable-constraints';
 
 /**
  * Independent timetable validator.
@@ -32,7 +32,9 @@ export type AuditRule =
   | 'teacher_unavailable'
   | 'workload_rule_missing'
   | 'room_type'
-  | 'unknown_room';
+  | 'unknown_room'
+  | 'subject_min_gap'
+  | 'teacher_same_class_consecutive';
 
 export interface AuditIssue {
   rule: AuditRule;
@@ -68,6 +70,8 @@ export interface AuditSubjectRule {
   requiredRoomType: string | null;
   /** Unset means "required": a lesson without a teacher is an error. */
   teacherRequirement?: TeacherRequirement | null;
+  /** "Apart": minimum periods between two lessons of the subject on one day. */
+  minGap?: number | null;
   active: boolean;
 }
 
@@ -91,6 +95,10 @@ export interface AuditInput {
   rooms: { id: string; name: string; type: string; maxParallelClasses?: number | null }[];
   /** Teaching periods per day for each grade name, from the day configuration. */
   periodsByGrade: Record<string, Partial<Record<string, number>>>;
+  /** Periods followed by a break or lunch, per grade name: lessons across them are not back to back. */
+  breaksAfterByGrade?: Record<string, number[]>;
+  /** School-wide rules. noSameClassBackToBack: absent or true = on (default). */
+  rules?: { noSameClassBackToBack?: boolean };
 }
 
 /** Allowed per class+subject per day when the subject rule sets none. */
@@ -113,13 +121,17 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
   return map;
 }
 
-/** Runs of adjacent period numbers, e.g. [1,2,3,5] → [[1,2,3],[5]]. */
-function runs(periods: number[]): number[][] {
+/**
+ * Runs of back-to-back periods, e.g. [1,2,3,5] → [[1,2,3],[5]]. With
+ * `breaksAfter`, a break or lunch after a period ends the run.
+ */
+function runs(periods: number[], breaksAfter: number[] = []): number[][] {
   const sorted = [...new Set(periods)].sort((a, b) => a - b);
   const result: number[][] = [];
   for (const period of sorted) {
     const last = result[result.length - 1];
-    if (last && period === last[last.length - 1] + 1) last.push(period);
+    const previous = last?.[last.length - 1];
+    if (last && period === previous + 1 && !breaksAfter.includes(previous)) last.push(period);
     else result.push([period]);
   }
   return result;
@@ -142,6 +154,8 @@ export function auditTimetable(input: AuditInput): AuditIssue[] {
     return chosen;
   };
   const ruleFor = (grade: string, subject: string) => activeRules(grade).get(subjectKey(subject));
+  const breaksFor = (grade: string): number[] =>
+    input.breaksAfterByGrade?.[grade] ?? Object.entries(input.breaksAfterByGrade ?? {}).find(([name]) => gradeKey(name) === gradeKey(grade))?.[1] ?? [];
   const periodsFor = (grade: string, day: string): number | undefined => {
     const exact = input.periodsByGrade[grade];
     const match = exact ?? Object.entries(input.periodsByGrade).find(([name]) => gradeKey(name) === gradeKey(grade))?.[1];
@@ -198,7 +212,8 @@ export function auditTimetable(input: AuditInput): AuditIssue[] {
       issues.push({ rule: 'daily_subject_limit', severity: 'error', grade, section, day, slotIds: rows.map((r) => r.id),
         message: `${classLabel(grade, section)}: ${subject} ${rows.length}x on ${day} (limit ${limit}): ${periodList(periods)}` });
     }
-    for (const run of runs(periods).filter((r) => r.length > 1)) {
+    const doubleRuns = runs(periods, breaksFor(grade));
+    for (const run of doubleRuns.filter((r) => r.length > 1)) {
       const runIds = rows.filter((r) => run.includes(r.period)).map((r) => r.id);
       if (!rule?.allowConsecutive) {
         issues.push({ rule: 'double_period', severity: 'error', grade, section, day, slotIds: runIds,
@@ -206,6 +221,45 @@ export function auditTimetable(input: AuditInput): AuditIssue[] {
       } else if (run.length > 2) {
         issues.push({ rule: 'double_period', severity: 'error', grade, section, day, slotIds: runIds,
           message: `${classLabel(grade, section)}: ${subject} ${run.length} periods in a row on ${day} (${periodList(run)}); only pairs are allowed` });
+      }
+    }
+  }
+
+  // 2b. "Apart": minimum periods between lessons of a subject on one day
+  // (lessons of an allowed double period are exempt from each other).
+  for (const rows of groupBy(input.slots, (s) => `${s.grade}|${s.section}|${subjectKey(s.subject)}|${s.day}`).values()) {
+    if (rows.length < 2) continue;
+    const { grade, section, subject, day } = rows[0];
+    const rule = ruleFor(grade, subject);
+    if (rule?.minGap == null) continue;
+    const blocks = runs(rows.map((r) => r.period), breaksFor(grade)).filter((run) => rule.allowConsecutive || run.length === 1);
+    const sorted = [...rows].sort((a, b) => a.period - b.period);
+    for (let i = 1; i < sorted.length; i++) {
+      const a = sorted[i - 1];
+      const b = sorted[i];
+      const sameDouble = blocks.some((block) => block.length > 1 && block.includes(a.period) && block.includes(b.period));
+      if (sameDouble) continue;
+      const between = b.period - a.period - 1;
+      if (between < rule.minGap) {
+        issues.push({ rule: 'subject_min_gap', severity: 'error', grade, section, day, slotIds: [a.id, b.id],
+          message: `${classLabel(grade, section)}: ${subject} on ${day} P${a.period} and P${b.period} has ${between} period(s) between (needs at least ${rule.minGap})` });
+      }
+    }
+  }
+
+  // 2c. Rule A: the same teacher does not teach a class two different subjects
+  // back to back (a break or lunch in between separates them).
+  if (input.rules?.noSameClassBackToBack !== false) {
+    for (const rows of groupBy(input.slots.filter((s) => s.teacherId), (s) => `${s.grade}|${s.section}|${s.day}`).values()) {
+      const sorted = [...rows].sort((a, b) => a.period - b.period);
+      const breaks = breaksFor(sorted[0].grade);
+      for (let i = 1; i < sorted.length; i++) {
+        const a = sorted[i - 1];
+        const b = sorted[i];
+        if (b.period !== a.period + 1 || breaks.includes(a.period)) continue;
+        if (a.teacherId !== b.teacherId || subjectKey(a.subject) === subjectKey(b.subject)) continue;
+        issues.push({ rule: 'teacher_same_class_consecutive', severity: 'error', grade: a.grade, section: a.section, teacherId: a.teacherId!, day: a.day, slotIds: [a.id, b.id],
+          message: `${teacherName(a.teacherId!)}: teaches ${classLabel(a.grade, a.section)} ${a.subject} (P${a.period}) and ${b.subject} (P${b.period}) back to back on ${a.day}` });
       }
     }
   }
@@ -312,9 +366,11 @@ export async function loadAuditInput(schoolId: string, versionId: string): Promi
 
   const gradeNames = [...new Set([...slots.map((s) => s.grade), ...sections.map((s) => s.grade), ...configs.map((c) => c.grade)])];
   const periodsByGrade: AuditInput['periodsByGrade'] = {};
+  const breaksAfterByGrade: Record<string, number[]> = {};
   for (const grade of gradeNames) {
     const week = await getDayConfig(schoolId, grade);
     periodsByGrade[grade] = Object.fromEntries(workingDayNames(week).map((day) => [day, periodsForDay(day, week)]));
+    breaksAfterByGrade[grade] = breakBoundaries(week);
   }
 
   const defaults = {
@@ -355,11 +411,14 @@ export async function loadAuditInput(schoolId: string, versionId: string): Promi
       allowConsecutive: c.allowConsecutive,
       requiredRoomType: c.requiredRoomType ?? null,
       teacherRequirement: teacherRequirementOf(c.teacherRequirement),
+      minGap: c.sameDayMinGap ?? null,
       active: c.active,
     })),
     teachers: auditTeachers,
     rooms,
     periodsByGrade,
+    breaksAfterByGrade,
+    rules: { noSameClassBackToBack: preferences?.noSameClassBackToBack !== false },
   };
 }
 

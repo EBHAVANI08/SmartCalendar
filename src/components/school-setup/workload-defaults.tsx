@@ -21,6 +21,7 @@ interface DefaultsResponse {
   set: boolean;
   week: { configured: boolean; longestDay: number; weeklySlots: number };
   teachers: { active: number; withPersonalRule: number };
+  noSameClassBackToBack: boolean;
 }
 
 export function WorkloadDefaults() {
@@ -49,6 +50,31 @@ export function WorkloadDefaults() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const [savingRule, setSavingRule] = useState(false);
+  const saveRule = async (value: boolean) => {
+    setSavingRule(true);
+    try {
+      const res = await fetch('/api/school/workload-defaults', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ noSameClassBackToBack: value }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`);
+      toast({
+        title: value ? 'Rule switched on' : 'Rule switched off',
+        description: [value
+          ? 'A teacher will not teach the same class two different subjects back to back.'
+          : 'A teacher may teach the same class two different subjects back to back.', impactText(body.impact)].filter(Boolean).join(' '),
+      });
+      await load();
+    } catch (error) {
+      toast({ variant: 'destructive', title: 'Could not save the rule', description: error instanceof Error ? error.message : 'Unexpected error' });
+    } finally {
+      setSavingRule(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -109,6 +135,21 @@ export function WorkloadDefaults() {
               <Button size="sm" onClick={save} disabled={saving} data-testid="defaults-save">{saving ? 'Saving…' : 'Save defaults'}</Button>
               <Link href="/teachers" className="text-xs font-semibold text-blue-700 underline">Personal limits in the Faculty Directory</Link>
             </div>
+            <label className="flex items-start gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-700 cursor-pointer" data-testid="rule-same-class">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={data.noSameClassBackToBack}
+                disabled={savingRule}
+                onChange={(e) => saveRule(e.target.checked)}
+              />
+              <span>
+                <span className="font-semibold text-slate-800">A teacher does not teach the same class two different subjects back to back</span>
+                <span className="block text-[11px] text-slate-500">
+                  On by default. A break or lunch in between is fine, different teachers back to back are fine, and double periods of one subject follow the subject's own setting. Clashes, limits and room checks always apply.
+                </span>
+              </span>
+            </label>
           </>
         )}
       </CardContent>

@@ -18,7 +18,7 @@ export async function GET(request: Request) {
   const schoolId = await getTenantSchoolId(request);
   if (!schoolId) return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
 
-  const [defaults, week, teachers, personal] = await Promise.all([
+  const [defaults, week, teachers, personal, preferences] = await Promise.all([
     schoolWorkloadDefaults(schoolId),
     schoolWeekShape(schoolId),
     db.teacher.count({ where: { schoolId, role: { not: 'inactive' } } }),
@@ -27,6 +27,7 @@ export async function GET(request: Request) {
       select: { teacherId: true },
       distinct: ['teacherId'],
     }),
+    db.schoolPreferences.findUnique({ where: { schoolId }, select: { noSameClassBackToBack: true } }),
   ]);
   return NextResponse.json({
     success: true,
@@ -34,6 +35,8 @@ export async function GET(request: Request) {
     set: defaults.maxWeekly !== null || defaults.maxDaily !== null || defaults.maxConsecutive !== null,
     week,
     teachers: { active: teachers, withPersonalRule: personal.length },
+    // Rule A: on unless the school switched it off.
+    noSameClassBackToBack: preferences?.noSameClassBackToBack !== false,
   });
 }
 
@@ -46,6 +49,25 @@ export async function PUT(request: Request) {
   if (!schoolId) return NextResponse.json({ error: 'No school context. Please sign in again.' }, { status: 401 });
 
   const body = await request.json().catch(() => ({}));
+
+  // The school-wide timetable rule can be saved on its own.
+  if (typeof body.noSameClassBackToBack === 'boolean' && body.maxWeekly === undefined && body.maxDaily === undefined && body.maxConsecutive === undefined) {
+    const value = body.noSameClassBackToBack as boolean;
+    await db.schoolPreferences.upsert({ where: { schoolId }, update: { noSameClassBackToBack: value }, create: { schoolId, noSameClassBackToBack: value } });
+    await db.auditLog.create({
+      data: {
+        schoolId,
+        actorId: request.headers.get('x-user-id') || 'unknown',
+        actorRole: request.headers.get('x-user-role') || 'unknown',
+        action: 'timetable.rule.update',
+        entityType: 'SchoolPreferences',
+        entityId: schoolId,
+        after: { noSameClassBackToBack: value },
+      },
+    }).catch(() => null);
+    return NextResponse.json({ success: true, noSameClassBackToBack: value, impact: await settingsImpact(schoolId) });
+  }
+
   const caps: WorkloadCaps = { maxWeekly: toCap(body.maxWeekly), maxDaily: toCap(body.maxDaily), maxConsecutive: toCap(body.maxConsecutive) };
   const errors = validateCaps(caps, await schoolWeekShape(schoolId), { allRequired: true });
   if (errors.length) return NextResponse.json({ error: errors.join(' '), errors }, { status: 400 });
