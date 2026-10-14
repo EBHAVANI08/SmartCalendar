@@ -398,8 +398,8 @@ function SchoolSettingsContent({
               onClick={() => setActiveTab(tab.id as typeof activeTab)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold transition-all ${
                 isActive
-                  ? 'bg-slate-900 text-white shadow-md'
-                  : 'bg-white border border-slate-200/80 text-slate-600 hover:bg-slate-100/80'
+                  ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
+                  : 'bg-white border border-slate-200/80 text-slate-600 hover:bg-blue-50 hover:border-blue-200 hover:text-blue-700'
               }`}
             >
               <Icon className="w-4 h-4" />
