@@ -55,12 +55,12 @@ export default function ChangePasswordPage() {
         const stored = JSON.parse(localStorage.getItem('smart_calendar_auth_session') || 'null');
         if (stored?.user) {
           stored.user.mustChangePassword = false;
-          stored.token = data.token;
+          delete stored.token;
           role = stored.user.role || '';
           localStorage.setItem('smart_calendar_auth_session', JSON.stringify(stored));
           sessionStorage.setItem('sc_user', JSON.stringify(stored.user));
         }
-        if (data.token) sessionStorage.setItem('sc_token', data.token);
+        sessionStorage.removeItem('sc_token');
       } catch {}
       router.push(role === 'superadmin' ? '/superadmin' : '/dashboard');
     } catch {

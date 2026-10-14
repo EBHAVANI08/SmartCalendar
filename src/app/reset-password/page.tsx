@@ -29,11 +29,8 @@ export default function ResetPasswordPage() {
 
   const [step, setStep] = useState<'request' | 'verify' | 'success'>('request');
   const [email, setEmail] = useState('');
-  // Asked for only when the email belongs to teachers at several schools.
+  // Optional: only people who work at more than one school need it.
   const [schoolCode, setSchoolCode] = useState('');
-  const [needsSchoolCode, setNeedsSchoolCode] = useState(false);
-  const [accountInfo, setAccountInfo] = useState<{ name: string; schoolName: string } | null>(null);
-  const [otpToken, setOtpToken] = useState<string>('');
 
   const [otp, setOtp] = useState('');
   const [password, setPassword] = useState('');
@@ -82,22 +79,16 @@ export default function ResetPasswordPage() {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setOtpToken(data.otpToken || '');
-        setAccountInfo({
-          name: data.accountName || 'Account',
-          schoolName: data.schoolName || 'School',
-        });
         if (data.devOtp) {
           setOtp(data.devOtp);
         }
         setStep('verify');
         setCountdown(60);
         setSuccessMessage(
-          (data.message || `A 6-digit OTP code has been sent to ${email}.`) +
+          (data.message || 'If an account uses this email, a 6-digit code has been sent to it.') +
             (data.devOtp ? ` (Dev Demo Code: ${data.devOtp})` : '')
         );
       } else {
-        if (data.code === 'SCHOOL_CODE_REQUIRED') setNeedsSchoolCode(true);
         setError(data.error || 'Could not send verification code. Please check your email.');
       }
     } catch {
@@ -122,9 +113,8 @@ export default function ResetPasswordPage() {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        setOtpToken(data.otpToken || '');
         setCountdown(60);
-        setSuccessMessage('A fresh verification OTP has been sent to your email.');
+        setSuccessMessage(data.message || 'If an account uses this email, a fresh code has been sent to it.');
       } else {
         setError(data.error || 'Failed to resend code.');
       }
@@ -163,7 +153,6 @@ export default function ResetPasswordPage() {
         body: JSON.stringify({
           email: email.trim(),
           otp: otp.trim(),
-          otpToken,
           password,
         }),
       });
@@ -255,18 +244,15 @@ export default function ResetPasswordPage() {
                     Enter the email linked to your school faculty or admin account.
                   </p>
                 </div>
-                {needsSchoolCode && (
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-bold text-slate-800">School code *</Label>
-                    <Input
-                      value={schoolCode}
-                      onChange={(e) => setSchoolCode(e.target.value)}
-                      placeholder="The code your school signs in with"
-                      className="h-10 text-xs rounded-xl border-slate-300"
-                      required
-                    />
-                  </div>
-                )}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-bold text-slate-800">School code (optional)</Label>
+                  <Input
+                    value={schoolCode}
+                    onChange={(e) => setSchoolCode(e.target.value)}
+                    placeholder="Only if you work at more than one school"
+                    className="h-10 text-xs rounded-xl border-slate-300"
+                  />
+                </div>
 
                 <Button
                   type="submit"

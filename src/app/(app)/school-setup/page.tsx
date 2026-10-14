@@ -165,43 +165,43 @@ function SchoolSetupContent() {
   return (
     <div className="w-full space-y-5">
       {/* ── Setup Command Center HUD ── */}
-      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0B1528] via-[#10203E] to-[#0A1120] text-white p-6 md:p-7 border border-blue-900/40 shadow-xl">
+      <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-white via-blue-50/60 to-indigo-50/70 text-slate-900 p-6 md:p-7 border border-blue-100 shadow-sm">
         {/* Background glow accents */}
-        <div className="absolute -right-20 -top-20 w-80 h-80 bg-blue-600/15 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute left-1/3 -bottom-20 w-72 h-72 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -right-20 -top-20 w-80 h-80 bg-blue-200/30 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute left-1/3 -bottom-20 w-72 h-72 bg-indigo-200/30 rounded-full blur-3xl pointer-events-none" />
 
         <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
           {/* Left: Title & Readiness Status */}
           <div className="space-y-2 max-w-xl">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-blue-500/20 text-blue-300 border border-blue-400/30 backdrop-blur-md">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
+                <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
                 Institutional Setup Command Center
               </span>
-              <span className="text-xs font-semibold text-slate-300">
-                Tenant: <span className="font-mono text-white bg-white/10 px-1.5 py-0.5 rounded">{diagnostics?.tenantSecurity?.tenantCode || 'ACTIVE'}</span>
+              <span className="text-xs font-semibold text-slate-500">
+                Tenant: <span className="font-mono text-slate-800 bg-slate-100 px-1.5 py-0.5 rounded">{diagnostics?.tenantSecurity?.tenantCode || 'ACTIVE'}</span>
               </span>
             </div>
 
-            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-white">
+            <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
               School Configuration &amp; Readiness
             </h2>
-            <p className="text-xs sm:text-sm text-slate-300/90 leading-relaxed font-normal">
+            <p className="text-xs sm:text-sm text-slate-600 leading-relaxed font-normal">
               Setup working periods, grades, subject rules, and faculty assignments. All timetable generation and substitution engines reference these settings.
             </p>
 
             {/* Live Progress Bar */}
             <div className="pt-2 space-y-1.5">
               <div className="flex items-center justify-between text-xs font-bold">
-                <span className="text-slate-300 flex items-center gap-1.5">
-                  <Activity className="w-3.5 h-3.5 text-emerald-400" />
-                  Readiness Score: <span className="text-white font-extrabold">{pct}% Complete</span>
+                <span className="text-slate-600 flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-emerald-500" />
+                  Readiness Score: <span className="text-slate-900 font-extrabold">{pct}% Complete</span>
                 </span>
-                <span className="text-blue-300 text-[11px]">
+                <span className="text-blue-600 text-[11px]">
                   {progress ? `${progress.completed} of ${progress.total} Core Steps Done` : 'Analyzing readiness…'}
                 </span>
               </div>
-              <div className="w-full h-2.5 bg-slate-800/80 rounded-full overflow-hidden border border-white/10 p-0.5">
+              <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200 p-0.5">
                 <div
                   className="h-full rounded-full transition-all duration-700 bg-gradient-to-r from-blue-500 via-indigo-400 to-emerald-400"
                   style={{ width: `${Math.max(5, pct)}%` }}
@@ -213,21 +213,21 @@ function SchoolSetupContent() {
           {/* Right: Quick Action Buttons & Stats */}
           <div className="flex flex-col sm:flex-row lg:flex-col gap-3 shrink-0">
             <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-2 gap-2">
-              <div className="bg-white/5 backdrop-blur-md border border-white/10 p-2.5 rounded-2xl text-center">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Grades</span>
-                <span className="text-base font-black text-white">{diagnostics?.stats.gradesCount ?? '—'}</span>
+              <div className="bg-white border border-slate-200 p-2.5 rounded-2xl shadow-sm text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Grades</span>
+                <span className="text-base font-black text-slate-900">{diagnostics?.stats.gradesCount ?? '—'}</span>
               </div>
-              <div className="bg-white/5 backdrop-blur-md border border-white/10 p-2.5 rounded-2xl text-center">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Subjects</span>
-                <span className="text-base font-black text-white">{diagnostics?.stats.subjectsCount ?? '—'}</span>
+              <div className="bg-white border border-slate-200 p-2.5 rounded-2xl shadow-sm text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Subjects</span>
+                <span className="text-base font-black text-slate-900">{diagnostics?.stats.subjectsCount ?? '—'}</span>
               </div>
-              <div className="bg-white/5 backdrop-blur-md border border-white/10 p-2.5 rounded-2xl text-center">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Faculty</span>
-                <span className="text-base font-black text-white">{diagnostics?.stats.facultyCount ?? '—'}</span>
+              <div className="bg-white border border-slate-200 p-2.5 rounded-2xl shadow-sm text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Faculty</span>
+                <span className="text-base font-black text-slate-900">{diagnostics?.stats.facultyCount ?? '—'}</span>
               </div>
-              <div className="bg-white/5 backdrop-blur-md border border-white/10 p-2.5 rounded-2xl text-center">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block">Rooms</span>
-                <span className="text-base font-black text-white">{diagnostics?.stats.roomsCount ?? '—'}</span>
+              <div className="bg-white border border-slate-200 p-2.5 rounded-2xl shadow-sm text-center">
+                <span className="text-[10px] uppercase font-bold text-slate-500 block">Rooms</span>
+                <span className="text-base font-black text-slate-900">{diagnostics?.stats.roomsCount ?? '—'}</span>
               </div>
             </div>
 
@@ -236,9 +236,9 @@ function SchoolSetupContent() {
                 size="sm"
                 onClick={handleSyncFaculty}
                 disabled={syncingFaculty}
-                className="flex-1 bg-white/10 hover:bg-white/20 text-white border border-white/20 text-xs font-bold h-9 gap-1.5 backdrop-blur-sm"
+                className="flex-1 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-bold h-9 gap-1.5"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${syncingFaculty ? 'animate-spin text-amber-300' : 'text-blue-300'}`} />
+                <RefreshCw className={`w-3.5 h-3.5 ${syncingFaculty ? 'animate-spin text-amber-500' : 'text-blue-600'}`} />
                 <span>{syncingFaculty ? 'Syncing…' : 'Sync Faculty'}</span>
               </Button>
 
@@ -246,9 +246,9 @@ function SchoolSetupContent() {
                 size="sm"
                 onClick={handleRunDiagnostic}
                 disabled={runningDiag}
-                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold h-9 gap-1.5 shadow-md shadow-blue-900/50"
+                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold h-9 gap-1.5 shadow-sm"
               >
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" />
+                <ShieldCheck className="w-3.5 h-3.5 text-white" />
                 <span>Health Check</span>
               </Button>
             </div>
@@ -256,17 +256,17 @@ function SchoolSetupContent() {
         </div>
 
         {/* Pipeline Step Navigator */}
-        <div className="mt-6 pt-5 border-t border-white/10">
+        <div className="mt-6 pt-5 border-t border-slate-200">
           <div className="flex items-center justify-between gap-2 mb-3">
-            <span className="text-[11px] font-extrabold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
-              <Layers className="w-3.5 h-3.5 text-blue-400" /> Setup Checklist Pipeline
+            <span className="text-[11px] font-extrabold text-slate-600 uppercase tracking-wider flex items-center gap-1.5">
+              <Layers className="w-3.5 h-3.5 text-blue-600" /> Setup Checklist Pipeline
             </span>
             {outstanding.length === 0 ? (
-              <span className="text-[11px] font-bold text-emerald-300 flex items-center gap-1">
+              <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1">
                 <CheckCircle2 className="w-3.5 h-3.5" /> All Core Setup Steps Complete
               </span>
             ) : (
-              <span className="text-[11px] font-bold text-amber-300">
+              <span className="text-[11px] font-bold text-amber-600">
                 {outstanding.length} Step(s) Require Attention
               </span>
             )}
@@ -283,22 +283,22 @@ function SchoolSetupContent() {
                   onClick={() => handleStepClick(s.id)}
                   className={`group flex flex-col text-left p-2.5 rounded-xl border transition-all text-xs ${
                     s.done
-                      ? 'bg-emerald-950/30 border-emerald-500/30 hover:bg-emerald-900/40 text-slate-200'
+                      ? 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 text-slate-800'
                       : s.required
-                      ? 'bg-amber-950/30 border-amber-500/40 hover:bg-amber-900/40 text-amber-100'
-                      : 'bg-white/5 border-white/10 hover:bg-white/10 text-slate-300'
+                      ? 'bg-amber-50 border-amber-300 hover:bg-amber-100 text-amber-900'
+                      : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1 mb-1">
-                    <Icon className={`w-3.5 h-3.5 ${s.done ? 'text-emerald-400' : 'text-amber-400'}`} />
+                    <Icon className={`w-3.5 h-3.5 ${s.done ? 'text-emerald-600' : 'text-amber-600'}`} />
                     {s.done ? (
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
                     ) : (
-                      <ArrowRight className="w-3.5 h-3.5 text-amber-400 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                      <ArrowRight className="w-3.5 h-3.5 text-amber-600 opacity-60 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
                     )}
                   </div>
                   <span className="font-bold text-[11px] leading-tight line-clamp-1">{s.label}</span>
-                  <span className="text-[10px] text-slate-400 line-clamp-1 mt-0.5">{s.detail}</span>
+                  <span className="text-[10px] text-slate-500 line-clamp-1 mt-0.5">{s.detail}</span>
                 </button>
               );
             })}

@@ -111,38 +111,17 @@ export function AppShell({ children }: AppShellProps) {
       try {
         owner = raw ? JSON.parse(raw) : null;
       } catch {}
-      const token = owner?.token;
-
-      const res = await fetch('/api/auth/restore-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
-      });
+      // The owner's session is restored from its httpOnly cookie on the server.
+      const res = await fetch('/api/auth/restore-session', { method: 'POST' });
       const d = await res.json();
-      if (res.ok && d.user) {
-        sessionStorage.setItem('sc_user', JSON.stringify(d.user));
-        if (d.token) sessionStorage.setItem('sc_token', d.token);
-        localStorage.setItem(
-          'smart_calendar_auth_session',
-          JSON.stringify({
-            isLoggedIn: true,
-            user: d.user,
-            role: 'superadmin',
-            token: d.token,
-          })
-        );
+      const user = res.ok && d.user ? d.user : null;
+      sessionStorage.removeItem('sc_token');
+      if (user) {
+        sessionStorage.setItem('sc_user', JSON.stringify(user));
+        localStorage.setItem('smart_calendar_auth_session', JSON.stringify({ isLoggedIn: true, user, role: 'superadmin' }));
       } else if (owner?.user) {
+        // Owner session expired: show the owner's details, the login page will follow.
         sessionStorage.setItem('sc_user', JSON.stringify(owner.user));
-        if (owner.token) sessionStorage.setItem('sc_token', owner.token);
-        localStorage.setItem(
-          'smart_calendar_auth_session',
-          JSON.stringify({
-            isLoggedIn: true,
-            user: owner.user,
-            role: 'superadmin',
-            token: owner.token,
-          })
-        );
       }
     } catch (e) {
       console.error('Error exiting impersonation:', e);

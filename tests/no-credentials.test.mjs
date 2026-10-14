@@ -72,8 +72,8 @@ test('password-reset codes are bound to one account and never returned in produc
   const sendOtp = await readFile(join(root, 'src/app/api/auth/reset-password/send-otp/route.ts'), 'utf8');
   // Both an explicit opt-in and a non-production build are required.
   assert.match(sendOtp, /process\.env\.ALLOW_DEV_OTP === 'true' && process\.env\.NODE_ENV !== 'production'/);
-  assert.match(sendOtp, /devOtp: emailResult\.simulated && devOtpAllowed\(\)/);
-  assert.match(sendOtp, /SCHOOL_CODE_REQUIRED/, 'a reset must not pick one of several schools');
+  assert.match(sendOtp, /if \(emailResult\.simulated && devOtpAllowed\(\)\)/);
+  assert.match(sendOtp, /if \(teachers\.length > 1\) return generic;/, 'a reset must not pick one of several schools');
   const verifyOtp = await readFile(join(root, 'src/app/api/auth/reset-password/verify-otp/route.ts'), 'utf8');
   assert.doesNotMatch(verifyOtp, /where: \{ email \}/, 'a reset must not update every account sharing an email');
   const middleware = await readFile(join(root, 'src/middleware.ts'), 'utf8');

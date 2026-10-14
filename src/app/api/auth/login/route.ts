@@ -6,6 +6,12 @@ import { signJwt } from '@/lib/jwt-auth';
 import { NextResponse } from 'next/server';
 import { hashPassword, verifyPassword } from '@/lib/password';
 import { SCHOOL_PUBLIC_SELECT } from '@/lib/safe-fields';
+import { clear, clientIp, pausedFor, record } from '@/lib/rate-limit';
+import { LOGIN_FAILURE_WINDOW_MS, LOGIN_MAX_FAILURES_PER_EMAIL, LOGIN_MAX_FAILURES_PER_IP } from '@/lib/security-constants';
+
+/** A school that is suspended or cancelled cannot be signed in to. */
+const SCHOOL_CLOSED = new Set(['suspended', 'cancelled']);
+const closedResponse = () => NextResponse.json({ error: 'This school workspace is not active. Please contact support.' }, { status: 403 });
 
 async function createLoginResponse(user: any) {
   user = { ...user, mustChangePassword: Boolean(user.mustChangePassword) };
@@ -45,7 +51,7 @@ async function createLoginResponse(user: any) {
   }
 }
 
-export async function POST(request: Request) {
+async function authenticate(request: Request) {
   try {
     let body: any = {};
     try {
@@ -156,6 +162,7 @@ export async function POST(request: Request) {
         });
 
         if (isSchoolPassValid) {
+          if (SCHOOL_CLOSED.has(school.status)) return closedResponse();
           return await createLoginResponse({
             id: school.id,
             name: school.name,
@@ -184,9 +191,7 @@ export async function POST(request: Request) {
           await db.workspaceMember.update({ where: { id: member.id }, data: { password: newHash } }).catch(() => null);
         });
         if (ok) {
-          if (member.school?.status === 'suspended') {
-            return NextResponse.json({ error: 'This school workspace is suspended.' }, { status: 403 });
-          }
+          if (SCHOOL_CLOSED.has(member.school?.status ?? '')) return closedResponse();
           let modules: string[] = [];
           try { modules = JSON.parse(member.modules || '[]'); } catch { modules = []; }
           const mappedRole = ['teacher'].includes(member.role) ? 'teacher' : 'admin';
@@ -217,6 +222,8 @@ export async function POST(request: Request) {
       const candidates = await db.teacher.findMany({
         where: {
           OR: [{ email: cleanEmail }, { email }],
+          // A deactivated teacher cannot sign in.
+          role: { not: 'inactive' },
           ...(requestedSchoolCode ? { school: { code: requestedSchoolCode } } : {}),
         },
         include: { school: { select: SCHOOL_PUBLIC_SELECT } },
@@ -245,6 +252,7 @@ export async function POST(request: Request) {
 
       const teacher = verified[0];
       if (teacher) {
+        if (SCHOOL_CLOSED.has(teacher.school?.status ?? '')) return closedResponse();
         return await createLoginResponse({
           id: teacher.id,
           name: teacher.name,
@@ -285,11 +293,11 @@ export async function POST(request: Request) {
           if (!admin.isSuperAdmin) {
             const matchedSchool = await db.school.findFirst({
               where: {
+                // Only the school's own email links an admin to it; a matching
+                // name could link the admin to a different school.
                 OR: [
                   { email: cleanEmail },
                   { email: email },
-                  { contactName: admin.name },
-                  { name: admin.name },
                 ],
               },
             });
@@ -322,4 +330,40 @@ export async function POST(request: Request) {
     console.error('Login error:', error);
     return NextResponse.json({ error: 'Authentication service error.' }, { status: 500 });
   }
+}
+
+/** Reads the email from the request body without consuming it. */
+async function emailOf(request: Request): Promise<string> {
+  const text = await request.clone().text().catch(() => '');
+  try {
+    return String(JSON.parse(text)?.email ?? '').trim().toLowerCase();
+  } catch {
+    return (/"email"\s*:\s*"([^"]+)"/i.exec(text)?.[1] ?? '').trim().toLowerCase();
+  }
+}
+
+/**
+ * Sign-in with a limit on failed attempts: per email (guessing one account's
+ * password) and per network address (trying many accounts). A success clears
+ * the email's count.
+ */
+export async function POST(request: Request) {
+  const email = await emailOf(request);
+  const emailKey = email ? `login:email:${email}` : null;
+  const ipKey = `login:ip:${clientIp(request)}`;
+  const pause = Math.max(emailKey ? pausedFor(emailKey, LOGIN_MAX_FAILURES_PER_EMAIL) : 0, pausedFor(ipKey, LOGIN_MAX_FAILURES_PER_IP));
+  if (pause) {
+    return NextResponse.json(
+      { error: `Too many failed sign-in attempts. Please try again in ${Math.ceil(pause / 60)} minute(s), or reset your password.`, code: 'TOO_MANY_ATTEMPTS' },
+      { status: 429, headers: { 'Retry-After': String(pause) } },
+    );
+  }
+  const response = await authenticate(request);
+  if (response.status === 401) {
+    if (emailKey) record(emailKey, LOGIN_FAILURE_WINDOW_MS);
+    record(ipKey, LOGIN_FAILURE_WINDOW_MS);
+  } else if (response.status === 200 && emailKey) {
+    clear(emailKey);
+  }
+  return response;
 }

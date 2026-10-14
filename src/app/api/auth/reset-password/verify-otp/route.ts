@@ -2,15 +2,16 @@ export const dynamic = 'force-dynamic';
 
 import { NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { verifyPasswordResetOtp, invalidatePasswordResetOtp } from '@/lib/otp-store';
+import { verifyPasswordResetOtp } from '@/lib/otp-store';
 import { hashPassword } from '@/lib/password';
+import { clientIp, pausedFor, record } from '@/lib/rate-limit';
+import { LOGIN_FAILURE_WINDOW_MS, LOGIN_MAX_FAILURES_PER_IP } from '@/lib/security-constants';
 
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const email = String(body.email || '').trim().toLowerCase();
     const otp = String(body.otp || '').trim();
-    const otpToken = body.otpToken;
     const newPassword = String(body.password || body.newPassword || '').trim();
 
     if (!email || !email.includes('@')) {
@@ -25,9 +26,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Password must be at least 6 characters long.' }, { status: 400 });
     }
 
-    // Verify OTP
-    const otpVerification = await verifyPasswordResetOtp(email, otp, otpToken);
+    // Wrong codes from one network address across many emails: pause.
+    const ipKey = `reset-verify:ip:${clientIp(request)}`;
+    const pause = pausedFor(ipKey, LOGIN_MAX_FAILURES_PER_IP);
+    if (pause) {
+      return NextResponse.json({ error: `Too many attempts. Please try again in ${Math.ceil(pause / 60)} minute(s).` }, { status: 429, headers: { 'Retry-After': String(pause) } });
+    }
+
+    // Verify the code (stored on the server only; used once).
+    const otpVerification = await verifyPasswordResetOtp(email, otp);
     if (!otpVerification.valid) {
+      record(ipKey, LOGIN_FAILURE_WINDOW_MS);
       return NextResponse.json(
         { error: otpVerification.error || 'Invalid or expired OTP code.' },
         { status: 400 }
@@ -58,9 +67,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Invalidate OTP completely
-    invalidatePasswordResetOtp(email);
-
     return NextResponse.json({
       success: true,
       message: 'Your password has been reset successfully! You can now sign in with your new password.',
@@ -68,7 +74,7 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error('Error verifying reset OTP:', error);
     return NextResponse.json(
-      { error: 'Failed to reset password: ' + (error?.message || String(error)) },
+      { error: 'Could not reset the password right now. Please try again.' },
       { status: 500 }
     );
   }

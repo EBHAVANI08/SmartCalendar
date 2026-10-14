@@ -20,7 +20,7 @@ export interface AutoFixEntry {
   undoneBy: string | null;
 }
 
-const RULE_LABELS: Record<string, string> = {
+export const RULE_LABELS: Record<string, string> = {
   auto_created_rows: 'Auto-created rows',
   duplicate_grade: 'Duplicate grade',
   duplicate_subject: 'Duplicate subject',
